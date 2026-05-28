@@ -1,0 +1,219 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f6f8f5;
+  color: #17211d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-header {
+  align-items: center;
+  background: #14352e;
+  color: #f8fcf9;
+  display: flex;
+  justify-content: space-between;
+  min-height: 128px;
+  padding: 24px max(20px, calc((100vw - 1120px) / 2));
+}
+
+.eyebrow {
+  color: #a8dacb;
+  font-size: 0.8rem;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+h1, h2, h3, p {
+  margin-top: 0;
+}
+
+h1 {
+  font-size: clamp(2.2rem, 8vw, 4.8rem);
+  line-height: 0.95;
+  margin-bottom: 0;
+}
+
+.health-link,
+button {
+  border: 1px solid #2b5f52;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.health-link {
+  background: #24584b;
+}
+
+main {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 18px 20px 96px;
+}
+
+.search-band {
+  display: grid;
+  gap: 12px;
+  padding: 18px 0;
+}
+
+input[type="search"] {
+  border: 1px solid #bac8c1;
+  border-radius: 8px;
+  font: inherit;
+  min-height: 46px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips button {
+  background: #ffffff;
+  color: #17332d;
+}
+
+.chips button[aria-pressed="true"] {
+  background: #236b5c;
+  color: #ffffff;
+}
+
+.content-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.section-title {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.video-list {
+  display: grid;
+  gap: 12px;
+}
+
+.video-card {
+  align-items: start;
+  background: #ffffff;
+  border: 1px solid #d6dfda;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 144px minmax(0, 1fr);
+  padding: 10px;
+  text-align: left;
+}
+
+.video-card img {
+  aspect-ratio: 16 / 9;
+  background: #e4ebe6;
+  border-radius: 6px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.video-card h3 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.meta,
+.detail-meta {
+  color: #5b6762;
+  font-size: 0.9rem;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-pill {
+  background: #e7f1ed;
+  border-radius: 999px;
+  color: #214a41;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+}
+
+.detail-pane {
+  background: #ffffff;
+  border: 1px solid #d6dfda;
+  border-radius: 8px;
+  min-height: 360px;
+  padding: 16px;
+}
+
+.detail-pane img {
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.term-list,
+.timestamp-list {
+  padding-left: 18px;
+}
+
+.bottom-nav {
+  background: #ffffff;
+  border-top: 1px solid #d6dfda;
+  bottom: 0;
+  display: none;
+  gap: 8px;
+  left: 0;
+  padding: 10px 14px;
+  position: fixed;
+  right: 0;
+}
+
+.bottom-nav button {
+  background: #14352e;
+  color: #ffffff;
+  flex: 1;
+}
+
+@media (max-width: 820px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-pane {
+    min-height: auto;
+  }
+
+  .bottom-nav {
+    display: flex;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-header {
+    min-height: 112px;
+    padding: 20px;
+  }
+
+  .video-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+}

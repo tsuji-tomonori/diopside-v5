@@ -1,0 +1,11 @@
+{
+  "schema_version": "public-manifest/v1",
+  "generated_at": "2026-05-28T00:00:00Z",
+  "export_version": "dev-fixture",
+  "base_path": "/data/v/dev-fixture",
+  "indexes": {
+    "videos_latest": "/data/v/dev-fixture/public/index/videos-latest.json",
+    "tags": "/data/v/dev-fixture/public/index/tags.json",
+    "search_2026": "/data/v/dev-fixture/public/search/videos-2026.json"
+  }
+}

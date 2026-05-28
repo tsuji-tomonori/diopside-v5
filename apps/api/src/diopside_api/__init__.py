@@ -1,0 +1,1 @@
+"""diopside Lambda API package."""

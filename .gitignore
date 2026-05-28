@@ -7,6 +7,8 @@ build/
 coverage/
 cdk.out/
 infra/lambda-dist/
+__pycache__/
+*.pyc
 
 # TypeScript incremental build info
 *.tsbuildinfo
