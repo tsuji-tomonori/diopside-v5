@@ -33,7 +33,8 @@ const els = {
   filterSheet: document.querySelector("#filterSheet"),
   recent: document.querySelector("#recentSearches"),
   admin: document.querySelector("#adminPanel"),
-  adminResult: document.querySelector("#adminResult")
+  adminResult: document.querySelector("#adminResult"),
+  adminData: document.querySelector("#adminData")
 };
 
 const json = async (path, options = {}) => {
@@ -230,10 +231,32 @@ document.querySelector("#adminJobForm").addEventListener("submit", async (event)
       body: JSON.stringify(body)
     });
     els.adminResult.textContent = `queued: ${result.job_id}`;
+    await loadAdminData("jobs");
   } catch (error) {
     els.adminResult.textContent = error.message;
   }
 });
+
+const adminHeaders = () => {
+  const data = new FormData(document.querySelector("#adminJobForm"));
+  return { authorization: `Bearer ${String(data.get("token") || "")}` };
+};
+
+const loadAdminData = async (kind) => {
+  try {
+    const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { headers: adminHeaders() });
+    const items = result.items || [];
+    els.adminData.replaceChildren(
+      el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
+      items.length ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: kind === "quota" ? `${item.method}: ${item.units}` : `${item.job_id} / ${item.job_type} / ${item.derived_state}` }))) : el("p", { class: "empty-state", text: "表示できる項目はありません。" })
+    );
+  } catch (error) {
+    els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+document.querySelector("#loadJobsButton").addEventListener("click", () => loadAdminData("jobs"));
+document.querySelector("#loadQuotaButton").addEventListener("click", () => loadAdminData("quota"));
 
 init().catch((error) => {
   els.list.textContent = "公開データを読み込めませんでした。";

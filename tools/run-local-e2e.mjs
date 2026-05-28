@@ -31,6 +31,7 @@ async function runLocal() {
     await waitFor(() => fetch("http://127.0.0.1:8787/api/health").then((r) => r.ok));
     await checkStatic("http://127.0.0.1:8786");
     await checkApi("http://127.0.0.1:8787");
+    await checkAdminDryRun("http://127.0.0.1:8787");
     console.log("local e2e passed");
   } finally {
     api.kill();
@@ -61,10 +62,28 @@ async function checkApi(url) {
   if (!videos.items?.length) throw new Error("api videos empty");
 }
 
-async function json(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url} returned ${res.status}`);
-  return res.json();
+async function checkAdminDryRun(url) {
+  const created = await json(`${url}/api/admin/jobs/static-export`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: "Bearer local-secret",
+      "X-CSRF-Token": "local-csrf"
+    },
+    body: JSON.stringify({ idempotency_key: "local-e2e-static-export", scope: "all" })
+  });
+  if (created.job_type !== "static_export" || created.derived_state !== "queued") throw new Error("admin static-export dry run failed");
+  const jobs = await json(`${url}/api/admin/jobs`, { headers: { Authorization: "Bearer local-secret" } });
+  if (!jobs.items?.some((item) => item.job_id === created.job_id)) throw new Error("admin job list missing dry-run job");
+  const detail = await json(`${url}/api/admin/jobs/${created.job_id}`, { headers: { Authorization: "Bearer local-secret" } });
+  if (!detail.item?.events?.length) throw new Error("admin job detail missing events");
+}
+
+async function json(url, options = {}) {
+  const res = await fetch(url, options);
+  const body = await res.json();
+  if (!res.ok) throw new Error(`${url} returned ${res.status}: ${JSON.stringify(body)}`);
+  return body;
 }
 
 async function text(url) {

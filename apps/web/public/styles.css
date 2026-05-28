@@ -267,8 +267,18 @@ select {
 }
 
 .empty-state,
+.admin-data,
 .admin-result {
   color: #5b6762;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-actions button {
+  flex: 1;
 }
 
 @media (max-width: 820px) {

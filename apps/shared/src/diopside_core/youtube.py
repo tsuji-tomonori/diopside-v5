@@ -81,3 +81,56 @@ def _live_state(content_state: str | None, live: dict[str, Any]) -> str:
     if live.get("actualEndTime"):
         return "archived"
     return "archived"
+
+
+def extract_replay_actions_from_initial_data(initial_data: dict[str, Any]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if "replayChatItemAction" in value or "addChatItemAction" in value or "addLiveChatTickerItemAction" in value:
+                actions.append(value)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(initial_data)
+    return actions
+
+
+def extract_initial_data_from_watch_html(html: str) -> dict[str, Any]:
+    match = re.search(r"ytInitialData\s*=\s*\{", html)
+    if not match:
+        raise ValueError("ytInitialData was not found in public watch html")
+    start = match.end() - 1
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(html)):
+        char = html[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(html[start : index + 1])
+    raise ValueError("ytInitialData JSON was not closed")
+
+
+def fetch_public_replay_actions(video_id: str) -> list[dict[str, Any]]:
+    url = f"https://www.youtube.com/watch?{urllib.parse.urlencode({'v': video_id})}"
+    with urllib.request.urlopen(url, timeout=20) as response:
+        html = response.read().decode("utf-8", errors="replace")
+    return extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(html))

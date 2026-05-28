@@ -10,6 +10,9 @@ from diopside_core import (
     MemoryRepository,
     YouTubeClient,
     build_timestamp_candidates,
+    extract_initial_data_from_watch_html,
+    extract_replay_actions_from_initial_data,
+    fetch_public_replay_actions,
     normalize_live_chat_items,
     normalize_replay_actions,
     normalize_video_resource,
@@ -50,7 +53,9 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
         repo.append_job_event(job_id, "completed", result)
         return {"job_id": job_id, "job_type": job_type, "status": "succeeded", **result}
     except Exception as exc:
-        repo.append_job_event(job_id, "failed", {"type": type(exc).__name__, "message": str(exc)})
+        debug_key = f"failed/jobs/job_id={job_id}/{now_iso()}.json"
+        debug_uri = _write_blob(debug_key, json.dumps({"type": type(exc).__name__, "message": str(exc), "payload": payload}, ensure_ascii=False, indent=2).encode("utf-8"), "application/json")
+        repo.append_job_event(job_id, "failed", {"type": type(exc).__name__, "message": str(exc), "debug_uri": debug_uri})
         raise
 
 
@@ -78,6 +83,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     updated = []
+    enqueued = []
     for video in repo.list_videos(10000):
         before = video.get("live_state")
         if video.get("actual_end_time"):
@@ -91,7 +97,9 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         repo.put_video(video)
         if before != video["live_state"]:
             updated.append({"video_id": video["video_id"], "from": before, "to": video["live_state"]})
-    return {"updated": updated, "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"]}
+        if video["live_state"] == "live" and video.get("live_chat_id"):
+            enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
+    return {"updated": updated, "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"], "enqueued": [item for item in enqueued if item]}
 
 
 def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -99,7 +107,15 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     mode = params.get("mode", "auto")
     video = repo.get_video(video_id) or {"video_id": video_id}
     if params.get("replay_actions") or mode == "replay":
-        messages = normalize_replay_actions(params.get("replay_actions", []), video_id)
+        if params.get("replay_actions"):
+            actions = params["replay_actions"]
+        elif params.get("replay_initial_data"):
+            actions = extract_replay_actions_from_initial_data(params["replay_initial_data"])
+        elif params.get("replay_html"):
+            actions = extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(params["replay_html"]))
+        else:
+            actions = fetch_public_replay_actions(video_id)
+        messages = normalize_replay_actions(actions, video_id)
         source = "replay"
         next_poll = None
     else:
@@ -107,7 +123,15 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         response = params.get("live_chat_response") or client.live_chat_messages(video.get("live_chat_id") or params["live_chat_id"], params.get("page_token"))
         messages = normalize_live_chat_items(response.get("items", []), video_id)
         source = "live"
-        next_poll = {"next_page_token": response.get("nextPageToken"), "delay_seconds": int(response.get("pollingIntervalMillis", 10000)) // 1000}
+        delay_seconds = int(response.get("pollingIntervalMillis", 10000)) // 1000
+        next_poll = {
+            "next_page_token": response.get("nextPageToken"),
+            "delay_seconds": delay_seconds,
+            "offline_at": response.get("offlineAt"),
+            "rate_limited": any(error.get("reason") == "rateLimitExceeded" for error in response.get("error", {}).get("errors", [])),
+        }
+        if next_poll["next_page_token"] and not next_poll["rate_limited"]:
+            _enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video_id}", "input": {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_poll["next_page_token"]}}, delay_seconds=min(delay_seconds, 900))
     repo.put_item({"item_type": "ChatMessageChunkManifest", "pk": f"VIDEO#{video_id}", "sk": f"CHAT#RAW#{source}#{now_iso()}", "video_id": video_id, "source": source, "message_count": len(messages), "messages": messages, "next_poll": next_poll})
     raw_key = f"raw/youtube/chat/video_id={video_id}/source={source}/{now_iso()}.jsonl"
     _write_blob(raw_key, "\n".join(json.dumps(message, ensure_ascii=False) for message in messages).encode("utf-8"), "application/x-ndjson")
@@ -169,3 +193,16 @@ def _write_blob(key: str, body: bytes, content_type: str, bucket_env: str = "DIO
         path.write_bytes(body)
         return str(path)
     return key
+
+
+def _enqueue_job(queue_env: str, payload: dict[str, Any], delay_seconds: int = 0) -> str | None:
+    queue_url = os.environ.get(queue_env)
+    if not queue_url:
+        return None
+    import boto3
+
+    args: dict[str, Any] = {"QueueUrl": queue_url, "MessageBody": json.dumps(payload, ensure_ascii=False)}
+    if delay_seconds:
+        args["DelaySeconds"] = delay_seconds
+    boto3.client("sqs").send_message(**args)
+    return queue_url

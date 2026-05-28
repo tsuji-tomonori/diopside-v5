@@ -84,7 +84,12 @@
         </label>
         <label>video_id <input name="videoId" autocomplete="off"></label>
         <button type="submit">起動</button>
+        <div class="admin-actions">
+          <button type="button" id="loadJobsButton">job一覧</button>
+          <button type="button" id="loadQuotaButton">quota</button>
+        </div>
         <p id="adminResult" class="admin-result" aria-live="polite"></p>
+        <div id="adminData" class="admin-data" aria-live="polite"></div>
       </form>
     </dialog>
     <script type="module" src="/app.js"></script>
