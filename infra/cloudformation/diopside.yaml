@@ -539,6 +539,9 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                   - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
                 Resource:
                   - Fn::GetAtt: [AppTable, Arn]
                   - Fn::Sub: "${AppTable.Arn}/index/*"
@@ -597,6 +600,16 @@ Resources:
             Ref: ProcessedBucket
           DIOPSIDE_PUBLIC_DATA_BUCKET:
             Ref: PublicDataBucket
+          DIOPSIDE_METADATA_QUEUE_URL:
+            Ref: MetadataQueue
+          DIOPSIDE_CHAT_QUEUE_URL:
+            Ref: ChatQueue
+          DIOPSIDE_NORMALIZE_QUEUE_URL:
+            Ref: NormalizeQueue
+          DIOPSIDE_AGGREGATE_QUEUE_URL:
+            Ref: AggregateQueue
+          DIOPSIDE_STATIC_EXPORT_QUEUE_URL:
+            Ref: StaticExportQueue
 
   MetadataQueueMapping:
     Type: AWS::Lambda::EventSourceMapping
