@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 from diopside_core import MemoryRepository
 from static_exporter.handler import export_from_fixture, export_public_data
@@ -46,3 +47,4 @@ def test_export_public_data_from_repository(tmp_path):
     assert detail["chat_summary"]["wordcloud_url"] == "/data/v/unit/public/artifacts/wordcloud/vid001.svg"
     assert detail["timestamps"][0]["offset_sec"] == 30
     assert (tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg").exists()
+    subprocess.run(["node", "tools/check-public-contract.mjs", str(tmp_path)], check=True)

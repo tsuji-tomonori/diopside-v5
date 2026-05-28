@@ -14,11 +14,14 @@ def summarize_chat_messages(messages: list[dict[str, Any]], bucket_sec: int = 60
     emoji_count = sum(1 for msg in messages for run in msg.get("message_runs", []) if run.get("type") == "emoji")
     terms = Counter()
     timeline: Counter[int] = Counter()
+    term_timeline: dict[str, Counter[int]] = {}
     for msg in messages:
         offset = int(msg.get("video_offset_time_msec") or 0) // 1000
-        timeline[(offset // bucket_sec) * bucket_sec] += 1
+        bucket_offset = (offset // bucket_sec) * bucket_sec
+        timeline[bucket_offset] += 1
         for term in _terms(msg.get("message_text", "")):
             terms[term] += 1
+            term_timeline.setdefault(term, Counter())[bucket_offset] += 1
     return {
         "message_count": len(messages),
         "unique_author_count": len(authors),
@@ -26,6 +29,10 @@ def summarize_chat_messages(messages: list[dict[str, Any]], bucket_sec: int = 60
         "emoji_count": emoji_count,
         "timeline_buckets": [{"offset_sec": offset, "message_count": count} for offset, count in sorted(timeline.items())],
         "top_terms": [{"term": term, "score": count} for term, count in terms.most_common(40)],
+        "term_timeline": {
+            term: [{"offset_sec": offset, "count": count} for offset, count in sorted(bucket_counts.items())]
+            for term, bucket_counts in sorted(term_timeline.items())
+        },
     }
 
 
@@ -42,12 +49,30 @@ def build_timestamp_candidates(summary: dict[str, Any], description: str = "") -
         if bucket.get("message_count", 0) <= 0:
             continue
         candidates.append({"offset_sec": bucket["offset_sec"], "label": "チャット盛り上がり候補", "score": min(0.99, bucket["message_count"] / max(summary.get("message_count", 1), 1) * 10), "source": "chat_burst", "evidence_terms": top_terms[:3], "message_count": bucket["message_count"]})
-    seen: set[int] = set()
+    for term in top_terms[:10]:
+        term_buckets = sorted(summary.get("term_timeline", {}).get(term, []), key=lambda item: item.get("count", 0), reverse=True)
+        if not term_buckets:
+            continue
+        strongest = term_buckets[0]
+        total = sum(item.get("count", 0) for item in term_buckets)
+        if total >= 3 and strongest.get("count", 0) / max(total, 1) >= 0.5:
+            candidates.append(
+                {
+                    "offset_sec": strongest["offset_sec"],
+                    "label": f"{term} のキーワードスパイク",
+                    "score": min(0.95, 0.5 + strongest["count"] / max(summary.get("message_count", 1), 1)),
+                    "source": "keyword_spike",
+                    "evidence_terms": [term],
+                    "message_count": strongest["count"],
+                }
+            )
+    seen: set[tuple[int, str]] = set()
     unique: list[dict[str, Any]] = []
     for candidate in sorted(candidates, key=lambda item: (item["offset_sec"], -item["score"])):
-        if candidate["offset_sec"] not in seen:
+        identity = (candidate["offset_sec"], candidate["source"])
+        if identity not in seen:
             unique.append(candidate)
-            seen.add(candidate["offset_sec"])
+            seen.add(identity)
     return unique[:20]
 
 

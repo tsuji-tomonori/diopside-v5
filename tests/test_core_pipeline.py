@@ -1,4 +1,8 @@
-from diopside_core import MemoryRepository, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration
+import json
+
+import pytest
+
+from diopside_core import MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 from static_exporter.pipeline import chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts
 
 
@@ -17,6 +21,33 @@ def test_youtube_video_normalization():
     assert video["video_id"] == "abc123"
     assert video["duration_sec"] == 3723
     assert video["live_state"] == "archived"
+
+
+def test_youtube_client_uses_http_mock(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return json.dumps({"items": [{"id": "abc123"}]}).encode("utf-8")
+
+    requested = {}
+
+    def fake_urlopen(url, timeout):
+        requested["url"] = url
+        requested["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = YouTubeClient(api_key="test-key", base_url="https://example.test/youtube/v3")
+    result = client.videos(["abc123"])
+    assert result["items"][0]["id"] == "abc123"
+    assert "videos?" in requested["url"]
+    assert "key=test-key" in requested["url"]
+    assert requested["timeout"] == 20
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
@@ -111,6 +142,19 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
 
 
+def test_timestamp_candidates_include_keyword_spike():
+    summary = summarize_chat_messages(
+        [
+            {"message_text": "ありがとう", "video_offset_time_msec": 60000, "message_runs": []},
+            {"message_text": "ありがとう", "video_offset_time_msec": 61000, "message_runs": []},
+            {"message_text": "ありがとう", "video_offset_time_msec": 62000, "message_runs": []},
+            {"message_text": "別語", "video_offset_time_msec": 180000, "message_runs": []},
+        ]
+    )
+    candidates = build_timestamp_candidates(summary)
+    assert any(candidate["source"] == "keyword_spike" and candidate["evidence_terms"] == ["ありがとう"] for candidate in candidates)
+
+
 def test_repository_job_idempotency_and_lists():
     repo = MemoryRepository()
     repo.put_item({"item_type": "Channel", "pk": "CHANNEL#ch", "sk": "META", "channel_id": "ch", "uploads_playlist_id": "uploads"})
@@ -131,10 +175,8 @@ def test_failed_job_writes_debug_artifact(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
     repo = MemoryRepository()
     created, _ = repo.create_job("unknown", {}, "failed-job")
-    try:
+    with pytest.raises(ValueError):
         dispatch_job(repo, {"job_type": "unknown", "job_id": created["job_id"]})
-    except ValueError:
-        pass
     job = repo.get_job(created["job_id"])
     assert job["derived_state"] == "failed"
     assert job["events"][-1]["details"]["debug_uri"].endswith(".json")

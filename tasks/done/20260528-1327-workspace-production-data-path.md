@@ -66,6 +66,9 @@
 - 2026-05-28 15:13: worker Lambda の SQS consume 権限と queue URL env を補強し、CloudFormation parse test を追加した。
 - 追加作業レポート: `reports/working/20260528-1513-cloudformation-worker-permissions.md`
 - 追加検証: `npm test` pass、`npm run verify` pass、`git diff --check` pass。
+- 2026-05-28 15:17: YouTube HTTP mock、exporter output contract check、timestamp keyword spike を追加補強した。
+- 追加作業レポート: `reports/working/20260528-1517-contract-youtube-timestamp-tests.md`
+- 追加検証: `npm test` pass、`npm run verify` pass、`git diff --check` pass。
 
 ## 検証計画
 
