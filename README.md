@@ -149,9 +149,22 @@ CloudFront domain を指定して smoke を実行します。
 DIOPSIDE_E2E_BASE_URL=https://<cloudfront-domain> npm run e2e:local
 ```
 
+PR コメントで挙げた deploy 後確認をまとめて行う場合は、次の smoke を使います。public data は一時 directory に取得され、`tools/check-public-contract.mjs` で exporter 出力と同じ契約を検証します。管理 token/CSRF を渡した場合は `static-export` job 起動、job 一覧、job 詳細、quota usage も確認します。
+
+```sh
+DIOPSIDE_E2E_BASE_URL=https://<cloudfront-domain> \
+DIOPSIDE_ADMIN_TOKEN=<token> \
+DIOPSIDE_ADMIN_CSRF_TOKEN=<csrf-token> \
+npm run smoke:post-deploy
+```
+
+管理 API を確認しない場合は `DIOPSIDE_ADMIN_TOKEN` と `DIOPSIDE_ADMIN_CSRF_TOKEN` を省略できます。
+
 確認観点:
 
 - `/` が表示され、検索、tag filter、詳細、timestamp、wordcloud が読める。
 - `/api/health`、`/api/videos`、`/api/videos/{video_id}` が CloudFront 経由で読める。
+- `/data/latest-manifest.json` と versioned public JSON が contract を満たす。
 - 管理画面から token/CSRF を入力し、`static-export` や `metadata-sync` job を起動できる。
 - `GET /api/admin/jobs` と `GET /api/admin/jobs/{job_id}` で状態と append-only event を確認できる。
+- `GET /api/admin/quota-usage` が quota usage schema を返す。
