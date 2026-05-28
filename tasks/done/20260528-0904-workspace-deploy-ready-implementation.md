@@ -69,4 +69,4 @@
 
 ## 状態
 
-implemented_pending_pr
+done
