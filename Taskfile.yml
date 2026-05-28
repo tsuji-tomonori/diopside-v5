@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  precommit:
+    desc: Install pre-commit hook
+    cmds:
+      - pre-commit install

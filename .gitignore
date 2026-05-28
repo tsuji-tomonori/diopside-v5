@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+cdk.out/
+infra/lambda-dist/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Environment files
+.env
+.env.*
+.local-data/
+.eslintcache*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# workspace
+.workspace
+.codex/
+.codex.bak-*
+.worktrees/
+
+# Generated OpenAPI JSON is served at runtime and is not committed.
+docs/generated/openapi.json
