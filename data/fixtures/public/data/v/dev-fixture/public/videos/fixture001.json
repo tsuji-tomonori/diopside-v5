@@ -1,0 +1,32 @@
+{
+  "schema_version": "public-video-detail/v1",
+  "video": {
+    "video_id": "fixture001",
+    "youtube_url": "https://www.youtube.com/watch?v=fixture001",
+    "title": "ローカル検証用アーカイブ",
+    "description": "ローカル検証用の公開 JSON fixture。",
+    "published_at": "2026-05-27T12:00:00Z",
+    "live_details": {
+      "scheduled_start_time": "2026-05-27T11:00:00Z",
+      "actual_start_time": "2026-05-27T11:03:00Z",
+      "actual_end_time": "2026-05-27T12:33:00Z"
+    },
+    "statistics": {
+      "view_count": 12345,
+      "like_count": 678
+    },
+    "tags": ["雑談", "アーカイブ"]
+  },
+  "chat_summary": {
+    "message_count": 1000,
+    "wordcloud_url": "/wordcloud/fixture001.png",
+    "top_terms": [
+      {"term": "ありがとう", "score": 120.5},
+      {"term": "かわいい", "score": 98.0}
+    ]
+  },
+  "timestamps": [
+    {"offset_sec": 120, "label": "開始あいさつ", "source": "description", "confidence": 1.0},
+    {"offset_sec": 1800, "label": "盛り上がり候補", "source": "chat_burst", "confidence": 0.72}
+  ]
+}

@@ -1,0 +1,376 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: diopside low-cost serverless stack
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: dev
+    AllowedPattern: "^[a-z0-9-]+$"
+  AdminToken:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  AdminCsrfToken:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+  LambdaArtifactBucket:
+    Type: String
+    Description: S3 bucket containing Lambda zip artifacts.
+  ApiCodeS3Key:
+    Type: String
+    Default: api.zip
+  StaticExporterCodeS3Key:
+    Type: String
+    Default: static-exporter.zip
+
+Resources:
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  PublicDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-public-exports
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: raw-metadata-transition
+            Status: Enabled
+            Prefix: youtube/raw/metadata/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 180
+            ExpirationInDays: 365
+          - Id: failed-debug-expire
+            Status: Enabled
+            Prefix: failed/
+            ExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ProcessedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ExportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  AppTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+        - AttributeName: gsi2pk
+          AttributeType: S
+        - AttributeName: gsi2sk
+          AttributeType: S
+        - AttributeName: gsi3pk
+          AttributeType: S
+        - AttributeName: gsi3sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: by_public_date
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: by_tag
+          KeySchema:
+            - AttributeName: gsi2pk
+              KeyType: HASH
+            - AttributeName: gsi2sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: by_work_queue
+          KeySchema:
+            - AttributeName: gsi3pk
+              KeyType: HASH
+            - AttributeName: gsi3sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  MetadataQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt: [MetadataDlq, Arn]
+        maxReceiveCount: 3
+  MetadataDlq:
+    Type: AWS::SQS::Queue
+
+  ChatQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt: [ChatDlq, Arn]
+        maxReceiveCount: 3
+  ChatDlq:
+    Type: AWS::SQS::Queue
+
+  NormalizeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt: [NormalizeDlq, Arn]
+        maxReceiveCount: 3
+  NormalizeDlq:
+    Type: AWS::SQS::Queue
+
+  AggregateQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt: [AggregateDlq, Arn]
+        maxReceiveCount: 3
+  AggregateDlq:
+    Type: AWS::SQS::Queue
+
+  StaticExportQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt: [StaticExportDlq, Arn]
+        maxReceiveCount: 3
+  StaticExportDlq:
+    Type: AWS::SQS::Queue
+
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: diopside-api-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource:
+                  - Fn::GetAtt: [MetadataQueue, Arn]
+                  - Fn::GetAtt: [ChatQueue, Arn]
+                  - Fn::GetAtt: [NormalizeQueue, Arn]
+                  - Fn::GetAtt: [AggregateQueue, Arn]
+                  - Fn::GetAtt: [StaticExportQueue, Arn]
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - Fn::Sub: "${PublicDataBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - Fn::GetAtt: [AppTable, Arn]
+                  - Fn::Sub: "${AppTable.Arn}/index/*"
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: diopside_api.handler.lambda_handler
+      Role:
+        Fn::GetAtt: [ApiRole, Arn]
+      Timeout: 30
+      MemorySize: 512
+      Code:
+        S3Bucket:
+          Ref: LambdaArtifactBucket
+        S3Key:
+          Ref: ApiCodeS3Key
+      Environment:
+        Variables:
+          DIOPSIDE_VERSION:
+            Ref: EnvName
+          DIOPSIDE_TABLE_NAME:
+            Ref: AppTable
+          DIOPSIDE_ADMIN_TOKEN:
+            Ref: AdminToken
+          DIOPSIDE_ADMIN_CSRF_TOKEN:
+            Ref: AdminCsrfToken
+          DIOPSIDE_METADATA_QUEUE_URL:
+            Ref: MetadataQueue
+          DIOPSIDE_CHAT_QUEUE_URL:
+            Ref: ChatQueue
+          DIOPSIDE_NORMALIZE_QUEUE_URL:
+            Ref: NormalizeQueue
+          DIOPSIDE_AGGREGATE_QUEUE_URL:
+            Ref: AggregateQueue
+          DIOPSIDE_STATIC_EXPORT_QUEUE_URL:
+            Ref: StaticExportQueue
+          DIOPSIDE_PUBLIC_DATA_BUCKET:
+            Ref: PublicDataBucket
+          DIOPSIDE_PUBLIC_DATA_PREFIX: data
+
+  ApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn:
+        Ref: ApiFunction
+
+  ApiFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName:
+        Ref: ApiFunction
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  StaticExporterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: diopside-static-exporter-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - Fn::GetAtt: [AppTable, Arn]
+                  - Fn::Sub: "${AppTable.Arn}/index/*"
+                  - Fn::Sub: "${PublicDataBucket.Arn}/*"
+
+  StaticExporterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: static_exporter.handler.lambda_handler
+      Role:
+        Fn::GetAtt: [StaticExporterRole, Arn]
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket:
+          Ref: LambdaArtifactBucket
+        S3Key:
+          Ref: StaticExporterCodeS3Key
+      Environment:
+        Variables:
+          DIOPSIDE_TABLE_NAME:
+            Ref: AppTable
+          DIOPSIDE_PUBLIC_DATA_BUCKET:
+            Ref: PublicDataBucket
+          DIOPSIDE_PUBLIC_DATA_PREFIX: data
+
+Outputs:
+  ApiFunctionUrl:
+    Value:
+      Fn::GetAtt: [ApiFunctionUrl, FunctionUrl]
+  WebBucketName:
+    Value:
+      Ref: WebBucket
+  PublicDataBucketName:
+    Value:
+      Ref: PublicDataBucket
+  AppTableName:
+    Value:
+      Ref: AppTable
+  StaticExporterFunctionName:
+    Value:
+      Ref: StaticExporterFunction

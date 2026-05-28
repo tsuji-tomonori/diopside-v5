@@ -1,0 +1,21 @@
+{
+  "schema_version": "public-video-detail/v1",
+  "video": {
+    "video_id": "fixture002",
+    "youtube_url": "https://www.youtube.com/watch?v=fixture002",
+    "title": "検索とタグ確認用アーカイブ",
+    "description": "検索とタグ表示のローカル検証用 fixture。",
+    "published_at": "2026-05-20T12:00:00Z",
+    "live_details": {},
+    "statistics": {},
+    "tags": ["歌枠"]
+  },
+  "chat_summary": {
+    "message_count": 0,
+    "wordcloud_url": null,
+    "top_terms": []
+  },
+  "timestamps": [
+    {"offset_sec": 60, "label": "候補", "source": "chat_burst", "confidence": 0.65}
+  ]
+}

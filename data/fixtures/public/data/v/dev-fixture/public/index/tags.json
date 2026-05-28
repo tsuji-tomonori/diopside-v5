@@ -1,0 +1,9 @@
+{
+  "schema_version": "public-tag-list/v1",
+  "generated_at": "2026-05-28T00:00:00Z",
+  "items": [
+    {"tag_id": "chat", "label": "雑談", "video_count": 1, "category": "format"},
+    {"tag_id": "song", "label": "歌枠", "video_count": 1, "category": "music"},
+    {"tag_id": "archive", "label": "アーカイブ", "video_count": 1, "category": "system"}
+  ]
+}

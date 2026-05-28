@@ -1,0 +1,17 @@
+{
+  "name": "diopside-v5",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build-web.mjs",
+    "test": "node tools/check-public-contract.mjs && PYTHONPATH=apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests",
+    "package:deploy": "python3 tools/package_deploy.py",
+    "e2e:local": "node tools/run-local-e2e.mjs",
+    "verify": "npm test && npm run build && npm run package:deploy && npm run e2e:local"
+  },
+  "engines": {
+    "node": ">=22",
+    "python": ">=3.13"
+  }
+}
