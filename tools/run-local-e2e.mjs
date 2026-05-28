@@ -20,6 +20,7 @@ async function runLocal() {
       ...process.env,
       PYTHONPATH: "apps/shared/src:apps/api/src",
       DIOPSIDE_PUBLIC_DATA_DIR: "data/fixtures/public",
+      DIOPSIDE_LOCAL_FIXTURE_MODE: "true",
       DIOPSIDE_ADMIN_TOKEN: "local-secret",
       DIOPSIDE_ADMIN_CSRF_TOKEN: "local-csrf",
       DIOPSIDE_ALLOW_DRY_RUN_JOBS: "true"

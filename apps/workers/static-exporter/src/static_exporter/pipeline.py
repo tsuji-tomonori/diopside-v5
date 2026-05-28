@@ -116,7 +116,7 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video_id = params["video_id"]
-    chunks = [item for item in getattr(repo, "items", {}).values() if item.get("item_type") == "ChatMessageChunkManifest" and item.get("video_id") == video_id]
+    chunks = repo.list_chat_chunks(video_id)
     messages = [message for chunk in chunks for message in chunk.get("messages", [])]
     summary = summarize_chat_messages(messages)
     repo.put_chat_aggregate(video_id, summary)

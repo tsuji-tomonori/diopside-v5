@@ -101,3 +101,19 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     assert list((tmp_path / "raw/youtube").rglob("*.json"))
     assert list((tmp_path / "processed/chat-normalized").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
+
+
+def test_repository_job_idempotency_and_lists():
+    repo = MemoryRepository()
+    repo.put_item({"item_type": "Channel", "pk": "CHANNEL#ch", "sk": "META", "channel_id": "ch", "uploads_playlist_id": "uploads"})
+    repo.record_quota_usage("videos.list", 1, {"video_count": 1})
+    first, dedup_first = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
+    second, dedup_second = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
+    repo.append_job_event(first["job_id"], "completed", {"saved_count": 0})
+
+    assert dedup_first is False
+    assert dedup_second is True
+    assert second["job_id"] == first["job_id"]
+    assert repo.get_job(first["job_id"])["derived_state"] == "succeeded"
+    assert repo.list_channels()[0]["channel_id"] == "ch"
+    assert repo.list_quota_usage()[0]["method"] == "videos.list"

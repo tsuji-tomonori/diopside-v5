@@ -360,6 +360,12 @@ def _load_manifest_index(name: str) -> dict[str, Any]:
 
 
 def _load_json(relative_path: str) -> dict[str, Any]:
+    if not _local_fixture_mode_enabled():
+        raise ApiError(
+            503,
+            "PUBLIC_DATA_REPOSITORY_NOT_CONFIGURED",
+            "公開データ repository が未設定です。DIOPSIDE_TABLE_NAME または明示的な local fixture mode が必要です。",
+        )
     path = PUBLIC_DATA_DIR / relative_path
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -396,17 +402,15 @@ def _public_video_item(video: dict[str, Any]) -> dict[str, Any]:
 
 
 def _list_channels() -> list[dict[str, Any]]:
-    repo = _repository()
-    items = getattr(repo, "items", {}).values() if hasattr(repo, "items") else []
-    return [item for item in items if item.get("item_type") == "Channel"]
+    return _repository().list_channels()
 
 
 def _list_quota_usage() -> list[dict[str, Any]]:
-    repo = _repository()
-    items = getattr(repo, "items", {}).values() if hasattr(repo, "items") else []
-    usage = [item for item in items if item.get("item_type") == "QuotaUsage"]
-    usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
-    return usage[:100]
+    return _repository().list_quota_usage(100)
+
+
+def _local_fixture_mode_enabled() -> bool:
+    return os.environ.get("DIOPSIDE_LOCAL_FIXTURE_MODE") == "true" or "DIOPSIDE_PUBLIC_DATA_DIR" in os.environ
 
 
 def _load_json_from_s3(relative_path: str) -> dict[str, Any]:

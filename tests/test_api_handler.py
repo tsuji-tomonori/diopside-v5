@@ -1,6 +1,8 @@
 import json
 import os
 
+os.environ.setdefault("DIOPSIDE_LOCAL_FIXTURE_MODE", "true")
+
 from diopside_api.handler import lambda_handler
 
 

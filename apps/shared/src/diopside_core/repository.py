@@ -75,6 +75,9 @@ class Repository(Protocol):
     def get_job(self, job_id: str) -> dict[str, Any] | None: ...
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]: ...
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]: ...
+    def list_channels(self) -> list[dict[str, Any]]: ...
+    def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
 @dataclass
@@ -191,6 +194,21 @@ class MemoryRepository:
         stamp = now_iso()
         return self.put_item({"item_type": "JobEvent", "pk": f"JOB#{job_id}", "sk": f"EVENT#{stamp}#{uuid.uuid4().hex}", "job_id": job_id, "event_type": event_type, "details": details or {}, "created_at": stamp})
 
+    def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
+        chunks = [item for (pk, _), item in self.items.items() if pk == f"VIDEO#{video_id}" and item.get("item_type") == "ChatMessageChunkManifest"]
+        chunks.sort(key=lambda item: item.get("sk", ""))
+        return deepcopy(chunks)
+
+    def list_channels(self) -> list[dict[str, Any]]:
+        channels = [item for item in self.items.values() if item.get("item_type") == "Channel"]
+        channels.sort(key=lambda item: item.get("channel_id", ""))
+        return deepcopy(channels)
+
+    def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
+        usage = [item for item in self.items.values() if item.get("item_type") == "QuotaUsage"]
+        usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        return deepcopy(usage[:limit])
+
 
 class DynamoRepository(MemoryRepository):
     """DynamoDB adapter with a memory-compatible surface for tests and Lambda.
@@ -216,6 +234,45 @@ class DynamoRepository(MemoryRepository):
         item = self.table.get_item(Key={"pk": pk, "sk": sk}).get("Item")
         return deepcopy(item) if item else None
 
+    def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]:
+        job_id = stable_id("job", f"{job_type}:{idempotency_key}")
+        existing = self.get_job(job_id)
+        if existing:
+            return existing, True
+        stamp = now_iso()
+        item = {
+            "item_type": "Job",
+            "pk": f"JOB#{job_id}",
+            "sk": "META",
+            "job_id": job_id,
+            "job_type": job_type,
+            "idempotency_key": idempotency_key,
+            "payload": payload,
+            "derived_state": "queued",
+            "created_at": stamp,
+            "updated_at": stamp,
+            "gsi3pk": f"JOB#{job_type}",
+            "gsi3sk": stamp,
+        }
+        self.put_item(item)
+        self.append_job_event(job_id, "queued", {"job_type": job_type})
+        return self.get_job(job_id) or item, False
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        job = self.get_item(f"JOB#{job_id}", "META")
+        if not job:
+            return None
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
+        events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
+        events.sort(key=lambda item: item["created_at"])
+        job["events"] = deepcopy(events)
+        if events:
+            terminal = {"completed": "succeeded", "failed": "failed", "cancelled": "cancelled"}
+            job["derived_state"] = terminal.get(events[-1]["event_type"], events[-1]["event_type"])
+        return job
+
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]:
         response = self.table.scan(Limit=limit * 2)
         videos = [item for item in response.get("Items", []) if item.get("item_type") == "Video" and item.get("public", True)]
@@ -224,7 +281,8 @@ class DynamoRepository(MemoryRepository):
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
         response = self.table.scan(Limit=limit * 5)
-        jobs = [item for item in response.get("Items", []) if item.get("item_type") == "Job"]
+        jobs = [self.get_job(item["job_id"]) for item in response.get("Items", []) if item.get("item_type") == "Job"]
+        jobs = [job for job in jobs if job]
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return deepcopy(jobs[:limit])
 
@@ -233,3 +291,23 @@ class DynamoRepository(MemoryRepository):
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
         response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VIDEO#{video_id}"))
         return [item for item in response.get("Items", []) if item.get("item_type") == "Artifact"]
+
+    def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VIDEO#{video_id}"))
+        chunks = [item for item in response.get("Items", []) if item.get("item_type") == "ChatMessageChunkManifest"]
+        chunks.sort(key=lambda item: item.get("sk", ""))
+        return deepcopy(chunks)
+
+    def list_channels(self) -> list[dict[str, Any]]:
+        response = self.table.scan(Limit=1000)
+        channels = [item for item in response.get("Items", []) if item.get("item_type") == "Channel"]
+        channels.sort(key=lambda item: item.get("channel_id", ""))
+        return deepcopy(channels)
+
+    def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
+        response = self.table.scan(Limit=limit * 5)
+        usage = [item for item in response.get("Items", []) if item.get("item_type") == "QuotaUsage"]
+        usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        return deepcopy(usage[:limit])

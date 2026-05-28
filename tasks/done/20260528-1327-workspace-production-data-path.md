@@ -55,6 +55,12 @@
 
 - https://github.com/tsuji-tomonori/diopside-v5/pull/2
 
+## 追加監査・補強
+
+- 2026-05-28 15:04: DynamoDB 実行時の repository surface と fixture fallback 明示性を再監査し、追加修正した。
+- 追加作業レポート: `reports/working/20260528-1504-production-path-audit-repair.md`
+- 追加検証: `npm test` pass、`npm run verify` pass、`git diff --check` pass。
+
 ## 検証計画
 
 - `npm test`
