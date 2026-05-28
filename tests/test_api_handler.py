@@ -53,6 +53,36 @@ def test_admin_job_dry_run(monkeypatch):
     assert status == 200
     assert body["job_type"] == "static_export"
     assert body["dry_run"] is True
+    status, duplicate = call(
+        "POST",
+        "/api/admin/jobs/static-export",
+        body={"idempotency_key": "it-1", "scope": "all"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 200
+    assert duplicate["job_id"] == body["job_id"]
+    assert duplicate["deduplicated"] is True
+    status, detail = call(
+        "GET",
+        f"/api/admin/jobs/{body['job_id']}",
+        headers={"authorization": "Bearer secret"},
+    )
+    assert status == 200
+    assert detail["item"]["events"][0]["event_type"] == "queued"
     os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
     os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
     os.environ.pop("DIOPSIDE_ALLOW_DRY_RUN_JOBS", None)
+
+
+def test_admin_job_body_validation(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_ALLOW_DRY_RUN_JOBS", "true")
+    status, body = call(
+        "POST",
+        "/api/admin/jobs/chat-collect",
+        body={"idempotency_key": "it-2"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 400
+    assert body["code"] == "INVALID_REQUEST"

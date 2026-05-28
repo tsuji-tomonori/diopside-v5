@@ -56,6 +56,135 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
+  CloudFrontOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name:
+          Fn::Sub: "diopside-${EnvName}-s3-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ApiNoStoreCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name:
+          Fn::Sub: "diopside-${EnvName}-api-no-store"
+        DefaultTTL: 0
+        MaxTTL: 0
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: all
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Authorization
+              - X-CSRF-Token
+              - X-Idempotency-Key
+          QueryStringsConfig:
+            QueryStringBehavior: all
+
+  ManifestShortCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name:
+          Fn::Sub: "diopside-${EnvName}-manifest-short"
+        DefaultTTL: 60
+        MaxTTL: 300
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  ImmutableCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name:
+          Fn::Sub: "diopside-${EnvName}-immutable"
+        DefaultTTL: 31536000
+        MaxTTL: 31536000
+        MinTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name:
+        Fn::Sub: "diopside-${EnvName}-spa-rewrite"
+      AutoPublish: true
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          if (request.uri === "/" || (!request.uri.includes(".") && !request.uri.startsWith("/api/") && !request.uri.startsWith("/data/"))) {
+            request.uri = "/index.html";
+          }
+          return request;
+        }
+      FunctionConfig:
+        Comment: Rewrite SPA routes to index.html
+        Runtime: cloudfront-js-2.0
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadWeb
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource:
+              Fn::Sub: "${WebBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn:
+                  Fn::Sub: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  PublicDataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: PublicDataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadPublicData
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource:
+              Fn::Sub: "${PublicDataBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn:
+                  Fn::Sub: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
   RawBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -308,6 +437,81 @@ Resources:
       Principal: "*"
       FunctionUrlAuthType: NONE
 
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        DefaultRootObject: index.html
+        Origins:
+          - Id: web-s3
+            DomainName:
+              Fn::GetAtt: [WebBucket, RegionalDomainName]
+            OriginAccessControlId:
+              Ref: CloudFrontOac
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: public-data-s3
+            DomainName:
+              Fn::GetAtt: [PublicDataBucket, RegionalDomainName]
+            OriginAccessControlId:
+              Ref: CloudFrontOac
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api-function-url
+            DomainName:
+              Fn::Select:
+                - 2
+                - Fn::Split:
+                    - "/"
+                    - Fn::GetAtt: [ApiFunctionUrl, FunctionUrl]
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+        DefaultCacheBehavior:
+          TargetOriginId: web-s3
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId:
+            Ref: ImmutableCachePolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN:
+                Fn::GetAtt: [SpaRewriteFunction, FunctionARN]
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api-function-url
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD, OPTIONS]
+            CachePolicyId:
+              Ref: ApiNoStoreCachePolicy
+            OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+          - PathPattern: /data/latest-manifest.json
+            TargetOriginId: public-data-s3
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId:
+              Ref: ManifestShortCachePolicy
+          - PathPattern: /data/v/*
+            TargetOriginId: public-data-s3
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId:
+              Ref: ImmutableCachePolicy
+          - PathPattern: /assets/*
+            TargetOriginId: web-s3
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId:
+              Ref: ImmutableCachePolicy
+
   StaticExporterRole:
     Type: AWS::IAM::Role
     Properties:
@@ -329,12 +533,23 @@ Resources:
                 Action:
                   - dynamodb:GetItem
                   - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
                   - s3:PutObject
                   - s3:GetObject
+                  - sqs:SendMessage
                 Resource:
                   - Fn::GetAtt: [AppTable, Arn]
                   - Fn::Sub: "${AppTable.Arn}/index/*"
                   - Fn::Sub: "${PublicDataBucket.Arn}/*"
+                  - Fn::Sub: "${RawBucket.Arn}/*"
+                  - Fn::Sub: "${ProcessedBucket.Arn}/*"
+                  - Fn::GetAtt: [MetadataQueue, Arn]
+                  - Fn::GetAtt: [ChatQueue, Arn]
+                  - Fn::GetAtt: [NormalizeQueue, Arn]
+                  - Fn::GetAtt: [AggregateQueue, Arn]
+                  - Fn::GetAtt: [StaticExportQueue, Arn]
 
   StaticExporterFunction:
     Type: AWS::Lambda::Function
@@ -358,7 +573,79 @@ Resources:
             Ref: PublicDataBucket
           DIOPSIDE_PUBLIC_DATA_PREFIX: data
 
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: static_exporter.pipeline.lambda_handler
+      Role:
+        Fn::GetAtt: [StaticExporterRole, Arn]
+      Timeout: 300
+      MemorySize: 512
+      Code:
+        S3Bucket:
+          Ref: LambdaArtifactBucket
+        S3Key:
+          Ref: StaticExporterCodeS3Key
+      Environment:
+        Variables:
+          DIOPSIDE_TABLE_NAME:
+            Ref: AppTable
+          DIOPSIDE_RAW_BUCKET:
+            Ref: RawBucket
+          DIOPSIDE_PROCESSED_BUCKET:
+            Ref: ProcessedBucket
+          DIOPSIDE_PUBLIC_DATA_BUCKET:
+            Ref: PublicDataBucket
+
+  MetadataQueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [MetadataQueue, Arn]
+      FunctionName:
+        Ref: WorkerFunction
+      BatchSize: 1
+  ChatQueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [ChatQueue, Arn]
+      FunctionName:
+        Ref: WorkerFunction
+      BatchSize: 1
+  NormalizeQueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [NormalizeQueue, Arn]
+      FunctionName:
+        Ref: WorkerFunction
+      BatchSize: 1
+  AggregateQueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [AggregateQueue, Arn]
+      FunctionName:
+        Ref: WorkerFunction
+      BatchSize: 1
+  StaticExportQueueMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [StaticExportQueue, Arn]
+      FunctionName:
+        Ref: StaticExporterFunction
+      BatchSize: 1
+
 Outputs:
+  CloudFrontDomainName:
+    Value:
+      Fn::GetAtt: [CloudFrontDistribution, DomainName]
+  ApiEndpoint:
+    Value:
+      Fn::Sub: "https://${CloudFrontDistribution.DomainName}/api"
   ApiFunctionUrl:
     Value:
       Fn::GetAtt: [ApiFunctionUrl, FunctionUrl]
@@ -374,3 +661,18 @@ Outputs:
   StaticExporterFunctionName:
     Value:
       Ref: StaticExporterFunction
+  MetadataQueueUrl:
+    Value:
+      Ref: MetadataQueue
+  ChatQueueUrl:
+    Value:
+      Ref: ChatQueue
+  NormalizeQueueUrl:
+    Value:
+      Ref: NormalizeQueue
+  AggregateQueueUrl:
+    Value:
+      Ref: AggregateQueue
+  StaticExportQueueUrl:
+    Value:
+      Ref: StaticExportQueue

@@ -18,6 +18,7 @@
     <main>
       <section class="search-band" aria-label="検索">
         <input id="searchInput" type="search" placeholder="タイトル・タグで検索" autocomplete="off">
+        <div id="recentSearches" class="chips compact" aria-label="最近の検索"></div>
         <div id="tagFilters" class="chips" aria-label="タグ"></div>
       </section>
       <section class="content-grid">
@@ -36,9 +37,56 @@
     </main>
     <nav class="bottom-nav" aria-label="主要操作">
       <button type="button" data-action="latest">最新</button>
-      <button type="button" data-action="random">ランダム</button>
+      <button type="button" data-action="filter">絞込</button>
       <button type="button" data-action="clear">解除</button>
+      <button type="button" data-action="admin">管理</button>
     </nav>
+    <dialog id="filterSheet" class="bottom-sheet">
+      <form id="filterForm" method="dialog">
+        <div class="sheet-head">
+          <h2>絞り込み</h2>
+          <button type="submit" aria-label="閉じる">閉じる</button>
+        </div>
+        <label>年 <input name="year" inputmode="numeric" placeholder="2026"></label>
+        <label>長さ
+          <select name="duration">
+            <option value="">すべて</option>
+            <option value="short">30分未満</option>
+            <option value="medium">30分以上2時間未満</option>
+            <option value="long">2時間以上</option>
+          </select>
+        </label>
+        <label>並び順
+          <select name="sort">
+            <option value="published_desc">公開日が新しい</option>
+            <option value="duration_desc">長い順</option>
+          </select>
+        </label>
+      </form>
+    </dialog>
+    <dialog id="adminPanel" class="bottom-sheet">
+      <form id="adminJobForm">
+        <div class="sheet-head">
+          <h2>管理 job</h2>
+          <button type="button" onclick="document.querySelector('#adminPanel').close()" aria-label="閉じる">閉じる</button>
+        </div>
+        <label>Token <input name="token" type="password" autocomplete="off"></label>
+        <label>CSRF <input name="csrf" type="password" autocomplete="off"></label>
+        <label>Job
+          <select name="jobType">
+            <option value="metadata-sync">metadata-sync</option>
+            <option value="live-status-scan">live-status-scan</option>
+            <option value="chat-collect">chat-collect</option>
+            <option value="chat-normalize">chat-normalize</option>
+            <option value="rebuild-artifacts">rebuild-artifacts</option>
+            <option value="static-export">static-export</option>
+          </select>
+        </label>
+        <label>video_id <input name="videoId" autocomplete="off"></label>
+        <button type="submit">起動</button>
+        <p id="adminResult" class="admin-result" aria-live="polite"></p>
+      </form>
+    </dialog>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

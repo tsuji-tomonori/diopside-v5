@@ -18,7 +18,7 @@ async function runLocal() {
   const api = spawn("python3", ["-m", "diopside_api.local_server", "--port", "8787"], {
     env: {
       ...process.env,
-      PYTHONPATH: "apps/api/src",
+      PYTHONPATH: "apps/shared/src:apps/api/src",
       DIOPSIDE_PUBLIC_DATA_DIR: "data/fixtures/public",
       DIOPSIDE_ADMIN_TOKEN: "local-secret",
       DIOPSIDE_ADMIN_CSRF_TOKEN: "local-csrf",

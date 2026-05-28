@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+from typing import Any
+
+from diopside_core import (
+    DynamoRepository,
+    MemoryRepository,
+    YouTubeClient,
+    build_timestamp_candidates,
+    normalize_live_chat_items,
+    normalize_replay_actions,
+    normalize_video_resource,
+    now_iso,
+    summarize_chat_messages,
+)
+
+
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    repo = _repository()
+    records = event.get("Records")
+    if records:
+        results = []
+        for record in records:
+            body = json.loads(record.get("body", "{}"))
+            results.append(dispatch_job(repo, body))
+        return {"status": "succeeded", "items": results}
+    return dispatch_job(repo, event)
+
+
+def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    job_type = payload.get("job_type")
+    job_id = payload.get("job_id", "manual")
+    repo.append_job_event(job_id, "started", {"job_type": job_type})
+    try:
+        if job_type == "metadata_sync":
+            result = metadata_sync(repo, payload.get("input", payload))
+        elif job_type == "live_status_scan":
+            result = live_status_scan(repo, payload.get("input", payload))
+        elif job_type == "chat_collect":
+            result = chat_collect(repo, payload.get("input", payload))
+        elif job_type == "chat_normalize":
+            result = chat_normalize(repo, payload.get("input", payload))
+        elif job_type == "rebuild_artifacts":
+            result = rebuild_artifacts(repo, payload.get("input", payload))
+        else:
+            raise ValueError(f"unsupported job_type: {job_type}")
+        repo.append_job_event(job_id, "completed", result)
+        return {"job_id": job_id, "job_type": job_type, "status": "succeeded", **result}
+    except Exception as exc:
+        repo.append_job_event(job_id, "failed", {"type": type(exc).__name__, "message": str(exc)})
+        raise
+
+
+def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    if params.get("video_resources"):
+        resources = params["video_resources"]
+    else:
+        client = params.get("youtube_client") or YouTubeClient()
+        channel = _channel_config(repo, params)
+        playlist = client.playlist_items(channel["uploads_playlist_id"], params.get("page_token"), int(params.get("max_results", 50)))
+        repo.record_quota_usage("playlistItems.list", 1, {"channel_id": channel["channel_id"]})
+        video_ids = [item["contentDetails"]["videoId"] for item in playlist.get("items", [])]
+        resources = client.videos(video_ids).get("items", []) if video_ids else []
+        if video_ids:
+            repo.record_quota_usage("videos.list", 1, {"video_count": len(video_ids)})
+    saved = []
+    for resource in resources:
+        _write_blob(f"raw/youtube/metadata/video_id={resource['id']}/{now_iso()}.json", json.dumps(resource, ensure_ascii=False).encode("utf-8"), "application/json")
+        video = normalize_video_resource(resource)
+        repo.put_video(video)
+        repo.put_item({"item_type": "ChannelCursor", "pk": f"CHANNEL#{video.get('channel_id')}", "sk": "CURSOR#metadata", "last_video_id": video["video_id"], "updated_at": now_iso()})
+        saved.append(video["video_id"])
+    return {"saved_video_ids": saved, "saved_count": len(saved)}
+
+
+def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    updated = []
+    for video in repo.list_videos(10000):
+        before = video.get("live_state")
+        if video.get("actual_end_time"):
+            video["live_state"] = "archived"
+        elif video.get("live_chat_id"):
+            video["live_state"] = "live"
+        elif video.get("scheduled_start_time"):
+            video["live_state"] = "upcoming"
+        else:
+            video["live_state"] = "archived"
+        repo.put_video(video)
+        if before != video["live_state"]:
+            updated.append({"video_id": video["video_id"], "from": before, "to": video["live_state"]})
+    return {"updated": updated, "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"]}
+
+
+def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    mode = params.get("mode", "auto")
+    video = repo.get_video(video_id) or {"video_id": video_id}
+    if params.get("replay_actions") or mode == "replay":
+        messages = normalize_replay_actions(params.get("replay_actions", []), video_id)
+        source = "replay"
+        next_poll = None
+    else:
+        client = params.get("youtube_client") or YouTubeClient()
+        response = params.get("live_chat_response") or client.live_chat_messages(video.get("live_chat_id") or params["live_chat_id"], params.get("page_token"))
+        messages = normalize_live_chat_items(response.get("items", []), video_id)
+        source = "live"
+        next_poll = {"next_page_token": response.get("nextPageToken"), "delay_seconds": int(response.get("pollingIntervalMillis", 10000)) // 1000}
+    repo.put_item({"item_type": "ChatMessageChunkManifest", "pk": f"VIDEO#{video_id}", "sk": f"CHAT#RAW#{source}#{now_iso()}", "video_id": video_id, "source": source, "message_count": len(messages), "messages": messages, "next_poll": next_poll})
+    raw_key = f"raw/youtube/chat/video_id={video_id}/source={source}/{now_iso()}.jsonl"
+    _write_blob(raw_key, "\n".join(json.dumps(message, ensure_ascii=False) for message in messages).encode("utf-8"), "application/x-ndjson")
+    return {"video_id": video_id, "source": source, "message_count": len(messages), "next_poll": next_poll}
+
+
+def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    chunks = [item for item in getattr(repo, "items", {}).values() if item.get("item_type") == "ChatMessageChunkManifest" and item.get("video_id") == video_id]
+    messages = [message for chunk in chunks for message in chunk.get("messages", [])]
+    summary = summarize_chat_messages(messages)
+    repo.put_chat_aggregate(video_id, summary)
+    normalized_key = f"processed/chat-normalized/video_id={video_id}/part-000.jsonl"
+    aggregate_key = f"processed/chat-aggregate/video_id={video_id}/summary.json"
+    _write_blob(normalized_key, "\n".join(json.dumps(message, ensure_ascii=False) for message in messages).encode("utf-8"), "application/x-ndjson", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
+    _write_blob(aggregate_key, json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
+    repo.put_item({"item_type": "ChatManifest", "pk": f"VIDEO#{video_id}", "sk": "CHAT#MANIFEST", "video_id": video_id, "normalized_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}", "message_count": len(messages), "updated_at": now_iso()})
+    return {"video_id": video_id, "message_count": len(messages), "top_term_count": len(summary["top_terms"])}
+
+
+def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    video = repo.get_video(video_id) or {"description": ""}
+    aggregate = repo.get_chat_aggregate(video_id) or summarize_chat_messages([])
+    timestamps = build_timestamp_candidates(aggregate, video.get("description", ""))
+    repo.put_video({**video, "video_id": video_id, "timestamps": timestamps})
+    repo.put_artifact(video_id, {"artifact_type": "timestamp", "public_url_path": f"/data/latest-video/{video_id}", "content_type": "application/json"})
+    if aggregate.get("top_terms"):
+        repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.svg", "content_type": "image/svg+xml"})
+    return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
+
+
+def _channel_config(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    if params.get("uploads_playlist_id"):
+        return {"channel_id": params.get("channel_id", "manual"), "uploads_playlist_id": params["uploads_playlist_id"]}
+    config = repo.get_item("CONFIG#app", "CHANNEL#default")
+    if not config:
+        raise ValueError("uploads_playlist_id is required when default channel is not configured")
+    return config
+
+
+def _repository() -> Any:
+    if os.environ.get("DIOPSIDE_TABLE_NAME"):
+        return DynamoRepository(os.environ["DIOPSIDE_TABLE_NAME"])
+    return MemoryRepository()
+
+
+def _write_blob(key: str, body: bytes, content_type: str, bucket_env: str = "DIOPSIDE_RAW_BUCKET") -> str:
+    bucket = os.environ.get(bucket_env)
+    if bucket:
+        import boto3
+
+        boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+        return f"s3://{bucket}/{key}"
+    local_root = os.environ.get("DIOPSIDE_LOCAL_ARTIFACT_DIR")
+    if local_root:
+        path = pathlib.Path(local_root) / key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        return str(path)
+    return key
