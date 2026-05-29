@@ -32,5 +32,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Python test dependencies
+        run: python -m pip install pytest
+
       - name: Verify
         run: npm run verify
