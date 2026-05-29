@@ -1,6 +1,6 @@
 # 動画詳細UI完成
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -55,3 +55,18 @@ UI 表示の改善であり README 更新は不要。変更内容と検証は作
 ## リスク
 
 - 実 CloudFront 配信でのブラウザ確認は未実施に留まる。
+
+## 完了記録
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/27
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/27#issuecomment-4570294378
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/27#issuecomment-4570294375
+- 作業レポート: `reports/working/20260529-1330-video-detail-ui-report.md`
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `npm test`: 59 passed
+- `npm run build`: 成功
+- `npm run e2e:local`: 成功
+- Headless Chrome screenshot 生成: 成功
