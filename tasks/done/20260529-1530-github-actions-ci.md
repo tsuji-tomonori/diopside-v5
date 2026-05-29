@@ -1,6 +1,6 @@
 # GitHub Actions CI追加
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -17,6 +17,7 @@ CI 追加
 ## スコープ
 
 - `.github/workflows/ci.yml`
+- `requirements-dev.txt`
 
 ## 計画
 
@@ -44,6 +45,22 @@ CI 設定追加であり README 更新は不要。workflow の内容と検証は
 - `npm test`
 - `npm run verify`
 
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/33
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/33#issuecomment-4570608154
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/33#issuecomment-4570609947
+- GitHub Actions `CI / npm verify`: 成功
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `python3 -c "import boto3, botocore, pytest, yaml; print(boto3.__version__, botocore.__version__, pytest.__version__, yaml.__version__)"`: 成功
+- `npm test`: 59 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功
+
 ## リスク
 
-- GitHub Actions 上の実行は PR 作成後の外部 CI に依存するため、この作業中は workflow 定義と local verify で確認する。
+- 実 AWS deploy / CloudFront 実環境確認は P4-01 の対象外のため未実施。
+- GitHub Actions の annotation として `actions/checkout@v4`、`actions/setup-node@v4`、`actions/setup-python@v5` の Node.js 20 runtime deprecation warning が出ている。CI は成功済みだが、将来 action version 更新の検討余地がある。
