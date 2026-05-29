@@ -39,22 +39,23 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
     job_type = payload.get("job_type")
     job_id = payload.get("job_id", "manual")
+    params = {**payload.get("input", payload), "job_id": job_id}
     repo.append_job_event(job_id, "started", {"job_type": job_type})
     try:
         if job_type == "metadata_sync":
-            result = metadata_sync(repo, payload.get("input", payload))
+            result = metadata_sync(repo, params)
         elif job_type == "live_status_scan":
-            result = live_status_scan(repo, payload.get("input", payload))
+            result = live_status_scan(repo, params)
         elif job_type == "chat_collect":
-            result = chat_collect(repo, payload.get("input", payload))
+            result = chat_collect(repo, params)
         elif job_type == "chat_normalize":
-            result = chat_normalize(repo, payload.get("input", payload))
+            result = chat_normalize(repo, params)
         elif job_type == "rebuild_artifacts":
-            result = rebuild_artifacts(repo, payload.get("input", payload))
+            result = rebuild_artifacts(repo, params)
         elif job_type == "retry_job":
-            result = retry_job(repo, payload.get("input", payload))
+            result = retry_job(repo, params)
         elif job_type == "cancel_job":
-            result = cancel_job(repo, payload.get("input", payload))
+            result = cancel_job(repo, params)
         else:
             raise ValueError(f"unsupported job_type: {job_type}")
         repo.append_job_event(job_id, "completed", result)
@@ -68,6 +69,7 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     channel_id = params.get("channel_id", "manual")
+    job_id = params.get("job_id")
     playlist_page_token = params.get("page_token")
     playlist_next_page_token = None
     raw_playlist_uri = None
@@ -85,8 +87,15 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             f"raw/youtube/metadata/channel_id={channel_id}/playlistItems/{now_iso()}.json",
             playlist,
         )
-        repo.record_quota_usage("playlistItems.list", 1, {"channel_id": channel_id, "page_token": playlist_page_token})
         video_ids = [item["contentDetails"]["videoId"] for item in playlist.get("items", [])]
+        repo.record_quota_usage(
+            "playlistItems.list",
+            1,
+            {"page_token": playlist_page_token},
+            channel_id=channel_id,
+            video_count=len(video_ids),
+            job_id=job_id,
+        )
         videos_response = client.videos(video_ids) if video_ids else {"items": []}
         raw_videos_uri = _write_json_blob(
             f"raw/youtube/metadata/channel_id={channel_id}/videos/{now_iso()}.json",
@@ -95,7 +104,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         resources = videos_response.get("items", [])
         playlist_next_page_token = playlist.get("nextPageToken")
         if video_ids:
-            repo.record_quota_usage("videos.list", 1, {"video_count": len(video_ids), "channel_id": channel_id})
+            repo.record_quota_usage("videos.list", 1, {}, channel_id=channel_id, video_count=len(video_ids), job_id=job_id)
         if playlist_next_page_token:
             enqueued_next_page = _enqueue_job(
                 "DIOPSIDE_METADATA_QUEUE_URL",
@@ -152,10 +161,30 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    job_id = params.get("job_id")
+    client = params.get("youtube_client")
+    videos = repo.list_videos(10000)
+    candidates = [video for video in videos if video.get("video_id") and not video.get("actual_end_time")]
+    if candidates and (client or not params.get("skip_youtube_refresh")):
+        client = client or YouTubeClient()
+        refreshed_items = []
+        for chunk in _chunks([video["video_id"] for video in candidates], 50):
+            refreshed = client.videos(chunk)
+            refreshed_items.extend(refreshed.get("items", []))
+            repo.record_quota_usage(
+                "videos.list",
+                1,
+                {"source": "live_status_scan"},
+                channel_id=params.get("channel_id") or _single_value(video.get("channel_id") for video in candidates),
+                video_count=len(chunk),
+                job_id=job_id,
+            )
+        by_id = {item["id"]: normalize_video_resource(item) for item in refreshed_items}
+        videos = [{**video, **by_id.get(video["video_id"], {}), "_previous_live_state": video.get("live_state")} for video in videos]
     updated = []
     enqueued = []
-    for video in repo.list_videos(10000):
-        before = video.get("live_state")
+    for video in videos:
+        before = video.pop("_previous_live_state", video.get("live_state"))
         if video.get("actual_end_time"):
             video["live_state"] = "archived"
         elif video.get("live_chat_id"):
@@ -170,6 +199,15 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         if video["live_state"] == "live" and video.get("live_chat_id"):
             enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
     return {"updated": updated, "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"], "enqueued": [item for item in enqueued if item]}
+
+
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def _single_value(values: Any) -> str | None:
+    present = {value for value in values if value}
+    return next(iter(present)) if len(present) == 1 else None
 
 
 def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -207,6 +245,14 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         if response is None:
             client = params.get("youtube_client") or YouTubeClient()
             response = client.live_chat_messages(video.get("live_chat_id") or params["live_chat_id"], params.get("page_token"))
+            repo.record_quota_usage(
+                "liveChatMessages.list",
+                1,
+                {"page_token": params.get("page_token")},
+                channel_id=video.get("channel_id") or params.get("channel_id"),
+                video_count=1,
+                job_id=params.get("job_id"),
+            )
         messages = normalize_live_chat_items(response.get("items", []), video_id)
         source = "live"
         delay_seconds = max(1, int(response.get("pollingIntervalMillis", 10000)) // 1000)

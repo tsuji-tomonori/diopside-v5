@@ -99,6 +99,7 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
             "channel_id": "ch",
             "uploads_playlist_id": "uploads",
             "max_results": 2,
+            "job_id": "job-meta",
         },
     )
 
@@ -113,6 +114,11 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
     assert video["raw_metadata_uri"] == result["raw_videos_uri"]
     assert "items" not in video
     assert client.playlist_calls[0]["page_token"] is None
+    usage = repo.list_quota_usage()
+    assert {item["method"] for item in usage} == {"playlistItems.list", "videos.list"}
+    assert all(item["channel_id"] == "ch" for item in usage)
+    assert all(item["video_count"] == 2 for item in usage)
+    assert all(item["job_id"] == "job-meta" for item in usage)
     assert enqueued[0]["queue_env"] == "DIOPSIDE_METADATA_QUEUE_URL"
     assert enqueued[0]["payload"]["input"]["page_token"] == "next-token"
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/playlistItems").glob("*.json"))
@@ -139,6 +145,34 @@ def test_metadata_sync_resumes_from_channel_cursor(tmp_path, monkeypatch):
     metadata_sync(repo, {"youtube_client": client, "channel_id": "ch", "uploads_playlist_id": "uploads"})
 
     assert client.playlist_calls[0]["page_token"] == "resume-token"
+
+
+def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload}) or "queued")
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-live",
+            "title": "live",
+            "published_at": "2026-05-29T00:00:00Z",
+            "channel_id": "ch",
+            "live_state": "upcoming",
+        }
+    )
+    client = FakeYouTubeMetadataClient()
+
+    result = pipeline.live_status_scan(repo, {"youtube_client": client, "job_id": "job-live"})
+
+    usage = repo.list_quota_usage()[0]
+    assert usage["method"] == "videos.list"
+    assert usage["units"] == 1
+    assert usage["video_count"] == 1
+    assert usage["channel_id"] == "ch"
+    assert usage["job_id"] == "job-live"
+    assert client.video_calls == [["vid-live"]]
+    assert repo.get_video("vid-live")["live_state"] == "archived"
+    assert result["updated"] == [{"video_id": "vid-live", "from": "upcoming", "to": "archived"}]
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
@@ -382,6 +416,33 @@ def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
     assert chunks[0]["next_poll"]["action"] == "requeue"
     assert chunks[0]["message_count"] == 1
     assert chunks[0]["s3_uri"]
+
+
+def test_live_chat_collect_records_quota_when_calling_youtube(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: None)
+
+    class FakeLiveChatClient:
+        def __init__(self):
+            self.calls = []
+
+        def live_chat_messages(self, live_chat_id, page_token=None):
+            self.calls.append({"live_chat_id": live_chat_id, "page_token": page_token})
+            return {"items": [], "offlineAt": "2026-05-29T00:00:00Z"}
+
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "live-quota", "title": "live", "published_at": "2026-05-29T00:00:00Z", "channel_id": "ch", "live_chat_id": "chat-quota"})
+    client = FakeLiveChatClient()
+
+    chat_collect(repo, {"video_id": "live-quota", "mode": "live", "youtube_client": client, "page_token": "page-1", "job_id": "job-chat"})
+
+    usage = repo.list_quota_usage()[0]
+    assert client.calls == [{"live_chat_id": "chat-quota", "page_token": "page-1"}]
+    assert usage["method"] == "liveChatMessages.list"
+    assert usage["units"] == 1
+    assert usage["video_count"] == 1
+    assert usage["channel_id"] == "ch"
+    assert usage["job_id"] == "job-chat"
 
 
 def test_live_chat_collect_stops_when_offline(tmp_path, monkeypatch):
@@ -656,7 +717,7 @@ def test_timestamp_candidates_merge_sources_and_sort_by_score():
 def test_repository_job_idempotency_and_lists():
     repo = MemoryRepository()
     repo.put_item({"item_type": "Channel", "pk": "CHANNEL#ch", "sk": "META", "channel_id": "ch", "uploads_playlist_id": "uploads"})
-    repo.record_quota_usage("videos.list", 1, {"video_count": 1})
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-quota")
     first, dedup_first = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
     second, dedup_second = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
     repo.append_job_event(first["job_id"], "completed", {"saved_count": 0})
@@ -666,7 +727,11 @@ def test_repository_job_idempotency_and_lists():
     assert second["job_id"] == first["job_id"]
     assert repo.get_job(first["job_id"])["derived_state"] == "succeeded"
     assert repo.list_channels()[0]["channel_id"] == "ch"
-    assert repo.list_quota_usage()[0]["method"] == "videos.list"
+    quota = repo.list_quota_usage()[0]
+    assert quota["method"] == "videos.list"
+    assert quota["channel_id"] == "ch"
+    assert quota["video_count"] == 1
+    assert quota["job_id"] == "job-quota"
 
 
 def test_failed_job_writes_debug_artifact(tmp_path, monkeypatch):
@@ -740,13 +805,17 @@ def test_dynamo_repository_lists_use_query_indexes():
     repo, table = dynamo_repo_with_fake_table()
     repo.put_video({"video_id": "v1", "title": "one", "published_at": "2026-05-29T00:00:00Z", "public": True})
     repo.put_video({"video_id": "v2", "title": "private", "published_at": "2026-05-30T00:00:00Z", "public": False})
-    repo.record_quota_usage("videos.list", 1, {"video_count": 1})
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-quota")
     job, _ = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
     repo.append_job_event(job["job_id"], "completed", {})
 
     assert [video["video_id"] for video in repo.list_videos()] == ["v1"]
     assert repo.list_jobs()[0]["derived_state"] == "succeeded"
-    assert repo.list_quota_usage()[0]["method"] == "videos.list"
+    quota = repo.list_quota_usage()[0]
+    assert quota["method"] == "videos.list"
+    assert quota["channel_id"] == "ch"
+    assert quota["video_count"] == 1
+    assert quota["job_id"] == "job-quota"
     assert {call.get("IndexName") for call in table.query_calls} >= {"by_public_date", "by_work_queue"}
 
 

@@ -77,6 +77,13 @@ async function checkAdminDryRun(url) {
   if (!jobs.items?.some((item) => item.job_id === created.job_id)) throw new Error("admin job list missing dry-run job");
   const detail = await json(`${url}/api/admin/jobs/${created.job_id}`, { headers: { Authorization: "Bearer local-secret" } });
   if (!detail.item?.events?.length) throw new Error("admin job detail missing events");
+  const quota = await json(`${url}/api/admin/quota-usage`, { headers: { Authorization: "Bearer local-secret" } });
+  if (!Array.isArray(quota.items)) throw new Error("admin quota usage response must include items array");
+  for (const item of quota.items) {
+    for (const key of ["method", "units", "video_count", "channel_id", "job_id"]) {
+      if (!(key in item)) throw new Error(`admin quota usage item missing ${key}`);
+    }
+  }
 }
 
 async function json(url, options = {}) {
