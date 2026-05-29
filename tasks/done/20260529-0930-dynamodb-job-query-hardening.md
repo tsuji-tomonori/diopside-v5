@@ -1,6 +1,6 @@
 # DynamoDB repository と Job lifecycle の実データ経路強化
 
-状態: do
+状態: done
 タスク種別: 機能追加
 
 ## 背景
