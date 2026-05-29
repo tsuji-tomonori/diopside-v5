@@ -28,7 +28,7 @@
 
 - CloudFront behavior contract test の強化。
 - post-deploy smoke の CloudFront 経由確認追加。
-- 作業 task: `tasks/do/20260529-1107-cloudfront-behavior-contract.md`
+- 作業 task: `tasks/done/20260529-1107-cloudfront-behavior-contract.md`
 
 ## 検証
 
