@@ -7,13 +7,19 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / "build" / "deploy"
+EXCLUDED_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
+
+
+def should_package_file(path: pathlib.Path) -> bool:
+    return not (EXCLUDED_DIRS.intersection(path.parts) or path.suffix in EXCLUDED_SUFFIXES)
 
 
 def zip_dir(source: pathlib.Path, dest: pathlib.Path, extra_sources: list[pathlib.Path] | None = None) -> None:
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for root in [source, *(extra_sources or [])]:
             for path in root.rglob("*"):
-                if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc":
+                if path.is_file() and should_package_file(path):
                     zf.write(path, path.relative_to(root))
 
 
