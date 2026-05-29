@@ -3,9 +3,19 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import urllib.parse
+import urllib.error
 import urllib.request
 from typing import Any
+
+
+class YouTubeClientError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int | None = None, reason: str | None = None, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.reason = reason
+        self.retryable = retryable
 
 
 class YouTubeClient:
@@ -29,8 +39,33 @@ class YouTubeClient:
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         query = urllib.parse.urlencode({**params, "key": self.api_key})
-        with urllib.request.urlopen(f"{self.base_url}/{path}?{query}", timeout=20) as response:
-            return json.loads(response.read().decode("utf-8"))
+        url = f"{self.base_url}/{path}?{query}"
+        try:
+            with urllib.request.urlopen(url, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise _http_error(exc) from exc
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            raise YouTubeClientError("YouTube API network error", reason="network_error", retryable=True) from exc
+        except json.JSONDecodeError as exc:
+            raise YouTubeClientError("YouTube API returned malformed JSON", reason="malformed_response", retryable=False) from exc
+        if not isinstance(payload, dict):
+            raise YouTubeClientError("YouTube API returned malformed response", reason="malformed_response", retryable=False)
+        return payload
+
+
+def _http_error(exc: urllib.error.HTTPError) -> YouTubeClientError:
+    try:
+        payload = json.loads(exc.read().decode("utf-8"))
+    except Exception:
+        payload = {}
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    errors = error.get("errors", []) if isinstance(error, dict) else []
+    reason = next((item.get("reason") for item in errors if isinstance(item, dict) and item.get("reason")), None)
+    reason = reason or (error.get("status") if isinstance(error, dict) else None) or f"http_{exc.code}"
+    retryable = reason in {"quotaExceeded", "rateLimitExceeded", "backendError"} or exc.code in {429, 500, 502, 503, 504}
+    message = error.get("message") if isinstance(error, dict) else None
+    return YouTubeClientError(message or f"YouTube API returned HTTP {exc.code}", status_code=exc.code, reason=reason, retryable=retryable)
 
 
 def parse_iso8601_duration(value: str | None) -> int | None:

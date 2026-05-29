@@ -1,13 +1,14 @@
 from .artifacts import build_timestamp_candidates, generate_wordcloud_svg, summarize_chat_messages
 from .chat import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, normalize_live_chat_items, normalize_replay_actions
 from .repository import DynamoRepository, MemoryRepository, Repository, now_iso
-from .youtube import YouTubeClient, extract_initial_data_from_watch_html, extract_replay_actions_from_initial_data, extract_replay_continuations_from_initial_data, fetch_public_replay_actions, normalize_video_resource, parse_iso8601_duration
+from .youtube import YouTubeClient, YouTubeClientError, extract_initial_data_from_watch_html, extract_replay_actions_from_initial_data, extract_replay_continuations_from_initial_data, fetch_public_replay_actions, normalize_video_resource, parse_iso8601_duration
 
 __all__ = [
     "DynamoRepository",
     "MemoryRepository",
     "Repository",
     "YouTubeClient",
+    "YouTubeClientError",
     "build_timestamp_candidates",
     "CHAT_MESSAGE_REQUIRED_KEYS",
     "CHAT_MESSAGE_SCHEMA_VERSION",

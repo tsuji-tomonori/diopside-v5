@@ -1,11 +1,14 @@
+import io
 import json
+import socket
+import urllib.error
 from pathlib import Path
 
 import pytest
 
 from botocore.exceptions import ClientError
 
-from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
 from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
 
@@ -52,6 +55,70 @@ def test_youtube_client_uses_http_mock(monkeypatch):
     assert "videos?" in requested["url"]
     assert "key=test-key" in requested["url"]
     assert requested["timeout"] == 20
+
+
+@pytest.mark.parametrize(
+    ("status_code", "reason", "retryable"),
+    [
+        (403, "quotaExceeded", True),
+        (403, "insufficientPermissions", False),
+        (404, "videoNotFound", False),
+    ],
+)
+def test_youtube_client_normalizes_http_errors(monkeypatch, status_code, reason, retryable):
+    body = json.dumps({"error": {"message": f"{reason} message", "errors": [{"reason": reason}]}}).encode("utf-8")
+
+    def fake_urlopen(url, timeout):
+        raise urllib.error.HTTPError(url, status_code, "error", hdrs={}, fp=io.BytesIO(body))
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = YouTubeClient(api_key="test-key", base_url="https://example.test/youtube/v3")
+
+    with pytest.raises(YouTubeClientError) as exc_info:
+        client.videos(["abc123"])
+
+    assert str(exc_info.value) == f"{reason} message"
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.reason == reason
+    assert exc_info.value.retryable is retryable
+
+
+def test_youtube_client_normalizes_network_timeout(monkeypatch):
+    def fake_urlopen(url, timeout):
+        raise socket.timeout("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = YouTubeClient(api_key="test-key", base_url="https://example.test/youtube/v3")
+
+    with pytest.raises(YouTubeClientError) as exc_info:
+        client.playlist_items("uploads")
+
+    assert exc_info.value.status_code is None
+    assert exc_info.value.reason == "network_error"
+    assert exc_info.value.retryable is True
+
+
+@pytest.mark.parametrize("body", [b"{", b"[]"])
+def test_youtube_client_rejects_malformed_response(monkeypatch, body):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return body
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda url, timeout: Response())
+    client = YouTubeClient(api_key="test-key", base_url="https://example.test/youtube/v3")
+
+    with pytest.raises(YouTubeClientError) as exc_info:
+        client.live_chat_messages("chat-id")
+
+    assert exc_info.value.status_code is None
+    assert exc_info.value.reason == "malformed_response"
+    assert exc_info.value.retryable is False
 
 
 class FakeYouTubeMetadataClient:
