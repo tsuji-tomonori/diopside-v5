@@ -110,7 +110,7 @@ const renderTags = () => {
     return;
   }
   for (const tag of state.tags) {
-    const button = el("button", { type: "button", text: `${tag.label} ${tag.video_count}`, "aria-pressed": String(state.selectedTag === tag.label), "data-tag": tag.label });
+    const button = el("button", { type: "button", text: `${tag.label} ${tag.video_count}`, "aria-label": `${tag.label} タグで絞り込む`, "aria-pressed": String(state.selectedTag === tag.label), "data-tag": tag.label });
     button.addEventListener("click", () => {
       selectTag(tag.label);
     });
@@ -132,7 +132,7 @@ const renderQuick = () => {
   for (const item of items) {
     const isTagActive = item.kind === "tag" && state.selectedTag === item.label;
     const text = item.kind === "tag" ? `${item.label} ${item.count}` : item.label;
-    const button = el("button", { type: "button", text, "aria-pressed": String(isTagActive) });
+    const button = el("button", { type: "button", text, "aria-label": item.kind === "tag" ? `${item.label} タグで絞り込む` : "最新アーカイブを表示", "aria-pressed": String(isTagActive) });
     button.addEventListener("click", async () => {
       if (item.kind === "latest") {
         await showLatest();
@@ -152,7 +152,7 @@ const renderRecent = () => {
     return;
   }
   for (const value of values) {
-    els.recent.append(el("button", { type: "button", text: value, onclick: () => {
+    els.recent.append(el("button", { type: "button", text: value, "aria-label": `${value} で検索`, onclick: () => {
       state.query = value;
       els.search.value = value;
       renderList();
@@ -200,7 +200,7 @@ const renderList = () => {
   for (const video of videos) {
     const favorite = state.favorites.includes(video.video_id);
     const card = el("article", { class: "video-card" }, [
-      el("button", { type: "button", class: "video-main", onclick: () => showDetail(video) }, [
+      el("button", { type: "button", class: "video-main", "aria-label": `${video.title} の詳細を表示`, onclick: () => showDetail(video) }, [
         el("img", { src: video.thumbnail_url || "/assets/placeholder-thumbnail.svg", alt: "" }),
         el("span", {}, [
           el("h3", { text: video.title }),
@@ -216,7 +216,7 @@ const renderList = () => {
 
 const videosByIds = (ids) => ids.map((id) => state.videos.find((video) => video.video_id === id)).filter(Boolean);
 
-const savedButton = (video, mode) => el("button", { type: "button", class: "saved-item", onclick: () => showDetail(video) }, [
+const savedButton = (video, mode) => el("button", { type: "button", class: "saved-item", "aria-label": `${video.title} の詳細を表示`, onclick: () => showDetail(video) }, [
   el("span", { class: "saved-title", text: video.title }),
   el("span", { class: "detail-meta", text: `${fmtDate(video.published_at)} / ${fmtDuration(video.duration_sec)}` }),
   el("span", { class: "tag-row" }, (video.tags || []).slice(0, 3).map((tag) => el("span", { class: "tag-pill", text: tag }))),
@@ -271,7 +271,7 @@ const showDetail = async (video) => {
       detailVideo.youtube_url ? el("a", { class: "primary-link", href: detailVideo.youtube_url, rel: "noreferrer", target: "_blank", text: "YouTube" }) : el("span", { class: "empty-state", text: "YouTube URL未設定" })
     ]),
     el("p", { class: "detail-description", text: detailVideo.description || "説明は未設定です。" }),
-    el("div", { class: "tag-row detail-tags" }, tags.length ? tags.map((tag) => el("button", { type: "button", class: "tag-pill", text: tag, onclick: () => selectTag(tag) })) : [el("span", { class: "empty-state", text: "タグ未設定" })]),
+    el("div", { class: "tag-row detail-tags" }, tags.length ? tags.map((tag) => el("button", { type: "button", class: "tag-pill", text: tag, "aria-label": `${tag} タグで絞り込む`, onclick: () => selectTag(tag) })) : [el("span", { class: "empty-state", text: "タグ未設定" })]),
     el("h3", { text: "metadata" }),
     el("dl", { class: "metadata-grid" }, metadataRows.flatMap(([name, value]) => [
       el("dt", { text: name }),
@@ -443,7 +443,7 @@ const jobSummaryText = (item) => [
 
 const renderJobList = (items) => items.length
   ? el("div", { class: "admin-list" }, items.slice(0, 12).map((item) => {
-    const button = el("button", { type: "button", text: jobSummaryText(item) });
+    const button = el("button", { type: "button", text: jobSummaryText(item), "aria-label": `${item.job_id || "job"} の詳細を表示` });
     button.addEventListener("click", async () => {
       document.querySelector("#adminJobId").value = item.job_id || "";
       await loadJobDetail(item.job_id);
