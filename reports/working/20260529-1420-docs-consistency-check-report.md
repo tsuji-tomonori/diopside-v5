@@ -24,13 +24,18 @@
 - `npm test` に docs consistency check を組み込んだ。
 - README の実装済み API/schema、public data schema、worker job、normalized chat schema 記述を更新した。
 - P4-07 の task md を作成した。
+- PR #39 を作成し、受け入れ条件確認とセルフレビューを top-level comment として投稿した。
+- GitHub Apps の comment 投稿は 403 のため、`gh pr comment` にフォールバックした。
 
 ## 成果物
 
 - `tools/check-docs-consistency.mjs`
 - `README.md`
 - `package.json`
-- `tasks/do/20260529-1420-docs-consistency-check.md`
+- `tasks/done/20260529-1420-docs-consistency-check.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/39
+- 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/39#issuecomment-4570953542
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/39#issuecomment-4570955341
 
 ## 検証
 
@@ -43,6 +48,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -54,3 +60,4 @@
 
 - `.workspace/diopside_basic_design_v0.4.md` は `.gitignore` 対象のため PR に含めていない。
 - docs consistency check は実装済み契約の存在確認に限定し、完全な schema validation は既存の `tools/check-public-contract.mjs` と Python tests に委ねる。
+- GitHub Apps の top-level comment は 403 で利用できなかったため、`gh pr comment` で代替した。

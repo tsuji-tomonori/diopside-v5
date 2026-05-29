@@ -1,6 +1,6 @@
 # docs consistency check
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -60,3 +60,20 @@ P4-07 自体が docs consistency の改善であるため、README を durable d
 ## リスク
 
 - `.workspace` は gitignore 対象のため、GitHub Actions 上では設計書本文の直接検証は行わない。設計書由来の主要前提は README と script の contract に落とし込む。
+
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/39
+- 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/39#issuecomment-4570953542
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/39#issuecomment-4570955341
+- GitHub Actions `CI / npm verify`: 成功
+- GitHub Apps の top-level comment は 403 のため、`gh pr comment` で代替投稿した。
+
+## 完了時検証
+
+- `git diff --check`: 成功
+- `node tools/check-docs-consistency.mjs`: 成功
+- `DIOPSIDE_DESIGN_DOC=/home/t-tsuji/project/diopside-v5/.workspace/diopside_basic_design_v0.4.md node tools/check-docs-consistency.mjs`: 成功
+- `npm test`: 70 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功
