@@ -4,7 +4,7 @@ import pytest
 
 from botocore.exceptions import ClientError
 
-from diopside_core import DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from diopside_core import DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
 from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
 
@@ -182,6 +182,89 @@ def test_public_replay_initial_data_extractor():
     collected = chat_collect(MemoryRepository(), {"video_id": "vid001", "mode": "replay", "replay_initial_data": data})
     assert collected["source"] == "replay"
     assert collected["message_count"] == 1
+    assert collected["parser_stats"]["action_count"] == 1
+
+
+def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    html = """
+    <script>
+    ytInitialData = {
+      "contents": {
+        "twoColumnWatchNextResults": {
+          "conversationBar": {
+            "liveChatRenderer": {
+              "continuations": [
+                {"reloadContinuationData": {"continuation": "replay-token-1", "timeoutMs": 1500}}
+              ],
+              "actions": [
+                {
+                  "replayChatItemAction": {
+                    "videoOffsetTimeMsec": "12000",
+                    "actions": [
+                      {
+                        "addChatItemAction": {
+                          "item": {
+                            "liveChatTextMessageRenderer": {
+                              "id": "m-known",
+                              "authorExternalChannelId": "author1",
+                              "authorName": {"simpleText": "Alice"},
+                              "timestampUsec": "1000",
+                              "timestampText": {"simpleText": "0:12"},
+                              "message": {"runs": [{"text": "hello replay"}]}
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "replayChatItemAction": {
+                    "videoOffsetTimeMsec": "13000",
+                    "actions": [
+                      {
+                        "addChatItemAction": {
+                          "item": {
+                            "liveChatMembershipItemRenderer": {
+                              "id": "m-unknown",
+                              "headerSubtext": {"simpleText": "joined"}
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    };
+    </script>
+    """
+    data = extract_initial_data_from_watch_html(html)
+    continuations = extract_replay_continuations_from_initial_data(data)
+    repo = MemoryRepository()
+
+    collected = chat_collect(repo, {"video_id": "vid-replay", "mode": "replay", "replay_initial_data": data})
+
+    raw_files = list((tmp_path / "raw/youtube/chat/video_id=vid-replay/source=replay").glob("*.jsonl"))
+    rows = [json.loads(line) for line in raw_files[0].read_text(encoding="utf-8").splitlines()]
+    chunk = repo.list_chat_chunks("vid-replay")[0]
+    assert continuations == [{"token": "replay-token-1", "source": "reloadContinuationData", "timeout_ms": 1500}]
+    assert collected["message_count"] == 2
+    assert collected["parser_stats"]["action_count"] == 2
+    assert collected["parser_stats"]["unknown_count"] == 1
+    assert collected["next_poll"]["action"] == "continuation_available"
+    assert collected["next_poll"]["continuation_count"] == 1
+    assert chunk["parser_stats"]["unknown_count"] == 1
+    assert chunk["next_poll"]["continuations"][0]["token"] == "replay-token-1"
+    assert rows[0]["message_text"] == "hello replay"
+    assert rows[1]["parse_warning"] == "unknown_renderer"
+    assert rows[1]["raw_renderer_type"] == "liveChatMembershipItemRenderer"
+    assert rows[1]["raw_renderer"]["id"] == "m-unknown"
 
 
 def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):

@@ -88,8 +88,12 @@ def extract_replay_actions_from_initial_data(initial_data: dict[str, Any]) -> li
 
     def walk(value: Any) -> None:
         if isinstance(value, dict):
-            if "replayChatItemAction" in value or "addChatItemAction" in value or "addLiveChatTickerItemAction" in value:
+            if "replayChatItemAction" in value:
                 actions.append(value)
+                return
+            if "addChatItemAction" in value or "addLiveChatTickerItemAction" in value:
+                actions.append(value)
+                return
             for child in value.values():
                 walk(child)
         elif isinstance(value, list):
@@ -98,6 +102,41 @@ def extract_replay_actions_from_initial_data(initial_data: dict[str, Any]) -> li
 
     walk(initial_data)
     return actions
+
+
+def extract_replay_continuations_from_initial_data(initial_data: dict[str, Any]) -> list[dict[str, Any]]:
+    continuations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(token: Any, source: str, timeout_ms: Any = None) -> None:
+        if not token or not isinstance(token, str) or token in seen:
+            return
+        seen.add(token)
+        continuations.append(
+            {
+                "token": token,
+                "source": source,
+                "timeout_ms": _int_or_none(timeout_ms),
+            }
+        )
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key in ("reloadContinuationData", "timedContinuationData", "invalidationContinuationData", "liveChatReplayContinuationData"):
+                continuation = value.get(key)
+                if isinstance(continuation, dict):
+                    add(continuation.get("continuation"), key, continuation.get("timeoutMs"))
+            command = value.get("continuationCommand")
+            if isinstance(command, dict):
+                add(command.get("token"), "continuationCommand")
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(initial_data)
+    return continuations
 
 
 def extract_initial_data_from_watch_html(html: str) -> dict[str, Any]:
@@ -134,3 +173,12 @@ def fetch_public_replay_actions(video_id: str) -> list[dict[str, Any]]:
     with urllib.request.urlopen(url, timeout=20) as response:
         html = response.read().decode("utf-8", errors="replace")
     return extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(html))
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

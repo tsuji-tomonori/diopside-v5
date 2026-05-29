@@ -13,6 +13,7 @@ from diopside_core import (
     build_timestamp_candidates,
     extract_initial_data_from_watch_html,
     extract_replay_actions_from_initial_data,
+    extract_replay_continuations_from_initial_data,
     fetch_public_replay_actions,
     normalize_live_chat_items,
     normalize_replay_actions,
@@ -174,18 +175,32 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video_id = params["video_id"]
     mode = params.get("mode", "auto")
     video = repo.get_video(video_id) or {"video_id": video_id}
+    parser_stats = None
     if params.get("replay_actions") or mode == "replay":
+        replay_continuations = params.get("replay_continuations", [])
         if params.get("replay_actions"):
             actions = params["replay_actions"]
         elif params.get("replay_initial_data"):
-            actions = extract_replay_actions_from_initial_data(params["replay_initial_data"])
+            initial_data = params["replay_initial_data"]
+            actions = extract_replay_actions_from_initial_data(initial_data)
+            replay_continuations = extract_replay_continuations_from_initial_data(initial_data)
         elif params.get("replay_html"):
-            actions = extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(params["replay_html"]))
+            initial_data = extract_initial_data_from_watch_html(params["replay_html"])
+            actions = extract_replay_actions_from_initial_data(initial_data)
+            replay_continuations = extract_replay_continuations_from_initial_data(initial_data)
         else:
             actions = fetch_public_replay_actions(video_id)
         messages = normalize_replay_actions(actions, video_id)
         source = "replay"
-        next_poll = None
+        parser_stats = _chat_parser_stats(actions, messages, replay_continuations)
+        next_poll = {
+            "action": "continuation_available" if replay_continuations else "stop",
+            "continuation_count": len(replay_continuations),
+            "continuations": replay_continuations[:5],
+            "action_count": len(actions),
+            "unknown_count": parser_stats["unknown_count"],
+            "stop_reason": None if replay_continuations else "no_continuation",
+        }
     else:
         response = params.get("live_chat_response")
         if response is None:
@@ -246,9 +261,10 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             "first_offset_msec": min(offsets) if offsets else None,
             "last_offset_msec": max(offsets) if offsets else None,
             "next_poll": next_poll,
+            **({"parser_stats": parser_stats} if parser_stats else {}),
         }
     )
-    return {"video_id": video_id, "source": source, "message_count": len(messages), "next_poll": next_poll}
+    return {"video_id": video_id, "source": source, "message_count": len(messages), "next_poll": next_poll, **({"parser_stats": parser_stats} if parser_stats else {})}
 
 
 def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -322,6 +338,24 @@ def _metadata_cursor(repo: Any, channel_id: str) -> dict[str, Any]:
 def _live_chat_rate_limited(response: dict[str, Any]) -> bool:
     errors = response.get("error", {}).get("errors", [])
     return any(error.get("reason") == "rateLimitExceeded" for error in errors)
+
+
+def _chat_parser_stats(actions: list[dict[str, Any]], messages: list[dict[str, Any]], continuations: list[dict[str, Any]]) -> dict[str, Any]:
+    renderer_types: dict[str, int] = {}
+    unknown_count = 0
+    for message in messages:
+        renderer_type = message.get("raw_renderer_type") or "unknown"
+        renderer_types[renderer_type] = renderer_types.get(renderer_type, 0) + 1
+        if message.get("parse_warning"):
+            unknown_count += 1
+    return {
+        "action_count": len(actions),
+        "message_count": len(messages),
+        "known_count": len(messages) - unknown_count,
+        "unknown_count": unknown_count,
+        "renderer_types": renderer_types,
+        "continuation_count": len(continuations),
+    }
 
 
 def _repository() -> Any:
