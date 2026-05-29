@@ -184,6 +184,92 @@ def test_public_replay_initial_data_extractor():
     assert collected["message_count"] == 1
 
 
+def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued")
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "live001", "title": "live", "published_at": "2026-05-29T00:00:00Z", "live_chat_id": "chat001"})
+
+    result = chat_collect(
+        repo,
+        {
+            "video_id": "live001",
+            "mode": "live",
+            "live_chat_response": {
+                "nextPageToken": "next-live-token",
+                "pollingIntervalMillis": 950000,
+                "items": [{"id": "m1", "snippet": {"displayMessage": "hello", "publishedAt": "2026-05-29T00:00:00Z"}, "authorDetails": {"channelId": "a1", "displayName": "Alice"}}],
+            },
+        },
+    )
+
+    chunks = repo.list_chat_chunks("live001")
+    assert result["next_poll"]["action"] == "requeue"
+    assert result["next_poll"]["delay_seconds"] == 950
+    assert result["next_poll"]["requeue_delay_seconds"] == 900
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_CHAT_QUEUE_URL"
+    assert enqueued[0]["delay_seconds"] == 900
+    assert enqueued[0]["payload"]["input"]["page_token"] == "next-live-token"
+    assert chunks[0]["next_poll"]["action"] == "requeue"
+    assert chunks[0]["message_count"] == 1
+    assert chunks[0]["s3_uri"]
+
+
+def test_live_chat_collect_stops_when_offline(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append(payload) or "queued")
+    repo = MemoryRepository()
+
+    result = chat_collect(
+        repo,
+        {
+            "video_id": "live002",
+            "mode": "live",
+            "live_chat_id": "chat002",
+            "live_chat_response": {
+                "nextPageToken": "ignored-token",
+                "pollingIntervalMillis": 10000,
+                "offlineAt": "2026-05-29T01:00:00Z",
+                "items": [],
+            },
+        },
+    )
+
+    assert result["next_poll"]["action"] == "stop"
+    assert result["next_poll"]["stop_reason"] == "offline"
+    assert result["next_poll"]["requeue_delay_seconds"] is None
+    assert enqueued == []
+
+
+def test_live_chat_collect_does_not_requeue_on_rate_limit(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append(payload) or "queued")
+    repo = MemoryRepository()
+
+    result = chat_collect(
+        repo,
+        {
+            "video_id": "live003",
+            "mode": "live",
+            "live_chat_id": "chat003",
+            "live_chat_response": {
+                "nextPageToken": "retry-token",
+                "pollingIntervalMillis": 10000,
+                "error": {"errors": [{"reason": "rateLimitExceeded"}]},
+                "items": [],
+            },
+        },
+    )
+
+    assert result["next_poll"]["action"] == "retry_later"
+    assert result["next_poll"]["rate_limited"] is True
+    assert result["next_poll"]["stop_reason"] == "rate_limit_exceeded"
+    assert enqueued == []
+
+
 def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
     repo = MemoryRepository()

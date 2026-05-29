@@ -98,6 +98,8 @@ YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `
 - `metadata_sync` は明示 `page_token` がなければ `ChannelCursor.next_page_token` から再開する。`nextPageToken` が返った場合は cursor を更新し、次 page の `metadata_sync` を queue へ再投入する。
 - YouTube raw response 本文は S3 に保存し、DynamoDB の `Video` / `ChannelCursor` には URI、件数、video id などの要約だけを保存する。
 - `liveChatMessages.list` は `nextPageToken` と `pollingIntervalMillis` を記録し、Lambda 内で長時間 sleep しない。
+- live chat collect は `nextPageToken` があり、`offlineAt` と `rateLimitExceeded` がない場合だけ SQS delay で再投入する。`pollingIntervalMillis` は秒へ変換し、SQS の上限に合わせて `DelaySeconds` は 900 秒で clamp する。
+- `offlineAt` が返った場合は `next_poll.action=stop`、`rateLimitExceeded` の場合は `next_poll.action=retry_later` として raw chunk manifest に停止理由を残し、自動再投入しない。
 - quota 使用は `QuotaUsage` item に method/units/details として記録する。
 
 ## ローカル検証
