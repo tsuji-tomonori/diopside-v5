@@ -19,11 +19,17 @@
   },
   "chat_summary": {
     "message_count": 1000,
-    "wordcloud_url": "/wordcloud/fixture001.png",
+    "wordcloud_url": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.svg",
     "top_terms": [
       {"term": "ありがとう", "score": 120.5},
       {"term": "かわいい", "score": 98.0}
     ]
+  },
+  "artifacts": {
+    "wordcloud": {
+      "path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.svg",
+      "content_type": "image/svg+xml"
+    }
   },
   "timestamps": [
     {"offset_sec": 120, "label": "開始あいさつ", "source": "description", "confidence": 1.0},

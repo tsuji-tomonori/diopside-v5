@@ -15,6 +15,9 @@
     "wordcloud_url": null,
     "top_terms": []
   },
+  "artifacts": {
+    "wordcloud": null
+  },
   "timestamps": [
     {"offset_sec": 60, "label": "候補", "source": "chat_burst", "confidence": 0.65}
   ]
