@@ -111,6 +111,8 @@ YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `
 
 unknown renderer は raw chat JSONL には `raw_renderer` として保存しますが、DynamoDB の `ChatMessageChunkManifest` には本文や renderer body を保存せず、`s3_uri`、件数、hash、offset、`parser_stats` などの要約だけを残します。
 
+`chat_normalize` は `ChatMessageChunkManifest.s3_uri` の raw JSONL を line iteration で読み、normalized JSONL を出力しながら aggregate summary を更新します。集計用に全 message dict を list 化せず、`message_count`、author 数、paid 件数、emoji 件数、timeline、top terms、term timeline を streaming accumulator で生成します。
+
 ## ローカル検証
 
 ```sh
