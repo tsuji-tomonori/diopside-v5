@@ -622,7 +622,35 @@ def test_timestamp_candidates_include_keyword_spike():
         ]
     )
     candidates = build_timestamp_candidates(summary)
-    assert any(candidate["source"] == "keyword_spike" and candidate["evidence_terms"] == ["ありがとう"] for candidate in candidates)
+    assert any("keyword_spike" in candidate["merged_sources"] and "ありがとう" in candidate["evidence_terms"] for candidate in candidates)
+
+
+def test_timestamp_candidates_merge_sources_and_sort_by_score():
+    summary = {
+        "message_count": 20,
+        "timeline_buckets": [
+            {"offset_sec": 120, "message_count": 8},
+            {"offset_sec": 300, "message_count": 12},
+        ],
+        "top_terms": [{"term": "ありがとう", "score": 12}, {"term": "かわいい", "score": 4}],
+        "term_timeline": {
+            "ありがとう": [{"offset_sec": 125, "count": 10}, {"offset_sec": 360, "count": 2}],
+            "かわいい": [{"offset_sec": 300, "count": 4}],
+        },
+    }
+
+    candidates = build_timestamp_candidates(summary, "02:05 見どころ\n05:00 別場面")
+
+    assert candidates == sorted(candidates, key=lambda item: (-item["score"], item["offset_sec"], item["source"]))
+    merged = next(candidate for candidate in candidates if candidate["offset_sec"] == 125)
+    assert merged["source"] == "description"
+    assert merged["label"] == "見どころ"
+    assert merged["score"] == 1.0
+    assert merged["merged_sources"] == ["chat_burst", "description", "keyword_spike"]
+    assert merged["evidence_terms"] == ["ありがとう", "かわいい"]
+    assert merged["message_count"] == 10
+    assert [candidate["offset_sec"] for candidate in candidates].count(125) == 1
+    assert any(candidate["source"] == "description" and candidate["offset_sec"] == 300 for candidate in candidates)
 
 
 def test_repository_job_idempotency_and_lists():
