@@ -30,6 +30,9 @@
 - `tests/test_core_pipeline.py`
 - `tools/run-local-e2e.mjs`
 - `tasks/do/20260529-1542-worker-pipeline-integration-test.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/35
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570743073
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570744227
 
 ## 検証
 
@@ -42,6 +45,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -51,4 +55,4 @@
 ## 未対応・制約・リスク
 
 - 実 AWS DynamoDB/S3/SQS との接続確認は P4-03 の対象外のため未実施。
-- PR 作成後、GitHub Actions 上の `CI / npm verify` 成功を確認する必要がある。
+- GitHub Apps による PR top-level comment は 403 のため、`gh pr comment` で代替した。

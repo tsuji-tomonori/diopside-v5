@@ -1,6 +1,6 @@
 # worker pipeline integration test強化
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -44,6 +44,22 @@ integration test
 - targeted pytest
 - `npm test`
 - `npm run verify`
+
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/35
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570743073
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570744227
+- GitHub Actions `CI / npm verify`: 成功
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py -k worker_pipeline_integration`: 1 passed
+- `npm run e2e:local`: 成功
+- `npm test`: 62 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## リスク
 
