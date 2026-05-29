@@ -71,6 +71,16 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  ApiFunctionUrlOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name:
+          Fn::Sub: "diopside-${EnvName}-lambda-url-oac"
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
   ApiNoStoreCachePolicy:
     Type: AWS::CloudFront::CachePolicy
     Properties:
@@ -429,7 +439,7 @@ Resources:
   ApiFunctionUrl:
     Type: AWS::Lambda::Url
     Properties:
-      AuthType: NONE
+      AuthType: AWS_IAM
       TargetFunctionArn:
         Ref: ApiFunction
 
@@ -439,8 +449,11 @@ Resources:
       Action: lambda:InvokeFunctionUrl
       FunctionName:
         Ref: ApiFunction
-      Principal: "*"
-      FunctionUrlAuthType: NONE
+      Principal: cloudfront.amazonaws.com
+      FunctionUrlAuthType: AWS_IAM
+      InvokedViaFunctionUrl: true
+      SourceArn:
+        Fn::Sub: "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -471,6 +484,8 @@ Resources:
                 - Fn::Split:
                     - "/"
                     - Fn::GetAtt: [ApiFunctionUrl, FunctionUrl]
+            OriginAccessControlId:
+              Ref: ApiFunctionUrlOac
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
               HTTPSPort: 443
@@ -666,7 +681,8 @@ Outputs:
   ApiEndpoint:
     Value:
       Fn::Sub: "https://${CloudFrontDistribution.DomainName}/api"
-  ApiFunctionUrl:
+  ApiFunctionUrlOrigin:
+    Description: Internal Lambda Function URL origin protected by AWS_IAM and CloudFront OAC. Use ApiEndpoint for clients.
     Value:
       Fn::GetAtt: [ApiFunctionUrl, FunctionUrl]
   WebBucketName:

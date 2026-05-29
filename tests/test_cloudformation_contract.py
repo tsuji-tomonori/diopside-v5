@@ -44,6 +44,7 @@ def test_cloudfront_oac_and_outputs_are_defined():
 def test_cloudfront_behaviors_route_to_expected_origins_and_cache_policies():
     resources = _template()["Resources"]
     distribution = resources["CloudFrontDistribution"]["Properties"]["DistributionConfig"]
+    origins = {origin["Id"]: origin for origin in distribution["Origins"]}
     behaviors = distribution["CacheBehaviors"]
     assert [behavior["PathPattern"] for behavior in behaviors] == [
         "/api/*",
@@ -58,6 +59,8 @@ def test_cloudfront_behaviors_route_to_expected_origins_and_cache_policies():
     assert by_path["/api/*"]["AllowedMethods"] == ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     assert by_path["/api/*"]["CachedMethods"] == ["GET", "HEAD", "OPTIONS"]
     assert by_path["/api/*"]["OriginRequestPolicyId"] == "216adef6-5c7f-47e4-b989-5492eafa07d3"
+    assert origins["api-function-url"]["OriginAccessControlId"] == {"Ref": "ApiFunctionUrlOac"}
+    assert origins["api-function-url"]["CustomOriginConfig"]["OriginProtocolPolicy"] == "https-only"
 
     assert by_path["/data/latest-manifest.json"]["TargetOriginId"] == "public-data-s3"
     assert by_path["/data/latest-manifest.json"]["CachePolicyId"] == {"Ref": "ManifestShortCachePolicy"}
@@ -70,6 +73,28 @@ def test_cloudfront_behaviors_route_to_expected_origins_and_cache_policies():
     assert default["TargetOriginId"] == "web-s3"
     assert default["CachePolicyId"] == {"Ref": "ImmutableCachePolicy"}
     assert default["FunctionAssociations"][0]["EventType"] == "viewer-request"
+
+
+def test_lambda_function_url_is_cloudfront_origin_only():
+    template = _template()
+    resources = template["Resources"]
+    function_url = resources["ApiFunctionUrl"]["Properties"]
+    permission = resources["ApiFunctionUrlPermission"]["Properties"]
+    lambda_oac = resources["ApiFunctionUrlOac"]["Properties"]["OriginAccessControlConfig"]
+    outputs = template["Outputs"]
+
+    assert function_url["AuthType"] == "AWS_IAM"
+    assert lambda_oac["OriginAccessControlOriginType"] == "lambda"
+    assert lambda_oac["SigningBehavior"] == "always"
+    assert lambda_oac["SigningProtocol"] == "sigv4"
+    assert permission["Action"] == "lambda:InvokeFunctionUrl"
+    assert permission["Principal"] == "cloudfront.amazonaws.com"
+    assert permission["FunctionUrlAuthType"] == "AWS_IAM"
+    assert permission["InvokedViaFunctionUrl"] is True
+    assert permission["SourceArn"] == {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"}
+    assert "ApiEndpoint" in outputs
+    assert "ApiFunctionUrl" not in outputs
+    assert outputs["ApiFunctionUrlOrigin"]["Description"].startswith("Internal Lambda Function URL origin")
 
 
 def test_cloudfront_cache_policy_ttls_match_behavior_contract():
