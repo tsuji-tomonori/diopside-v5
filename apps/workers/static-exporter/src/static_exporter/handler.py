@@ -124,8 +124,25 @@ def export_from_fixture(source_dir: pathlib.Path, out_dir: pathlib.Path, export_
     shutil.copytree(source_dir, out_dir, dirs_exist_ok=True)
     manifest_path = out_dir / "latest-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    source_version = manifest["export_version"]
+    source_public_dir = out_dir / "data" / "v" / source_version / "public"
+    target_public_dir = out_dir / "data" / "v" / export_version / "public"
+    if source_version != export_version and source_public_dir.exists():
+        target_public_dir.parent.mkdir(parents=True, exist_ok=True)
+        if target_public_dir.exists():
+            shutil.rmtree(target_public_dir)
+        shutil.move(str(source_public_dir), str(target_public_dir))
+        source_version_dir = out_dir / "data" / "v" / source_version
+        if source_version_dir.exists() and not any(source_version_dir.iterdir()):
+            source_version_dir.rmdir()
+    old_prefix = f"/data/v/{source_version}/"
+    new_prefix = f"/data/v/{export_version}/"
     manifest["generated_at"] = _now()
     manifest["export_version"] = export_version
+    manifest["base_path"] = f"/data/v/{export_version}"
+    manifest["indexes"] = {key: value.replace(old_prefix, new_prefix, 1) for key, value in manifest["indexes"].items()}
+    for path in target_public_dir.rglob("*.json"):
+        path.write_text(path.read_text(encoding="utf-8").replace(old_prefix, new_prefix), encoding="utf-8")
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest
 

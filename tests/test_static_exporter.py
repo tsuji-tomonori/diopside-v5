@@ -15,7 +15,10 @@ def test_export_from_fixture(tmp_path):
     assert manifest["export_version"] == "test-export"
     written = json.loads((tmp_path / "latest-manifest.json").read_text(encoding="utf-8"))
     assert written["schema_version"] == "public-manifest/v1"
-    assert (tmp_path / "data/v/dev-fixture/public/index/videos-latest.json").exists()
+    assert written["base_path"] == "/data/v/test-export"
+    assert written["indexes"]["videos_latest"] == "/data/v/test-export/public/index/videos-latest.json"
+    assert (tmp_path / "data/v/test-export/public/index/videos-latest.json").exists()
+    subprocess.run(["node", "tools/check-public-contract.mjs", str(tmp_path)], check=True)
 
 
 def test_export_public_data_from_repository(tmp_path):

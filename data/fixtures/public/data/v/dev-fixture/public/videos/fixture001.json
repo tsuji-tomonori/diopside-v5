@@ -32,7 +32,21 @@
     }
   },
   "timestamps": [
-    {"offset_sec": 120, "label": "開始あいさつ", "source": "description", "confidence": 1.0},
-    {"offset_sec": 1800, "label": "盛り上がり候補", "source": "chat_burst", "confidence": 0.72}
+    {
+      "offset_sec": 120,
+      "label": "開始あいさつ",
+      "source": "description",
+      "score": 1.0,
+      "evidence_terms": ["開始"],
+      "message_count": 0
+    },
+    {
+      "offset_sec": 1800,
+      "label": "盛り上がり候補",
+      "source": "chat_burst",
+      "score": 0.72,
+      "evidence_terms": ["ありがとう"],
+      "message_count": 120
+    }
   ]
 }

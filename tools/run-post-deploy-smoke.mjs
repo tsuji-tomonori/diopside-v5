@@ -39,7 +39,10 @@ async function smokePublic(url, outDir) {
     const detail = await json(`${url}${item.detail_path}`);
     await writeJson(join(outDir, item.detail_path.replace(/^\//, "")), detail);
     if (detail.chat_summary?.wordcloud_url) {
-      await text(`${url}${detail.chat_summary.wordcloud_url}`);
+      await writeText(
+        join(outDir, detail.chat_summary.wordcloud_url.replace(/^\//, "")),
+        await text(`${url}${detail.chat_summary.wordcloud_url}`)
+      );
     }
   }
   const contract = spawnSync("node", ["tools/check-public-contract.mjs", outDir], { stdio: "inherit" });
@@ -120,6 +123,12 @@ async function writeJson(path, value) {
   const dir = dirname(path);
   if (dir !== ".") await mkdir(dir, { recursive: true });
   await writeFile(path, JSON.stringify(value, null, 2) + "\n", "utf8");
+}
+
+async function writeText(path, value) {
+  const dir = dirname(path);
+  if (dir !== ".") await mkdir(dir, { recursive: true });
+  await writeFile(path, value, "utf8");
 }
 
 function requiredEnv(name) {
