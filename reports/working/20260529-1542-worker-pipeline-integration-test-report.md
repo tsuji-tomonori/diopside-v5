@@ -22,16 +22,19 @@
 
 - `tests/test_core_pipeline.py` に worker pipeline integration test を追加した。
 - P4-03 の task md を作成した。
+- PR #35 の初回 CI で `npm run e2e:local` 後の Chrome profile cleanup が `ENOTEMPTY` で失敗したため、`tools/run-local-e2e.mjs` の一時ディレクトリ削除に retry を追加した。
 
 ## 成果物
 
 - `tests/test_core_pipeline.py`
+- `tools/run-local-e2e.mjs`
 - `tasks/do/20260529-1542-worker-pipeline-integration-test.md`
 
 ## 検証
 
 - `git diff --check`: 成功
 - `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py -k worker_pipeline_integration`: 1 passed
+- `npm run e2e:local`: 成功
 - `npm test`: 62 passed
 - `npm run verify`: 成功
   - `npm test`: 62 passed

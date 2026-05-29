@@ -193,9 +193,22 @@ async function startChrome() {
     async stop() {
       proc.kill();
       await new Promise((resolve) => proc.once("exit", resolve));
-      await rm(profile, { recursive: true, force: true });
+      await removePathWithRetry(profile);
     }
   };
+}
+
+async function removePathWithRetry(path) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (error?.code !== "ENOTEMPTY" && error?.code !== "EBUSY") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  await rm(path, { recursive: true, force: true });
 }
 
 async function openChromePage(port, url) {
