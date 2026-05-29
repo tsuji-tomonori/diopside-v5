@@ -557,6 +557,136 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
 
 
+def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(
+        pipeline,
+        "_enqueue_job",
+        lambda queue_env, payload, delay_seconds=0: enqueued.append(
+            {"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}
+        )
+        or f"queued-{len(enqueued)}",
+    )
+    repo = MemoryRepository()
+    metadata_job, _ = repo.create_job("metadata_sync", {"video_resources": ["vid-int"]}, "int-metadata")
+
+    metadata = dispatch_job(
+        repo,
+        {
+            "job_type": "metadata_sync",
+            "job_id": metadata_job["job_id"],
+            "input": {
+                "video_resources": [
+                    {
+                        "id": "vid-int",
+                        "snippet": {
+                            "title": "統合テストアーカイブ",
+                            "description": "00:45 見どころ",
+                            "publishedAt": "2026-05-28T00:00:00Z",
+                            "channelId": "ch",
+                            "tags": ["統合"],
+                        },
+                        "contentDetails": {"duration": "PT10M"},
+                        "liveStreamingDetails": {},
+                        "statistics": {},
+                        "status": {"privacyStatus": "public"},
+                    }
+                ]
+            },
+        },
+    )
+
+    assert metadata["status"] == "succeeded"
+    assert repo.get_video("vid-int")["raw_metadata_uri"]
+    assert repo.get_job(metadata_job["job_id"])["derived_state"] == "succeeded"
+    assert list((tmp_path / "raw/youtube/metadata/video_id=vid-int").rglob("*.json"))
+
+    repo.put_video(
+        {
+            "video_id": "live-int",
+            "title": "配信中",
+            "published_at": "2026-05-29T00:00:00Z",
+            "live_chat_id": "chat-int",
+            "public": True,
+        }
+    )
+    scan_job, _ = repo.create_job("live_status_scan", {"skip_youtube_refresh": True}, "int-live-scan")
+    scan = dispatch_job(
+        repo,
+        {
+            "job_type": "live_status_scan",
+            "job_id": scan_job["job_id"],
+            "input": {"skip_youtube_refresh": True},
+        },
+    )
+
+    assert scan["status"] == "succeeded"
+    assert enqueued == [
+        {
+            "queue_env": "DIOPSIDE_CHAT_QUEUE_URL",
+            "payload": {
+                "job_type": "chat_collect",
+                "job_id": "manual-live-live-int",
+                "input": {"video_id": "live-int", "mode": "live", "live_chat_id": "chat-int"},
+            },
+            "delay_seconds": 0,
+        }
+    ]
+
+    collect_job, _ = repo.create_job("chat_collect", {"video_id": "vid-int", "mode": "replay"}, "int-chat-collect")
+    collect = dispatch_job(
+        repo,
+        {
+            "job_type": "chat_collect",
+            "job_id": collect_job["job_id"],
+            "input": {
+                "video_id": "vid-int",
+                "mode": "replay",
+                "replay_actions": [
+                    {
+                        "addChatItemAction": {
+                            "item": {
+                                "liveChatTextMessageRenderer": {
+                                    "id": "m1",
+                                    "authorExternalChannelId": "author1",
+                                    "authorName": {"simpleText": "Alice"},
+                                    "timestampUsec": "1000",
+                                    "videoOffsetTimeMsec": "45000",
+                                    "message": {"runs": [{"text": "統合テスト ありがとう"}]},
+                                }
+                            }
+                        }
+                    }
+                ],
+            },
+        },
+    )
+    normalize_job, _ = repo.create_job("chat_normalize", {"video_id": "vid-int"}, "int-chat-normalize")
+    normalized = dispatch_job(
+        repo,
+        {"job_type": "chat_normalize", "job_id": normalize_job["job_id"], "input": {"video_id": "vid-int"}},
+    )
+    rebuild_job, _ = repo.create_job("rebuild_artifacts", {"video_id": "vid-int"}, "int-rebuild")
+    rebuilt = dispatch_job(
+        repo,
+        {"job_type": "rebuild_artifacts", "job_id": rebuild_job["job_id"], "input": {"video_id": "vid-int"}},
+    )
+
+    assert collect["message_count"] == 1
+    assert normalized["message_count"] == 1
+    assert rebuilt["timestamp_count"] >= 1
+    assert rebuilt["wordcloud_available"] is True
+    assert {item["term"] for item in repo.get_chat_aggregate("vid-int")["top_terms"]} >= {"統合テスト", "ありがとう"}
+    assert repo.get_job(collect_job["job_id"])["derived_state"] == "succeeded"
+    assert repo.get_job(normalize_job["job_id"])["derived_state"] == "succeeded"
+    assert repo.get_job(rebuild_job["job_id"])["derived_state"] == "succeeded"
+    assert repo.list_artifacts("vid-int")
+    assert list((tmp_path / "raw/youtube/chat/video_id=vid-int").rglob("*.jsonl"))
+    assert list((tmp_path / "processed/chat-normalized/video_id=vid-int").rglob("*.jsonl"))
+    assert list((tmp_path / "processed/chat-aggregate/video_id=vid-int").rglob("summary.json"))
+
+
 def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
     repo = MemoryRepository()
