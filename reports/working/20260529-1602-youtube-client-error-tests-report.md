@@ -30,6 +30,9 @@
 - `apps/shared/src/diopside_core/__init__.py`
 - `tests/test_core_pipeline.py`
 - `tasks/do/20260529-1602-youtube-client-error-tests.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/37
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/37#issuecomment-4570838958
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/37#issuecomment-4570841285
 
 ## 検証
 
@@ -41,6 +44,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -50,4 +54,4 @@
 ## 未対応・制約・リスク
 
 - 実 YouTube API への通信は行わず、urllib response / exception mock による client contract 固定に限定した。
-- PR 作成後、GitHub Actions 上の `CI / npm verify` 成功を確認する必要がある。
+- GitHub Apps による PR top-level comment は 403 のため、`gh pr comment` で代替した。

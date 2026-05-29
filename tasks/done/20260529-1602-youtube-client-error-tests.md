@@ -1,6 +1,6 @@
 # YouTube client error test
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -48,6 +48,21 @@ test / error handling
 - targeted pytest
 - `npm test`
 - `npm run verify`
+
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/37
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/37#issuecomment-4570838958
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/37#issuecomment-4570841285
+- GitHub Actions `CI / npm verify`: 成功
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py -k youtube_client`: 7 passed
+- `npm test`: 69 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## リスク
 
