@@ -187,19 +187,48 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         source = "replay"
         next_poll = None
     else:
-        client = params.get("youtube_client") or YouTubeClient()
-        response = params.get("live_chat_response") or client.live_chat_messages(video.get("live_chat_id") or params["live_chat_id"], params.get("page_token"))
+        response = params.get("live_chat_response")
+        if response is None:
+            client = params.get("youtube_client") or YouTubeClient()
+            response = client.live_chat_messages(video.get("live_chat_id") or params["live_chat_id"], params.get("page_token"))
         messages = normalize_live_chat_items(response.get("items", []), video_id)
         source = "live"
-        delay_seconds = int(response.get("pollingIntervalMillis", 10000)) // 1000
+        delay_seconds = max(1, int(response.get("pollingIntervalMillis", 10000)) // 1000)
+        requeue_delay_seconds = min(delay_seconds, 900)
+        rate_limited = _live_chat_rate_limited(response)
+        offline_at = response.get("offlineAt")
+        next_page_token = response.get("nextPageToken")
+        if rate_limited:
+            action = "retry_later"
+            stop_reason = "rate_limit_exceeded"
+        elif offline_at:
+            action = "stop"
+            stop_reason = "offline"
+        elif next_page_token:
+            action = "requeue"
+            stop_reason = None
+        else:
+            action = "stop"
+            stop_reason = "no_next_page_token"
         next_poll = {
-            "next_page_token": response.get("nextPageToken"),
+            "action": action,
+            "next_page_token": next_page_token,
             "delay_seconds": delay_seconds,
-            "offline_at": response.get("offlineAt"),
-            "rate_limited": any(error.get("reason") == "rateLimitExceeded" for error in response.get("error", {}).get("errors", [])),
+            "requeue_delay_seconds": requeue_delay_seconds if action == "requeue" else None,
+            "offline_at": offline_at,
+            "rate_limited": rate_limited,
+            "stop_reason": stop_reason,
         }
-        if next_poll["next_page_token"] and not next_poll["rate_limited"]:
-            _enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video_id}", "input": {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_poll["next_page_token"]}}, delay_seconds=min(delay_seconds, 900))
+        if action == "requeue":
+            _enqueue_job(
+                "DIOPSIDE_CHAT_QUEUE_URL",
+                {
+                    "job_type": "chat_collect",
+                    "job_id": f"manual-live-{video_id}",
+                    "input": {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_page_token},
+                },
+                delay_seconds=requeue_delay_seconds,
+            )
     raw_key = f"raw/youtube/chat/video_id={video_id}/source={source}/{now_iso()}.jsonl"
     body = ("\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + ("\n" if messages else "")).encode("utf-8")
     raw_uri = _write_blob(raw_key, body, "application/x-ndjson")
@@ -288,6 +317,11 @@ def _channel_config(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 def _metadata_cursor(repo: Any, channel_id: str) -> dict[str, Any]:
     return repo.get_item(f"CHANNEL#{channel_id}", "CURSOR#metadata") or {}
+
+
+def _live_chat_rate_limited(response: dict[str, Any]) -> bool:
+    errors = response.get("error", {}).get("errors", [])
+    return any(error.get("reason") == "rateLimitExceeded" for error in errors)
 
 
 def _repository() -> Any:
