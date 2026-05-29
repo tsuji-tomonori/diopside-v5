@@ -11,9 +11,11 @@ from typing import Any, Protocol
 try:
     import boto3
     from boto3.dynamodb.conditions import Key
+    from botocore.exceptions import ClientError
 except Exception:  # pragma: no cover - available in Lambda package.
     boto3 = None
     Key = None
+    ClientError = Exception
 
 
 ITEM_TYPES = {
@@ -51,12 +53,20 @@ def video_item(video: dict[str, Any]) -> dict[str, Any]:
         "item_type": "Video",
         "pk": f"VIDEO#{video_id}",
         "sk": "META",
-        "gsi1pk": "VIDEO#PUBLIC",
-        "gsi1sk": f"{published_at}#{video_id}",
         "updated_at": now_iso(),
         "tags": tags,
     }
+    if item.get("public", True):
+        item["gsi1pk"] = "VIDEO#PUBLIC"
+        item["gsi1sk"] = f"{published_at}#{video_id}"
     return item
+
+
+def derive_job_state(events: list[dict[str, Any]]) -> str:
+    if not events:
+        return "queued"
+    terminal = {"completed": "succeeded", "failed": "failed", "cancelled": "cancelled"}
+    return terminal.get(events[-1]["event_type"], events[-1]["event_type"])
 
 
 class Repository(Protocol):
@@ -144,7 +154,19 @@ class MemoryRepository:
 
     def record_quota_usage(self, method: str, units: int, details: dict[str, Any] | None = None) -> dict[str, Any]:
         stamp = now_iso()
-        return self.put_item({"item_type": "QuotaUsage", "pk": f"QUOTA#{stamp[:10]}", "sk": f"{stamp}#{method}#{uuid.uuid4().hex}", "method": method, "units": units, "details": details or {}, "created_at": stamp})
+        return self.put_item(
+            {
+                "item_type": "QuotaUsage",
+                "pk": f"QUOTA#{stamp[:10]}",
+                "sk": f"{stamp}#{method}#{uuid.uuid4().hex}",
+                "method": method,
+                "units": units,
+                "details": details or {},
+                "created_at": stamp,
+                "gsi3pk": "QUOTA#ALL",
+                "gsi3sk": f"{stamp}#{method}",
+            }
+        )
 
     def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]:
         if idempotency_key in self.idempotency_index:
@@ -152,7 +174,7 @@ class MemoryRepository:
             if existing:
                 return existing, True
         stamp = now_iso()
-        job_id = stable_id("job", f"{job_type}:{idempotency_key}")
+        job_id = stable_id("job", idempotency_key)
         item = {
             "item_type": "Job",
             "pk": f"JOB#{job_id}",
@@ -164,8 +186,8 @@ class MemoryRepository:
             "derived_state": "queued",
             "created_at": stamp,
             "updated_at": stamp,
-            "gsi3pk": f"JOB#{job_type}",
-            "gsi3sk": stamp,
+            "gsi3pk": "JOB#ALL",
+            "gsi3sk": f"{stamp}#{job_type}#{job_id}",
         }
         self.put_item(item)
         self.idempotency_index[idempotency_key] = job_id
@@ -179,9 +201,7 @@ class MemoryRepository:
         events = [item for (pk, _), item in self.items.items() if pk == f"JOB#{job_id}" and item.get("item_type") == "JobEvent"]
         events.sort(key=lambda item: item["created_at"])
         job["events"] = deepcopy(events)
-        if events:
-            terminal = {"completed": "succeeded", "failed": "failed", "cancelled": "cancelled"}
-            job["derived_state"] = terminal.get(events[-1]["event_type"], events[-1]["event_type"])
+        job["derived_state"] = derive_job_state(events)
         return job
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -235,10 +255,7 @@ class DynamoRepository(MemoryRepository):
         return deepcopy(item) if item else None
 
     def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]:
-        job_id = stable_id("job", f"{job_type}:{idempotency_key}")
-        existing = self.get_job(job_id)
-        if existing:
-            return existing, True
+        job_id = stable_id("job", idempotency_key)
         stamp = now_iso()
         item = {
             "item_type": "Job",
@@ -251,10 +268,18 @@ class DynamoRepository(MemoryRepository):
             "derived_state": "queued",
             "created_at": stamp,
             "updated_at": stamp,
-            "gsi3pk": f"JOB#{job_type}",
-            "gsi3sk": stamp,
+            "gsi3pk": "JOB#ALL",
+            "gsi3sk": f"{stamp}#{job_type}#{job_id}",
         }
-        self.put_item(item)
+        try:
+            self.table.put_item(Item=item, ConditionExpression="attribute_not_exists(pk)")
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+            existing = self.get_job(job_id)
+            if existing:
+                return existing, True
+            raise
         self.append_job_event(job_id, "queued", {"job_type": job_type})
         return self.get_job(job_id) or item, False
 
@@ -268,20 +293,34 @@ class DynamoRepository(MemoryRepository):
         events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
         events.sort(key=lambda item: item["created_at"])
         job["events"] = deepcopy(events)
-        if events:
-            terminal = {"completed": "succeeded", "failed": "failed", "cancelled": "cancelled"}
-            job["derived_state"] = terminal.get(events[-1]["event_type"], events[-1]["event_type"])
+        job["derived_state"] = derive_job_state(events)
         return job
 
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]:
-        response = self.table.scan(Limit=limit * 2)
-        videos = [item for item in response.get("Items", []) if item.get("item_type") == "Video" and item.get("public", True)]
-        videos.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        videos = [
+            item
+            for item in self._query_all(
+                IndexName="by_public_date",
+                KeyConditionExpression=Key("gsi1pk").eq("VIDEO#PUBLIC"),
+                ScanIndexForward=False,
+                Limit=limit,
+            )
+            if item.get("item_type") == "Video" and item.get("public", True)
+        ]
         return deepcopy(videos[:limit])
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
-        response = self.table.scan(Limit=limit * 5)
-        jobs = [self.get_job(item["job_id"]) for item in response.get("Items", []) if item.get("item_type") == "Job"]
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        job_items = self._query_all(
+            IndexName="by_work_queue",
+            KeyConditionExpression=Key("gsi3pk").eq("JOB#ALL"),
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        jobs = [self.get_job(item["job_id"]) for item in job_items if item.get("item_type") == "Job"]
         jobs = [job for job in jobs if job]
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return deepcopy(jobs[:limit])
@@ -307,7 +346,30 @@ class DynamoRepository(MemoryRepository):
         return deepcopy(channels)
 
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
-        response = self.table.scan(Limit=limit * 5)
-        usage = [item for item in response.get("Items", []) if item.get("item_type") == "QuotaUsage"]
-        usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        usage = [
+            item
+            for item in self._query_all(
+                IndexName="by_work_queue",
+                KeyConditionExpression=Key("gsi3pk").eq("QUOTA#ALL"),
+                ScanIndexForward=False,
+                Limit=limit,
+            )
+            if item.get("item_type") == "QuotaUsage"
+        ]
         return deepcopy(usage[:limit])
+
+    def _query_all(self, **kwargs: Any) -> list[dict[str, Any]]:
+        limit = int(kwargs.pop("Limit", 100))
+        items: list[dict[str, Any]] = []
+        request = {**kwargs, "Limit": limit}
+        while len(items) < limit:
+            response = self.table.query(**request)
+            items.extend(response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            request["ExclusiveStartKey"] = last_key
+            request["Limit"] = max(1, limit - len(items))
+        return items[:limit]

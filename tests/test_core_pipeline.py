@@ -2,7 +2,9 @@ import json
 
 import pytest
 
-from diopside_core import MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from botocore.exceptions import ClientError
+
+from diopside_core import DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
 
 
@@ -247,3 +249,70 @@ def test_retry_and_cancel_job_update_target_events():
     cancelled = cancel_job(repo, {"target_job_id": queued["job_id"], "reason": "manual"})
     assert cancelled["cancelled"] is True
     assert repo.get_job(queued["job_id"])["derived_state"] == "cancelled"
+
+
+class FakeDynamoTable:
+    def __init__(self):
+        self.items = {}
+        self.query_calls = []
+
+    def put_item(self, **kwargs):
+        item = kwargs["Item"]
+        key = (item["pk"], item["sk"])
+        if kwargs.get("ConditionExpression") == "attribute_not_exists(pk)" and key in self.items:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem")
+        self.items[key] = dict(item)
+        return {}
+
+    def get_item(self, Key):
+        item = self.items.get((Key["pk"], Key["sk"]))
+        return {"Item": dict(item)} if item else {}
+
+    def query(self, **kwargs):
+        self.query_calls.append(kwargs)
+        index_name = kwargs.get("IndexName")
+        if index_name == "by_public_date":
+            items = [item for item in self.items.values() if item.get("gsi1pk") == "VIDEO#PUBLIC"]
+            items.sort(key=lambda item: item.get("gsi1sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
+        elif index_name == "by_work_queue":
+            items = [item for item in self.items.values() if item.get("gsi3pk") in {"JOB#ALL", "QUOTA#ALL"}]
+            items.sort(key=lambda item: item.get("gsi3sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
+        else:
+            items = [item for item in self.items.values() if item["pk"].startswith("JOB#")]
+        return {"Items": [dict(item) for item in items[: kwargs.get("Limit", 100)]]}
+
+
+def dynamo_repo_with_fake_table() -> tuple[DynamoRepository, FakeDynamoTable]:
+    table = FakeDynamoTable()
+    repo = DynamoRepository.__new__(DynamoRepository)
+    repo.table_name = "fake"
+    repo.table = table
+    repo.idempotency_index = {}
+    return repo, table
+
+
+def test_dynamo_repository_lists_use_query_indexes():
+    repo, table = dynamo_repo_with_fake_table()
+    repo.put_video({"video_id": "v1", "title": "one", "published_at": "2026-05-29T00:00:00Z", "public": True})
+    repo.put_video({"video_id": "v2", "title": "private", "published_at": "2026-05-30T00:00:00Z", "public": False})
+    repo.record_quota_usage("videos.list", 1, {"video_count": 1})
+    job, _ = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
+    repo.append_job_event(job["job_id"], "completed", {})
+
+    assert [video["video_id"] for video in repo.list_videos()] == ["v1"]
+    assert repo.list_jobs()[0]["derived_state"] == "succeeded"
+    assert repo.list_quota_usage()[0]["method"] == "videos.list"
+    assert {call.get("IndexName") for call in table.query_calls} >= {"by_public_date", "by_work_queue"}
+
+
+def test_dynamo_create_job_condition_prevents_duplicate_events():
+    repo, table = dynamo_repo_with_fake_table()
+    first, dedup_first = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
+    second, dedup_second = repo.create_job("metadata_sync", {"channel_id": "ch"}, "same-key")
+
+    events = [item for item in table.items.values() if item.get("item_type") == "JobEvent"]
+    assert dedup_first is False
+    assert dedup_second is True
+    assert second["job_id"] == first["job_id"]
+    assert len(events) == 1
+    assert repo.get_job(first["job_id"])["derived_state"] == "queued"
