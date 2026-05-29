@@ -1,6 +1,6 @@
 # Lambda Function URLの公開面整理
 
-状態: do
+状態: done
 
 ## 背景
 

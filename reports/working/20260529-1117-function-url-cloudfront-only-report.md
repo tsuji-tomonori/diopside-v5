@@ -31,7 +31,7 @@
 
 - CloudFront 経由に統一した API origin 構成。
 - Function URL 直接匿名公開の削除。
-- 作業 task: `tasks/do/20260529-1117-function-url-cloudfront-only.md`
+- 作業 task: `tasks/done/20260529-1117-function-url-cloudfront-only.md`
 
 ## 検証
 
