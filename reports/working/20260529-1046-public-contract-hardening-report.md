@@ -31,7 +31,7 @@
 - public data contract checker の強化。
 - fixture export output の versioned path 整合修正。
 - post-deploy 取得物に wordcloud artifact 実体を含める smoke 更新。
-- 作業 task: `tasks/do/20260529-1046-public-contract-hardening.md`
+- 作業 task: `tasks/done/20260529-1046-public-contract-hardening.md`
 
 ## 検証
 
