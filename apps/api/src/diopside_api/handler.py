@@ -130,11 +130,14 @@ def _config() -> dict[str, Any]:
 def _home() -> dict[str, Any]:
     videos = _videos({})["items"]
     tags = _tags()["items"]
+    updated_at = now_iso()
+    if not os.environ.get("DIOPSIDE_TABLE_NAME"):
+        updated_at = _load_json("latest-manifest.json").get("generated_at")
     return {
         "schema_version": "public-home/v1",
         "latest_videos": videos[:12],
         "popular_tags": tags[:16],
-        "updated_at": _load_json("latest-manifest.json").get("generated_at"),
+        "updated_at": updated_at,
     }
 
 

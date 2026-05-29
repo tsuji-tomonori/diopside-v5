@@ -3,7 +3,7 @@ import json
 import pytest
 
 from diopside_core import MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
-from static_exporter.pipeline import chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts
+from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -55,6 +55,7 @@ def test_replay_parser_normalizes_known_and_unknown_renderer():
         [
             {
                 "replayChatItemAction": {
+                    "videoOffsetTimeMsec": "83000",
                     "actions": [
                         {
                             "addChatItemAction": {
@@ -65,7 +66,7 @@ def test_replay_parser_normalizes_known_and_unknown_renderer():
                                         "authorName": {"simpleText": "Alice"},
                                         "timestampText": {"simpleText": "1:23"},
                                         "timestampUsec": "1000",
-                                        "videoOffsetTimeMsec": "83000",
+                                        "videoOffsetTimeMsec": "999999",
                                         "message": {"runs": [{"text": "ありがとう"}, {"emoji": {"shortcuts": [":)"]}}]},
                                     }
                                 }
@@ -79,6 +80,7 @@ def test_replay_parser_normalizes_known_and_unknown_renderer():
         "vid001",
     )
     assert messages[0]["message_text"] == "ありがとう:)"
+    assert messages[0]["video_offset_time_msec"] == 83000
     assert messages[0]["message_runs"][1]["type"] == "emoji"
     assert messages[1]["parse_warning"] == "unknown_renderer"
 
@@ -135,11 +137,60 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     normalized = chat_normalize(repo, {"video_id": "vid001"})
     artifacts = rebuild_artifacts(repo, {"video_id": "vid001"})
     assert normalized["message_count"] == 1
+    chunks = repo.list_chat_chunks("vid001")
+    assert chunks[0]["message_count"] == 1
+    assert "messages" not in chunks[0]
+    assert chunks[0]["s3_uri"]
+    assert chunks[0]["sha256"]
+    assert chunks[0]["first_offset_msec"] == 60000
+    assert chunks[0]["last_offset_msec"] == 60000
     assert artifacts["wordcloud_available"] is True
     assert repo.get_chat_aggregate("vid001")["top_terms"][0]["term"] == "ありがとう"
     assert list((tmp_path / "raw/youtube").rglob("*.json"))
     assert list((tmp_path / "processed/chat-normalized").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
+
+
+def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+    raw_path = tmp_path / "raw/youtube/chat/video_id=vid001/source=replay/part-000.jsonl"
+    raw_path.parent.mkdir(parents=True)
+    raw_path.write_text(
+        json.dumps(
+            {
+                "message_id": "m1",
+                "video_id": "vid001",
+                "source": "replay",
+                "message_type": "text",
+                "author_external_channel_id": "a1",
+                "message_runs": [{"type": "text", "text": "ありがとう ありがとう"}],
+                "message_text": "ありがとう ありがとう",
+                "video_offset_time_msec": 60000,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo.put_item(
+        {
+            "item_type": "ChatMessageChunkManifest",
+            "pk": "VIDEO#vid001",
+            "sk": "CHAT#RAW#replay#fixture",
+            "video_id": "vid001",
+            "source": "replay",
+            "s3_uri": "raw/youtube/chat/video_id=vid001/source=replay/part-000.jsonl",
+            "message_count": 1,
+            "sha256": "fixture",
+            "first_offset_msec": 60000,
+            "last_offset_msec": 60000,
+            "next_poll": None,
+        }
+    )
+    normalized = chat_normalize(repo, {"video_id": "vid001"})
+    assert normalized["message_count"] == 1
+    assert repo.get_chat_aggregate("vid001")["top_terms"][0]["term"] == "ありがとう"
 
 
 def test_timestamp_candidates_include_keyword_spike():
@@ -181,3 +232,18 @@ def test_failed_job_writes_debug_artifact(tmp_path, monkeypatch):
     assert job["derived_state"] == "failed"
     assert job["events"][-1]["details"]["debug_uri"].endswith(".json")
     assert list((tmp_path / f"failed/jobs/job_id={created['job_id']}").rglob("*.json"))
+
+
+def test_retry_and_cancel_job_update_target_events():
+    repo = MemoryRepository()
+    failed, _ = repo.create_job("chat_normalize", {"video_id": "vid001"}, "retry-source")
+    repo.append_job_event(failed["job_id"], "failed", {"message": "boom"})
+    retry = retry_job(repo, {"target_job_id": failed["job_id"], "reason": "manual"})
+    assert retry["target_job_id"] == failed["job_id"]
+    assert retry["enqueued"] is False
+    assert repo.get_job(failed["job_id"])["events"][-1]["event_type"] == "retry_requested"
+
+    queued, _ = repo.create_job("chat_collect", {"video_id": "vid002"}, "cancel-source")
+    cancelled = cancel_job(repo, {"target_job_id": queued["job_id"], "reason": "manual"})
+    assert cancelled["cancelled"] is True
+    assert repo.get_job(queued["job_id"])["derived_state"] == "cancelled"

@@ -2,6 +2,7 @@ import json
 import subprocess
 
 from diopside_core import MemoryRepository
+import static_exporter.handler as exporter_handler
 from static_exporter.handler import export_from_fixture, export_public_data
 
 
@@ -48,3 +49,23 @@ def test_export_public_data_from_repository(tmp_path):
     assert detail["timestamps"][0]["offset_sec"] == 30
     assert (tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg").exists()
     subprocess.run(["node", "tools/check-public-contract.mjs", str(tmp_path)], check=True)
+
+
+def test_static_export_job_records_completion(monkeypatch, tmp_path):
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "vid001", "title": "公開アーカイブ", "published_at": "2026-05-28T00:00:00Z", "tags": []})
+    job, _ = repo.create_job("static_export", {"scope": "all"}, "static-export-job")
+    monkeypatch.setattr(exporter_handler, "_repository_from_env", lambda: repo)
+
+    result = exporter_handler.lambda_handler(
+        {
+            "job_id": job["job_id"],
+            "job_type": "static_export",
+            "input": {"output_dir": str(tmp_path), "export_version": "job-unit"},
+        },
+        None,
+    )
+
+    assert result["status"] == "succeeded"
+    assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
+    assert (tmp_path / "latest-manifest.json").exists()

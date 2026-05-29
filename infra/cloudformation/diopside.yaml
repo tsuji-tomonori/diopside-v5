@@ -23,6 +23,11 @@ Parameters:
   StaticExporterCodeS3Key:
     Type: String
     Default: static-exporter.zip
+  YouTubeApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: YouTube Data API key passed only to the worker Lambda.
 
 Resources:
   WebBucket:
@@ -610,6 +615,8 @@ Resources:
             Ref: AggregateQueue
           DIOPSIDE_STATIC_EXPORT_QUEUE_URL:
             Ref: StaticExportQueue
+          DIOPSIDE_YOUTUBE_API_KEY:
+            Ref: YouTubeApiKey
 
   MetadataQueueMapping:
     Type: AWS::Lambda::EventSourceMapping
