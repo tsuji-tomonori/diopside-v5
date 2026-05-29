@@ -1,6 +1,6 @@
 # raw/processed S3 lifecycle
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -60,3 +60,12 @@
 
 - 既存 README には raw path と CloudFormation prefix に表記差がある可能性があるため、実コードの key 生成に合わせて確認する。
 - 実 S3 lifecycle の適用確認は実 AWS deploy 後の確認事項として残る。
+
+## 完了確認
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/22
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/22#issuecomment-4570098395
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/22#issuecomment-4570100797
+- 作業レポート: `reports/working/20260529-1217-s3-lifecycle-retention-report.md`
+- 検証: `git diff --check`、CloudFormation targeted pytest、`npm test`、`npm run verify`
+- 未実施: 実 AWS 環境での S3 lifecycle 適用確認
