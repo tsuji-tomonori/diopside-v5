@@ -1,6 +1,6 @@
 # cost guard
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -48,3 +48,19 @@ infrastructure contract test
 ## リスク
 
 - 実 AWS Cost Explorer / 見積もり API は使用せず、CloudFormation resource type の静的 contract に限定する。
+
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/38
+- 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/38#issuecomment-4570886418
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/38#issuecomment-4570888278
+- GitHub Actions `CI / npm verify`: 成功
+- GitHub Apps の top-level comment は 403 のため、`gh pr comment` で代替投稿した。
+
+## 完了時検証
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_cloudformation_contract.py -k cost_guard`: 1 passed
+- `npm test`: 70 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功

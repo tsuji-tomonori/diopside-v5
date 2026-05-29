@@ -21,11 +21,16 @@
 
 - `tests/test_cloudformation_contract.py` に cost guard の禁止 resource type test を追加した。
 - P4-06 の task md を作成した。
+- PR #38 を作成し、受け入れ条件確認とセルフレビューを top-level comment として投稿した。
+- GitHub Apps の comment 投稿は 403 のため、`gh pr comment` にフォールバックした。
 
 ## 成果物
 
 - `tests/test_cloudformation_contract.py`
-- `tasks/do/20260529-1610-cloudformation-cost-guard.md`
+- `tasks/done/20260529-1610-cloudformation-cost-guard.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/38
+- 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/38#issuecomment-4570886418
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/38#issuecomment-4570888278
 
 ## 検証
 
@@ -37,6 +42,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -46,4 +52,4 @@
 ## 未対応・制約・リスク
 
 - 実 AWS Cost Explorer / 見積もり API は使用せず、CloudFormation resource type の静的 contract に限定した。
-- PR 作成後、GitHub Actions 上の `CI / npm verify` 成功を確認する必要がある。
+- GitHub Apps の top-level comment は 403 で利用できなかったため、`gh pr comment` で代替した。
