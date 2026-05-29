@@ -27,6 +27,15 @@ def _schedule_input(schedule):
     return json.loads(schedule["Properties"]["Target"]["Input"]["Fn::Sub"])
 
 
+def _policy_statements(resources, role_name):
+    policies = resources[role_name]["Properties"]["Policies"]
+    return [
+        statement
+        for policy in policies
+        for statement in policy["PolicyDocument"]["Statement"]
+    ]
+
+
 def test_cloudfront_oac_and_outputs_are_defined():
     template = Path("infra/cloudformation/diopside.yaml").read_text(encoding="utf-8")
     for token in [
@@ -241,9 +250,15 @@ def test_worker_function_and_sqs_mappings_are_defined():
 def test_cloudformation_template_parses_and_worker_can_consume_queues():
     template = _template()
     resources = template["Resources"]
-    policy = resources["StaticExporterRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"][0]
+    worker_statements = _policy_statements(resources, "WorkerRole")
+    worker_sqs_actions = {
+        action
+        for statement in worker_statements
+        for action in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
+        if action.startswith("sqs:")
+    }
     for action in ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:SendMessage"]:
-        assert action in policy["Action"]
+        assert action in worker_sqs_actions
     env = resources["WorkerFunction"]["Properties"]["Environment"]["Variables"]
     for name in [
         "DIOPSIDE_METADATA_QUEUE_URL",
@@ -256,6 +271,43 @@ def test_cloudformation_template_parses_and_worker_can_consume_queues():
         assert name in env
     assert "YouTubeApiKey" in template["Parameters"]
     assert template["Parameters"]["YouTubeApiKey"]["NoEcho"] is True
+
+
+def test_lambda_roles_are_split_by_responsibility_and_least_privilege():
+    resources = _template()["Resources"]
+    assert resources["StaticExporterFunction"]["Properties"]["Role"] == {"Fn::GetAtt": ["StaticExporterRole", "Arn"]}
+    assert resources["WorkerFunction"]["Properties"]["Role"] == {"Fn::GetAtt": ["WorkerRole", "Arn"]}
+
+    static_statements = _policy_statements(resources, "StaticExporterRole")
+    worker_statements = _policy_statements(resources, "WorkerRole")
+
+    static_actions = {
+        action
+        for statement in static_statements
+        for action in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
+    }
+    worker_actions = {
+        action
+        for statement in worker_statements
+        for action in (statement["Action"] if isinstance(statement["Action"], list) else [statement["Action"]])
+    }
+    assert "dynamodb:Scan" not in static_actions
+    assert "dynamodb:Scan" not in worker_actions
+    assert "s3:*" not in static_actions
+    assert "s3:*" not in worker_actions
+    assert "sqs:*" not in static_actions
+    assert "sqs:*" not in worker_actions
+    assert "sqs:SendMessage" not in static_actions
+
+    static_resources = [resource for statement in static_statements for resource in statement["Resource"]]
+    worker_resources = [resource for statement in worker_statements for resource in statement["Resource"]]
+    assert {"Fn::Sub": "${PublicDataBucket.Arn}/*"} in static_resources
+    assert {"Fn::Sub": "${RawBucket.Arn}/*"} not in static_resources
+    assert {"Fn::Sub": "${ProcessedBucket.Arn}/*"} not in static_resources
+    assert {"Fn::GetAtt": ["StaticExportQueue", "Arn"]} in static_resources
+    assert {"Fn::Sub": "${RawBucket.Arn}/*"} in worker_resources
+    assert {"Fn::Sub": "${ProcessedBucket.Arn}/*"} in worker_resources
+    assert {"Fn::Sub": "${PublicDataBucket.Arn}/*"} not in worker_resources
 
 
 def test_scheduler_role_can_only_send_to_maintenance_queues():

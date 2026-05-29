@@ -597,21 +597,72 @@ Resources:
                 Action:
                   - dynamodb:GetItem
                   - dynamodb:Query
-                  - dynamodb:Scan
                   - dynamodb:PutItem
                   - dynamodb:UpdateItem
-                  - s3:PutObject
+                Resource:
+                  - Fn::GetAtt: [AppTable, Arn]
+                  - Fn::Sub: "${AppTable.Arn}/index/*"
+              - Effect: Allow
+                Action:
                   - s3:GetObject
-                  - sqs:SendMessage
+                  - s3:PutObject
+                Resource:
+                  - Fn::Sub: "${PublicDataBucket.Arn}/*"
+              - Effect: Allow
+                Action:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
                 Resource:
+                  - Fn::GetAtt: [StaticExportQueue, Arn]
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: diopside-worker-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
                   - Fn::GetAtt: [AppTable, Arn]
                   - Fn::Sub: "${AppTable.Arn}/index/*"
-                  - Fn::Sub: "${PublicDataBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
                   - Fn::Sub: "${RawBucket.Arn}/*"
                   - Fn::Sub: "${ProcessedBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - Fn::GetAtt: [MetadataQueue, Arn]
+                  - Fn::GetAtt: [ChatQueue, Arn]
+                  - Fn::GetAtt: [NormalizeQueue, Arn]
+                  - Fn::GetAtt: [AggregateQueue, Arn]
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource:
                   - Fn::GetAtt: [MetadataQueue, Arn]
                   - Fn::GetAtt: [ChatQueue, Arn]
                   - Fn::GetAtt: [NormalizeQueue, Arn]
@@ -829,7 +880,7 @@ Resources:
       Runtime: python3.13
       Handler: static_exporter.pipeline.lambda_handler
       Role:
-        Fn::GetAtt: [StaticExporterRole, Arn]
+        Fn::GetAtt: [WorkerRole, Arn]
       Timeout: 300
       MemorySize: 512
       Code:
