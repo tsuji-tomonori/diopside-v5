@@ -1,6 +1,6 @@
 # normalized chat schema 固定
 
-状態: do
+状態: done
 タスク種別: 機能追加
 
 ## 背景
