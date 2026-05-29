@@ -151,6 +151,27 @@ aws sqs delete-message \
 
 再投入後は、元 queue の visible/not visible 数、DLQ depth、対象 job の `JobEvent`、関連 S3 artifact、`GET /api/admin/jobs/{job_id}` の `derived_state` を確認します。再発防止では、失敗分類が入力 validation、YouTube quota/rate limit、S3/DynamoDB permission、parser schema drift、artifact contract failure のどれかを切り分け、必要に応じて unit test、contract test、README 手順、CloudWatch Alarm の閾値を更新します。
 
+## CloudWatch JSONログ
+
+API と worker は CloudWatch Logs で検索しやすいように、標準出力へ 1 行 JSON を出力します。payload 全体、管理 token、CSRF token、YouTube API key は log に出しません。
+
+| component | event | 主なfield |
+|---|---|---|
+| `api` | `api_request` | `trace_id`、`method`、`path`、`status`、`result`、`duration_ms`、`job_id`、`job_type`、`video_id`、`error` |
+| `worker` | `worker_job` | `trace_id`、`job_id`、`job_type`、`video_id`、`result`、`duration_ms`、`error` |
+
+`trace_id` は API request の `x-trace-id` header を優先し、未指定時は `trc_...` を生成します。管理 API が SQS に投入する worker payload には同じ `trace_id` を含めるため、CloudWatch Logs Insights では API と worker を同じ trace で追跡できます。`job_id` が分かる場合は `GET /api/admin/jobs/{job_id}` と `JobEvent`、failed debug artifact の `debug_uri` を合わせて確認します。
+
+CloudWatch Logs Insights での調査例:
+
+```sql
+fields @timestamp, component, event, trace_id, job_id, job_type, video_id, result, duration_ms, error
+| filter trace_id = "trc_xxx" or job_id = "job_xxx"
+| sort @timestamp asc
+```
+
+error 調査では `result="failed"` を起点にし、API では `status` と `error.code`、worker では `error.type` と `error.debug_uri` を確認します。duration の外れ値調査では `duration_ms` の降順で API path または worker job type を絞り込みます。
+
 ## quota 節約方針
 
 - 通常巡回では `search.list` を使わず、uploads playlist の `playlistItems.list` と `videos.list` を使う。
