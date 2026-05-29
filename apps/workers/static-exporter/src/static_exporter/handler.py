@@ -195,13 +195,21 @@ def _upload_directory(out_dir: pathlib.Path) -> int:
     prefix = os.environ.get("DIOPSIDE_PUBLIC_DATA_PREFIX", "data").strip("/")
     s3 = boto3.client("s3")
     count = 0
-    for path in out_dir.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(out_dir).as_posix()
-            key = f"{prefix}/{rel}" if prefix and not rel.startswith(f"{prefix}/") else rel
-            s3.upload_file(str(path), bucket, key, ExtraArgs={"ContentType": _content_type(path)})
-            count += 1
+    manifest_path = out_dir / "latest-manifest.json"
+    versioned_paths = sorted(path for path in out_dir.rglob("*") if path.is_file() and path != manifest_path)
+    for path in versioned_paths:
+        _upload_file(s3, bucket, prefix, out_dir, path)
+        count += 1
+    if manifest_path.exists():
+        _upload_file(s3, bucket, prefix, out_dir, manifest_path)
+        count += 1
     return count
+
+
+def _upload_file(s3: Any, bucket: str, prefix: str, out_dir: pathlib.Path, path: pathlib.Path) -> None:
+    rel = path.relative_to(out_dir).as_posix()
+    key = f"{prefix}/{rel}" if prefix and not rel.startswith(f"{prefix}/") else rel
+    s3.upload_file(str(path), bucket, key, ExtraArgs={"ContentType": _content_type(path)})
 
 
 def _content_type(path: pathlib.Path) -> str:

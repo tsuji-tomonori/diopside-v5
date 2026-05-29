@@ -122,3 +122,51 @@ def test_static_export_job_records_completion(monkeypatch, tmp_path):
     assert result["status"] == "succeeded"
     assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
     assert (tmp_path / "latest-manifest.json").exists()
+
+
+def test_upload_directory_publishes_manifest_last(monkeypatch, tmp_path):
+    uploads = []
+
+    class FakeS3:
+        def upload_file(self, filename, bucket, key, ExtraArgs):
+            uploads.append({"filename": filename, "bucket": bucket, "key": key, "content_type": ExtraArgs["ContentType"]})
+
+    monkeypatch.setenv("DIOPSIDE_PUBLIC_DATA_BUCKET", "public-bucket")
+    monkeypatch.setattr(exporter_handler, "boto3", type("FakeBoto3", (), {"client": staticmethod(lambda name: FakeS3())}))
+    (tmp_path / "data/v/unit/public/index").mkdir(parents=True)
+    (tmp_path / "data/v/unit/public/index/videos-latest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "data/v/unit/public/artifacts/wordcloud").mkdir(parents=True)
+    (tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg").write_text("<svg></svg>", encoding="utf-8")
+    (tmp_path / "latest-manifest.json").write_text("{}", encoding="utf-8")
+
+    count = exporter_handler._upload_directory(tmp_path)
+
+    assert count == 3
+    assert [item["key"] for item in uploads][-1] == "data/latest-manifest.json"
+    assert uploads[-1]["content_type"] == "application/json; charset=utf-8"
+    assert any(item["key"].endswith("vid001.svg") and item["content_type"] == "image/svg+xml" for item in uploads)
+
+
+def test_upload_directory_does_not_publish_manifest_after_versioned_failure(monkeypatch, tmp_path):
+    uploads = []
+
+    class FakeS3:
+        def upload_file(self, filename, bucket, key, ExtraArgs):
+            if key.endswith("videos-latest.json"):
+                raise RuntimeError("versioned upload failed")
+            uploads.append(key)
+
+    monkeypatch.setenv("DIOPSIDE_PUBLIC_DATA_BUCKET", "public-bucket")
+    monkeypatch.setattr(exporter_handler, "boto3", type("FakeBoto3", (), {"client": staticmethod(lambda name: FakeS3())}))
+    (tmp_path / "data/v/unit/public/index").mkdir(parents=True)
+    (tmp_path / "data/v/unit/public/index/videos-latest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "latest-manifest.json").write_text("{}", encoding="utf-8")
+
+    try:
+        exporter_handler._upload_directory(tmp_path)
+    except RuntimeError as exc:
+        assert str(exc) == "versioned upload failed"
+    else:
+        raise AssertionError("_upload_directory should fail before publishing manifest")
+
+    assert "data/latest-manifest.json" not in uploads
