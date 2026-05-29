@@ -23,6 +23,7 @@
 - `tests/test_core_pipeline.py` に worker pipeline integration test を追加した。
 - P4-03 の task md を作成した。
 - PR #35 の初回 CI で `npm run e2e:local` 後の Chrome profile cleanup が `ENOTEMPTY` で失敗したため、`tools/run-local-e2e.mjs` の一時ディレクトリ削除に retry を追加した。
+- PR #35 の再実行 CI で Chrome 起動待ちが timeout したため、headless Chrome に `--no-sandbox` / `--disable-dev-shm-usage` を追加し、起動待ちを 15 秒へ延長した。
 
 ## 成果物
 

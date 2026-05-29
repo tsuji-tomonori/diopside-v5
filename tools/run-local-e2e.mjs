@@ -180,6 +180,8 @@ async function startChrome() {
   const profile = await mkdtemp(join(tmpdir(), "diopside-chrome-"));
   const proc = spawn("google-chrome", [
     "--headless=new",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
     "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",
@@ -187,15 +189,26 @@ async function startChrome() {
     `--remote-debugging-port=${port}`,
     "about:blank"
   ], { stdio: ["ignore", "ignore", "ignore"] });
-  await waitFor(() => fetch(`http://127.0.0.1:${port}/json/version`).then((res) => res.ok));
+  try {
+    await waitFor(() => fetch(`http://127.0.0.1:${port}/json/version`).then((res) => res.ok), 15000);
+  } catch (error) {
+    await stopProcess(proc);
+    await removePathWithRetry(profile);
+    throw error;
+  }
   return {
     port,
     async stop() {
-      proc.kill();
-      await new Promise((resolve) => proc.once("exit", resolve));
+      await stopProcess(proc);
       await removePathWithRetry(profile);
     }
   };
+}
+
+async function stopProcess(proc) {
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  proc.kill();
+  await new Promise((resolve) => proc.once("exit", resolve));
 }
 
 async function removePathWithRetry(path) {
@@ -283,9 +296,9 @@ async function startStaticServer(root, port, apiBaseUrl = null) {
   return server;
 }
 
-async function waitFor(fn) {
+async function waitFor(fn, timeoutMs = 8000) {
   const start = Date.now();
-  while (Date.now() - start < 8000) {
+  while (Date.now() - start < timeoutMs) {
     try {
       if (await fn()) return;
     } catch {
