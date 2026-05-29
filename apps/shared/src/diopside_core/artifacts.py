@@ -50,13 +50,31 @@ def build_timestamp_candidates(summary: dict[str, Any], description: str = "") -
         hour = int(match.group(1) or 0)
         minute = int(match.group(2))
         second = int(match.group(3))
-        candidates.append({"offset_sec": hour * 3600 + minute * 60 + second, "label": match.group(4).strip() or "概要欄タイムスタンプ", "score": 1.0, "source": "description", "evidence_terms": [], "message_count": 0})
+        candidates.append(
+            _timestamp_candidate(
+                offset_sec=hour * 3600 + minute * 60 + second,
+                label=match.group(4).strip() or "概要欄タイムスタンプ",
+                score=1.0,
+                source="description",
+                evidence_terms=[],
+                message_count=0,
+            )
+        )
     buckets = sorted(summary.get("timeline_buckets", []), key=lambda item: item.get("message_count", 0), reverse=True)[:5]
     top_terms = [item["term"] for item in summary.get("top_terms", [])[:5]]
     for bucket in buckets:
         if bucket.get("message_count", 0) <= 0:
             continue
-        candidates.append({"offset_sec": bucket["offset_sec"], "label": "チャット盛り上がり候補", "score": min(0.99, bucket["message_count"] / max(summary.get("message_count", 1), 1) * 10), "source": "chat_burst", "evidence_terms": top_terms[:3], "message_count": bucket["message_count"]})
+        candidates.append(
+            _timestamp_candidate(
+                offset_sec=bucket["offset_sec"],
+                label="チャット盛り上がり候補",
+                score=min(0.99, bucket["message_count"] / max(summary.get("message_count", 1), 1) * 10),
+                source="chat_burst",
+                evidence_terms=top_terms[:3],
+                message_count=bucket["message_count"],
+            )
+        )
     for term in top_terms[:10]:
         term_buckets = sorted(summary.get("term_timeline", {}).get(term, []), key=lambda item: item.get("count", 0), reverse=True)
         if not term_buckets:
@@ -65,23 +83,50 @@ def build_timestamp_candidates(summary: dict[str, Any], description: str = "") -
         total = sum(item.get("count", 0) for item in term_buckets)
         if total >= 3 and strongest.get("count", 0) / max(total, 1) >= 0.5:
             candidates.append(
+                _timestamp_candidate(
+                    offset_sec=strongest["offset_sec"],
+                    label=f"{term} のキーワードスパイク",
+                    score=min(0.95, 0.5 + strongest["count"] / max(summary.get("message_count", 1), 1)),
+                    source="keyword_spike",
+                    evidence_terms=[term],
+                    message_count=strongest["count"],
+                )
+            )
+    return _dedupe_timestamp_candidates(candidates)[:20]
+
+
+def _timestamp_candidate(*, offset_sec: int, label: str, score: float, source: str, evidence_terms: list[str], message_count: int) -> dict[str, Any]:
+    return {
+        "offset_sec": offset_sec,
+        "label": label,
+        "score": round(score, 4),
+        "source": source,
+        "merged_sources": [source],
+        "evidence_terms": evidence_terms,
+        "message_count": message_count,
+    }
+
+
+def _dedupe_timestamp_candidates(candidates: list[dict[str, Any]], window_sec: int = 15) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: (item["offset_sec"], -item["score"], item["source"])):
+        target = next((item for item in merged if abs(item["offset_sec"] - candidate["offset_sec"]) <= window_sec), None)
+        if not target:
+            merged.append({**candidate})
+            continue
+        if (candidate["score"], -candidate["offset_sec"], candidate["source"]) > (target["score"], -target["offset_sec"], target["source"]):
+            target.update(
                 {
-                    "offset_sec": strongest["offset_sec"],
-                    "label": f"{term} のキーワードスパイク",
-                    "score": min(0.95, 0.5 + strongest["count"] / max(summary.get("message_count", 1), 1)),
-                    "source": "keyword_spike",
-                    "evidence_terms": [term],
-                    "message_count": strongest["count"],
+                    "offset_sec": candidate["offset_sec"],
+                    "label": candidate["label"],
+                    "score": candidate["score"],
+                    "source": candidate["source"],
                 }
             )
-    seen: set[tuple[int, str]] = set()
-    unique: list[dict[str, Any]] = []
-    for candidate in sorted(candidates, key=lambda item: (item["offset_sec"], -item["score"])):
-        identity = (candidate["offset_sec"], candidate["source"])
-        if identity not in seen:
-            unique.append(candidate)
-            seen.add(identity)
-    return unique[:20]
+        target["merged_sources"] = sorted(set(target.get("merged_sources", [])) | set(candidate.get("merged_sources", [candidate["source"]])))
+        target["evidence_terms"] = sorted(set(target.get("evidence_terms", [])) | set(candidate.get("evidence_terms", [])))
+        target["message_count"] = max(int(target.get("message_count", 0)), int(candidate.get("message_count", 0)))
+    return sorted(merged, key=lambda item: (-item["score"], item["offset_sec"], item["source"]))
 
 
 def generate_wordcloud_svg(top_terms: list[dict[str, Any]], width: int = 960, height: int = 540) -> str:
