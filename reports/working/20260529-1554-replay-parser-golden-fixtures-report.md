@@ -30,6 +30,9 @@
 - `data/fixtures/replay-parser/golden-expected.json`
 - `tests/test_core_pipeline.py`
 - `tasks/do/20260529-1554-replay-parser-golden-fixtures.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/36
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/36#issuecomment-4570786601
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/36#issuecomment-4570789230
 
 ## 検証
 
@@ -41,6 +44,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -50,4 +54,4 @@
 ## 未対応・制約・リスク
 
 - 実 YouTube からの新規データ取得は行わず、既知構造を再現した fixture による parser contract 固定に限定した。
-- PR 作成後、GitHub Actions 上の `CI / npm verify` 成功を確認する必要がある。
+- GitHub Apps による PR top-level comment は 403 のため、`gh pr comment` で代替した。
