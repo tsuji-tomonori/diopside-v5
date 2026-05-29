@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node tools/build-web.mjs",
-    "test": "node --check tools/run-post-deploy-smoke.mjs && node tools/check-web-dom-safety.mjs && node tools/check-public-contract.mjs && PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests",
+    "test": "node --check tools/run-post-deploy-smoke.mjs && node tools/check-web-dom-safety.mjs && node tools/check-public-contract.mjs && node tools/check-docs-consistency.mjs && PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests",
     "package:deploy": "python3 tools/package_deploy.py",
     "e2e:local": "node tools/run-local-e2e.mjs",
     "smoke:post-deploy": "node tools/run-post-deploy-smoke.mjs",
