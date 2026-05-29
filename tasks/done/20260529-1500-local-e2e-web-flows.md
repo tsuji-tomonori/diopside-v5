@@ -1,6 +1,6 @@
 # local e2e拡張
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -49,3 +49,17 @@
 ## リスク
 
 - headless Chrome がローカル環境に存在する前提の検証になる。
+
+## 完了記録
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/32
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/32#issuecomment-4570495138
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/32#issuecomment-4570495143
+- 作業レポート: `reports/working/20260529-1500-local-e2e-web-flows-report.md`
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `npm run e2e:local`: 成功
+- `npm test`: 59 passed
+- `npm run build`: 成功
