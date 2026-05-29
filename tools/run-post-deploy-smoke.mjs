@@ -18,9 +18,16 @@ console.log(`post-deploy smoke passed for ${baseUrl}`);
 async function smokePublic(url, outDir) {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
-  const html = await text(`${url}/`);
+  const htmlResponse = await fetchOk(`${url}/`);
+  assertCloudFrontResponse(htmlResponse, "web root");
+  const html = await htmlResponse.text();
   if (!html.includes("diopside")) throw new Error("home html does not include diopside");
-  const health = await json(`${url}/api/health`);
+  const asset = await fetchOk(`${url}/assets/placeholder-thumbnail.svg`);
+  assertCloudFrontResponse(asset, "web asset");
+  const healthResponse = await fetchOk(`${url}/api/health`);
+  assertCloudFrontResponse(healthResponse, "api health");
+  assertCacheHeader(healthResponse, "api health", ["no-store", "no-cache", "max-age=0"]);
+  const health = await healthResponse.json();
   if (health.service !== "diopside" || health.status !== "ok") throw new Error("health failed");
   const home = await json(`${url}/api/home`);
   if (!Array.isArray(home.latest_videos) || !Array.isArray(home.popular_tags)) throw new Error("api home response is invalid");
@@ -28,9 +35,13 @@ async function smokePublic(url, outDir) {
   if (!apiVideos.items?.length) throw new Error("api videos empty");
   const apiDetail = await json(`${url}/api/videos/${apiVideos.items[0].video_id}`);
   if (!apiDetail.video?.youtube_url) throw new Error("api video detail missing youtube_url");
-  const manifest = await json(`${url}/data/latest-manifest.json`);
+  const manifestResponse = await fetchOk(`${url}/data/latest-manifest.json`);
+  assertCloudFrontResponse(manifestResponse, "public manifest");
+  const manifest = await manifestResponse.json();
   await writeJson(join(outDir, "latest-manifest.json"), manifest);
-  const videos = await json(`${url}${manifest.indexes.videos_latest}`);
+  const videosResponse = await fetchOk(`${url}${manifest.indexes.videos_latest}`);
+  assertCloudFrontResponse(videosResponse, "versioned public data");
+  const videos = await videosResponse.json();
   const tags = await json(`${url}${manifest.indexes.tags}`);
   await writeJson(join(outDir, manifest.indexes.videos_latest.replace(/^\//, "")), videos);
   await writeJson(join(outDir, manifest.indexes.tags.replace(/^\//, "")), tags);
@@ -111,10 +122,33 @@ async function waitForManifestRefresh(url, beforeManifest) {
 }
 
 async function json(url, options = {}) {
+  const res = await fetchOk(url, options);
+  return res.json();
+}
+
+async function fetchOk(url, options = {}) {
   const res = await fetch(url, options);
-  const body = await res.json().catch(() => ({}));
+  const body = await res.clone().json().catch(async () => ({ body: (await res.clone().text()).slice(0, 160) }));
   if (!res.ok) throw new Error(`${url} returned ${res.status}: ${JSON.stringify(body)}`);
-  return body;
+  return res;
+}
+
+function assertCacheHeader(res, label, expectedParts) {
+  const cacheControl = res.headers.get("cache-control") || "";
+  const lower = cacheControl.toLowerCase();
+  for (const part of expectedParts) {
+    if (!lower.includes(part)) {
+      throw new Error(`${label} cache-control must include ${part}; got ${cacheControl || "(missing)"}`);
+    }
+  }
+}
+
+function assertCloudFrontResponse(res, label) {
+  const via = res.headers.get("via") || "";
+  const xCache = res.headers.get("x-cache") || "";
+  if (!via.toLowerCase().includes("cloudfront") && !xCache) {
+    throw new Error(`${label} must be served through CloudFront; missing CloudFront via/x-cache headers`);
+  }
 }
 
 async function text(url) {

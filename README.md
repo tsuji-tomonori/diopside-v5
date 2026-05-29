@@ -22,6 +22,7 @@
 | `/api/*` | Lambda Function URL | no-store/no-cache |
 
 S3 origin は OAC と bucket policy で CloudFront 経由の `s3:GetObject` に限定します。
+CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/data/v/*`、`/assets/*` の順に評価し、template contract test で origin と cache policy を検証します。post-deploy smoke は CloudFront 経由で `/`、静的 asset、manifest、versioned public data、API を取得し、API の no-store header と CloudFront 経由 header を確認します。
 
 ## DynamoDB item schema
 
@@ -193,6 +194,7 @@ npm run smoke:post-deploy
 - `/` が表示され、検索、tag filter、詳細、timestamp、wordcloud が読める。
 - `/api/health`、`/api/videos`、`/api/videos/{video_id}` が CloudFront 経由で読める。
 - `/data/latest-manifest.json` と versioned public JSON、wordcloud artifact が contract を満たす。
+- `/assets/*`、`/data/latest-manifest.json`、`/data/v/*`、`/api/*` が CloudFront 経由で応答し、`/api/*` は no-store header を返す。
 - 管理画面から token/CSRF を入力し、`static-export` や `metadata-sync` job を起動できる。
 - `GET /api/admin/jobs` と `GET /api/admin/jobs/{job_id}` で状態と append-only event を確認できる。
 - `GET /api/admin/quota-usage` が quota usage schema を返す。

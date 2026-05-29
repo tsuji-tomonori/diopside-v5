@@ -41,6 +41,61 @@ def test_cloudfront_oac_and_outputs_are_defined():
         assert token in template
 
 
+def test_cloudfront_behaviors_route_to_expected_origins_and_cache_policies():
+    resources = _template()["Resources"]
+    distribution = resources["CloudFrontDistribution"]["Properties"]["DistributionConfig"]
+    behaviors = distribution["CacheBehaviors"]
+    assert [behavior["PathPattern"] for behavior in behaviors] == [
+        "/api/*",
+        "/data/latest-manifest.json",
+        "/data/v/*",
+        "/assets/*",
+    ]
+
+    by_path = {behavior["PathPattern"]: behavior for behavior in behaviors}
+    assert by_path["/api/*"]["TargetOriginId"] == "api-function-url"
+    assert by_path["/api/*"]["CachePolicyId"] == {"Ref": "ApiNoStoreCachePolicy"}
+    assert by_path["/api/*"]["AllowedMethods"] == ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    assert by_path["/api/*"]["CachedMethods"] == ["GET", "HEAD", "OPTIONS"]
+    assert by_path["/api/*"]["OriginRequestPolicyId"] == "216adef6-5c7f-47e4-b989-5492eafa07d3"
+
+    assert by_path["/data/latest-manifest.json"]["TargetOriginId"] == "public-data-s3"
+    assert by_path["/data/latest-manifest.json"]["CachePolicyId"] == {"Ref": "ManifestShortCachePolicy"}
+    assert by_path["/data/v/*"]["TargetOriginId"] == "public-data-s3"
+    assert by_path["/data/v/*"]["CachePolicyId"] == {"Ref": "ImmutableCachePolicy"}
+    assert by_path["/assets/*"]["TargetOriginId"] == "web-s3"
+    assert by_path["/assets/*"]["CachePolicyId"] == {"Ref": "ImmutableCachePolicy"}
+
+    default = distribution["DefaultCacheBehavior"]
+    assert default["TargetOriginId"] == "web-s3"
+    assert default["CachePolicyId"] == {"Ref": "ImmutableCachePolicy"}
+    assert default["FunctionAssociations"][0]["EventType"] == "viewer-request"
+
+
+def test_cloudfront_cache_policy_ttls_match_behavior_contract():
+    resources = _template()["Resources"]
+    api = resources["ApiNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
+    manifest = resources["ManifestShortCachePolicy"]["Properties"]["CachePolicyConfig"]
+    immutable = resources["ImmutableCachePolicy"]["Properties"]["CachePolicyConfig"]
+
+    assert {api["MinTTL"], api["DefaultTTL"], api["MaxTTL"]} == {0}
+    assert api["ParametersInCacheKeyAndForwardedToOrigin"]["QueryStringsConfig"]["QueryStringBehavior"] == "all"
+    assert api["ParametersInCacheKeyAndForwardedToOrigin"]["CookiesConfig"]["CookieBehavior"] == "all"
+    assert api["ParametersInCacheKeyAndForwardedToOrigin"]["HeadersConfig"]["HeaderBehavior"] == "whitelist"
+    assert set(api["ParametersInCacheKeyAndForwardedToOrigin"]["HeadersConfig"]["Headers"]) >= {
+        "Authorization",
+        "X-CSRF-Token",
+        "X-Idempotency-Key",
+    }
+
+    assert manifest["MinTTL"] == 0
+    assert manifest["DefaultTTL"] <= 60
+    assert manifest["MaxTTL"] <= 300
+    assert immutable["MinTTL"] >= 86400
+    assert immutable["DefaultTTL"] == 31536000
+    assert immutable["MaxTTL"] == 31536000
+
+
 def test_worker_function_and_sqs_mappings_are_defined():
     template = Path("infra/cloudformation/diopside.yaml").read_text(encoding="utf-8")
     for token in [
