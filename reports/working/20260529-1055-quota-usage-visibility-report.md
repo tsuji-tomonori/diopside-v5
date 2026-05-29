@@ -33,7 +33,7 @@
 ## 成果物
 
 - quota usage 記録と管理 UI/API 表示の強化。
-- 作業 task: `tasks/do/20260529-1055-quota-usage-visibility.md`
+- 作業 task: `tasks/done/20260529-1055-quota-usage-visibility.md`
 
 ## 検証
 
