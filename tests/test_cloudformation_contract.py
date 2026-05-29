@@ -260,3 +260,73 @@ def test_eventbridge_scheduler_dispatches_low_frequency_maintenance_jobs():
     cleanup_payload = _schedule_input(resources["CleanupSchedule"])
     assert metadata_payload["input"]["max_results"] == 25
     assert cleanup_payload["input"]["dry_run"] is True
+
+
+def test_cloudwatch_log_groups_and_api_5xx_metric_filter_are_defined():
+    resources = _template()["Resources"]
+    for log_group_name, function_name in [
+        ("ApiFunctionLogGroup", "ApiFunction"),
+        ("WorkerFunctionLogGroup", "WorkerFunction"),
+        ("StaticExporterFunctionLogGroup", "StaticExporterFunction"),
+    ]:
+        log_group = resources[log_group_name]
+        assert log_group["Type"] == "AWS::Logs::LogGroup"
+        assert log_group["Properties"]["LogGroupName"] == {"Fn::Sub": f"/aws/lambda/${{{function_name}}}"}
+        assert log_group["Properties"]["RetentionInDays"] == 30
+
+    metric_filter = resources["Api5xxMetricFilter"]
+    props = metric_filter["Properties"]
+    assert metric_filter["Type"] == "AWS::Logs::MetricFilter"
+    assert props["LogGroupName"] == {"Ref": "ApiFunctionLogGroup"}
+    assert '$.component = "api"' in props["FilterPattern"]
+    assert "$.status >= 500" in props["FilterPattern"]
+    transformation = props["MetricTransformations"][0]
+    assert transformation["MetricNamespace"] == {"Fn::Sub": "diopside/${EnvName}"}
+    assert transformation["MetricName"] == "Api5xxCount"
+    assert transformation["MetricValue"] == "1"
+
+
+def test_cloudwatch_alarms_cover_dlq_lambda_api_and_static_export_failures():
+    resources = _template()["Resources"]
+    expected_dlq_alarms = {
+        "MetadataDlqDepthAlarm": "MetadataDlq",
+        "ChatDlqDepthAlarm": "ChatDlq",
+        "NormalizeDlqDepthAlarm": "NormalizeDlq",
+        "AggregateDlqDepthAlarm": "AggregateDlq",
+        "StaticExportDlqDepthAlarm": "StaticExportDlq",
+    }
+    for alarm_name, queue_name in expected_dlq_alarms.items():
+        alarm = resources[alarm_name]
+        props = alarm["Properties"]
+        assert alarm["Type"] == "AWS::CloudWatch::Alarm"
+        assert props["Namespace"] == "AWS/SQS"
+        assert props["MetricName"] == "ApproximateNumberOfMessagesVisible"
+        assert props["Dimensions"] == [{"Name": "QueueName", "Value": {"Fn::GetAtt": [queue_name, "QueueName"]}}]
+        assert props["Statistic"] == "Sum"
+        assert props["Period"] == 300
+        assert props["EvaluationPeriods"] == 1
+        assert props["Threshold"] == 1
+        assert props["ComparisonOperator"] == "GreaterThanOrEqualToThreshold"
+        assert props["TreatMissingData"] == "notBreaching"
+
+    expected_lambda_alarms = {
+        "ApiFunctionErrorsAlarm": "ApiFunction",
+        "WorkerFunctionErrorsAlarm": "WorkerFunction",
+        "StaticExportFailureAlarm": "StaticExporterFunction",
+    }
+    for alarm_name, function_name in expected_lambda_alarms.items():
+        alarm = resources[alarm_name]
+        props = alarm["Properties"]
+        assert alarm["Type"] == "AWS::CloudWatch::Alarm"
+        assert props["Namespace"] == "AWS/Lambda"
+        assert props["MetricName"] == "Errors"
+        assert props["Dimensions"] == [{"Name": "FunctionName", "Value": {"Ref": function_name}}]
+        assert props["Statistic"] == "Sum"
+        assert props["Threshold"] == 1
+        assert props["TreatMissingData"] == "notBreaching"
+
+    api_5xx = resources["Api5xxAlarm"]["Properties"]
+    assert api_5xx["Namespace"] == {"Fn::Sub": "diopside/${EnvName}"}
+    assert api_5xx["MetricName"] == "Api5xxCount"
+    assert api_5xx["Threshold"] == 1
+    assert api_5xx["ComparisonOperator"] == "GreaterThanOrEqualToThreshold"

@@ -172,6 +172,20 @@ fields @timestamp, component, event, trace_id, job_id, job_type, video_id, resul
 
 error 調査では `result="failed"` を起点にし、API では `status` と `error.code`、worker では `error.type` と `error.debug_uri` を確認します。duration の外れ値調査では `duration_ms` の降順で API path または worker job type を絞り込みます。
 
+## CloudWatch Alarm
+
+CloudFormation は最低限の alarm を作成します。初期構成では個人開発向けに通知先を固定せず、alarm action は未設定です。通知が必要な場合は deploy 後に SNS topic や ChatOps 連携を追加し、同じ alarm resource に action を関連付けます。
+
+| Alarm | 対象 | 発火条件 | 初動 |
+|---|---|---|---|
+| `MetadataDlqDepthAlarm` / `ChatDlqDepthAlarm` / `NormalizeDlqDepthAlarm` / `AggregateDlqDepthAlarm` / `StaticExportDlqDepthAlarm` | 各 DLQ | `ApproximateNumberOfMessagesVisible >= 1` | DLQ 運用手順に従い message、`job_id`、`debug_uri` を確認 |
+| `ApiFunctionErrorsAlarm` | API Lambda | `AWS/Lambda Errors >= 1` | CloudWatch JSON log の `trace_id` と ErrorResponse を確認 |
+| `WorkerFunctionErrorsAlarm` | worker Lambda | `AWS/Lambda Errors >= 1` | `job_id`、`JobEvent`、failed debug artifact を確認 |
+| `StaticExportFailureAlarm` | static export Lambda | `AWS/Lambda Errors >= 1` | static export job の event、public data manifest 差し替え有無、artifact upload を確認 |
+| `Api5xxAlarm` | API JSON log metric filter | `Api5xxCount >= 1` | `component=api`、`status >= 500` の log を `trace_id` で追跡 |
+
+Function URL origin では API Gateway の 5xx metric を使わないため、`Api5xxAlarm` は API の 1 行 JSON log から `Api5xxCount` metric を作ります。alarm が発火した場合は、まず該当時間帯の CloudWatch Logs Insights で `result="failed"`、`trace_id`、`job_id` を絞り込み、必要に応じて DLQ depth、JobEvent、failed debug artifact を合わせて確認します。
+
 ## quota 節約方針
 
 - 通常巡回では `search.list` を使わず、uploads playlist の `playlistItems.list` と `videos.list` を使う。
