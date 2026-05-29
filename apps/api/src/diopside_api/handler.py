@@ -409,7 +409,18 @@ def _list_channels() -> list[dict[str, Any]]:
 
 
 def _list_quota_usage() -> list[dict[str, Any]]:
-    return _repository().list_quota_usage(100)
+    items = []
+    for item in _repository().list_quota_usage(100):
+        details = item.get("details") or {}
+        items.append(
+            {
+                **item,
+                "channel_id": item.get("channel_id", details.get("channel_id")),
+                "video_count": item.get("video_count", details.get("video_count")),
+                "job_id": item.get("job_id", details.get("job_id")),
+            }
+        )
+    return items
 
 
 def _local_fixture_mode_enabled() -> bool:

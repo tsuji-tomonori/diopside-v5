@@ -119,3 +119,24 @@ def test_admin_job_body_validation(monkeypatch):
     )
     assert status == 400
     assert body["code"] == "INVALID_REQUEST"
+
+
+def test_admin_quota_usage_returns_visible_fields(monkeypatch):
+    repo = MemoryRepository()
+    repo.record_quota_usage("videos.list", 1, {"source": "unit"}, channel_id="ch", video_count=3, job_id="job-1")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/admin/quota-usage", headers={"authorization": "Bearer secret"})
+
+    assert status == 200
+    assert body["schema_version"] == "admin-quota-usage/v1"
+    assert body["items"][0]["method"] == "videos.list"
+    assert body["items"][0]["units"] == 1
+    assert body["items"][0]["video_count"] == 3
+    assert body["items"][0]["channel_id"] == "ch"
+    assert body["items"][0]["job_id"] == "job-1"
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)

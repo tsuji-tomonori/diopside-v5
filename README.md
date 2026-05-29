@@ -107,7 +107,7 @@ YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `
 - live chat collect は `nextPageToken` があり、`offlineAt` と `rateLimitExceeded` がない場合だけ SQS delay で再投入する。`pollingIntervalMillis` は秒へ変換し、SQS の上限に合わせて `DelaySeconds` は 900 秒で clamp する。
 - `offlineAt` が返った場合は `next_poll.action=stop`、`rateLimitExceeded` の場合は `next_poll.action=retry_later` として raw chunk manifest に停止理由を残し、自動再投入しない。
 - replay chat collect は公開アーカイブ HTML の `ytInitialData` から取得できる replay action と continuation を best-effort で抽出する。未知 renderer は失敗や破棄にせず `message_type=unknown` / `parse_warning=unknown_renderer` として raw JSONL に残し、manifest/result の `parser_stats` と `next_poll` に action 数、unknown 件数、continuation 件数を記録する。
-- quota 使用は `QuotaUsage` item に method/units/details として記録する。
+- quota 使用は `QuotaUsage` item に `method`、`units`、`video_count`、`channel_id`、`job_id` を top-level field として記録し、補足情報を `details` に残す。管理APIの `GET /api/admin/quota-usage` と管理UIの quota 表示で確認できる。
 
 ## normalized chat schema
 

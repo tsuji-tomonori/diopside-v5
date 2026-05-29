@@ -242,13 +242,24 @@ const adminHeaders = () => {
   return { authorization: `Bearer ${String(data.get("token") || "")}` };
 };
 
+const quotaUsageText = (item) => {
+  const parts = [
+    item.method,
+    `${item.units} units`,
+    `videos ${item.video_count ?? "-"}`,
+    `channel ${item.channel_id ?? "-"}`,
+    `job ${item.job_id ?? "-"}`
+  ];
+  return parts.join(" / ");
+};
+
 const loadAdminData = async (kind) => {
   try {
     const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { headers: adminHeaders() });
     const items = result.items || [];
     els.adminData.replaceChildren(
       el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
-      items.length ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: kind === "quota" ? `${item.method}: ${item.units}` : `${item.job_id} / ${item.job_type} / ${item.derived_state}` }))) : el("p", { class: "empty-state", text: "表示できる項目はありません。" })
+      items.length ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: kind === "quota" ? quotaUsageText(item) : `${item.job_id} / ${item.job_type} / ${item.derived_state}` }))) : el("p", { class: "empty-state", text: "表示できる項目はありません。" })
     );
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));

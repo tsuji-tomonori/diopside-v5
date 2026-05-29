@@ -70,6 +70,11 @@ async function smokeAdmin(url, token, csrf, outDir) {
   if (!detail.item?.events?.length) throw new Error("admin job detail missing events");
   const quota = await json(`${url}/api/admin/quota-usage`, { headers: { Authorization: `Bearer ${token}` } });
   if (!Array.isArray(quota.items)) throw new Error("quota usage response must include items array");
+  for (const item of quota.items) {
+    for (const key of ["method", "units", "video_count", "channel_id", "job_id"]) {
+      if (!(key in item)) throw new Error(`quota usage item missing ${key}`);
+    }
+  }
   const afterManifest = await waitForManifestRefresh(url, beforeManifest);
   await writeJson(join(outDir, "latest-manifest-after-static-export.json"), afterManifest);
   if (afterManifest.generated_at === beforeManifest.generated_at && afterManifest.export_version === beforeManifest.export_version) {

@@ -80,7 +80,16 @@ class Repository(Protocol):
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]: ...
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]: ...
-    def record_quota_usage(self, method: str, units: int, details: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def record_quota_usage(
+        self,
+        method: str,
+        units: int,
+        details: dict[str, Any] | None = None,
+        *,
+        channel_id: str | None = None,
+        video_count: int | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]: ...
     def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]: ...
     def get_job(self, job_id: str) -> dict[str, Any] | None: ...
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]: ...
@@ -152,8 +161,21 @@ class MemoryRepository:
         artifacts = [item for (pk, sk), item in self.items.items() if pk == prefix and sk.startswith("ARTIFACT#")]
         return deepcopy(artifacts)
 
-    def record_quota_usage(self, method: str, units: int, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    def record_quota_usage(
+        self,
+        method: str,
+        units: int,
+        details: dict[str, Any] | None = None,
+        *,
+        channel_id: str | None = None,
+        video_count: int | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         stamp = now_iso()
+        usage_details = details or {}
+        normalized_channel_id = channel_id if channel_id is not None else usage_details.get("channel_id")
+        normalized_video_count = video_count if video_count is not None else usage_details.get("video_count")
+        normalized_job_id = job_id if job_id is not None else usage_details.get("job_id")
         return self.put_item(
             {
                 "item_type": "QuotaUsage",
@@ -161,7 +183,10 @@ class MemoryRepository:
                 "sk": f"{stamp}#{method}#{uuid.uuid4().hex}",
                 "method": method,
                 "units": units,
-                "details": details or {},
+                "channel_id": normalized_channel_id,
+                "video_count": normalized_video_count,
+                "job_id": normalized_job_id,
+                "details": {**usage_details, "channel_id": normalized_channel_id, "video_count": normalized_video_count, "job_id": normalized_job_id},
                 "created_at": stamp,
                 "gsi3pk": "QUOTA#ALL",
                 "gsi3sk": f"{stamp}#{method}",
