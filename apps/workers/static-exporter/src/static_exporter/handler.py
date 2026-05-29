@@ -132,22 +132,34 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         items = []
         for record in event["Records"]:
             payload = json.loads(record.get("body", "{}"))
-            items.append(lambda_handler(payload.get("input", payload), context))
+            items.append(lambda_handler(payload, context))
         return {"status": "succeeded", "items": items}
-    out = pathlib.Path(event.get("output_dir", "/tmp/diopside-public-export"))
-    if event.get("fixture_source"):
-        source = pathlib.Path(event["fixture_source"])
-        manifest = export_from_fixture(source, out, event.get("export_version", f"local-{int(time.time())}"))
-    else:
-        repository = _repository_from_env()
-        manifest = export_public_data(repository, out, event.get("export_version"))
-    uploaded = _upload_directory(out) if os.environ.get("DIOPSIDE_PUBLIC_DATA_BUCKET") else 0
-    return {
-        "status": "succeeded",
-        "manifest_path": str(out / "latest-manifest.json"),
-        "export_version": manifest["export_version"],
-        "uploaded_object_count": uploaded,
-    }
+    job_id = event.get("job_id")
+    params = event.get("input", event)
+    repository = _repository_from_env()
+    if job_id:
+        repository.append_job_event(job_id, "started", {"job_type": event.get("job_type", "static_export")})
+    try:
+        out = pathlib.Path(params.get("output_dir", "/tmp/diopside-public-export"))
+        if params.get("fixture_source"):
+            source = pathlib.Path(params["fixture_source"])
+            manifest = export_from_fixture(source, out, params.get("export_version", f"local-{int(time.time())}"))
+        else:
+            manifest = export_public_data(repository, out, params.get("export_version"))
+        uploaded = _upload_directory(out) if os.environ.get("DIOPSIDE_PUBLIC_DATA_BUCKET") else 0
+        result = {
+            "status": "succeeded",
+            "manifest_path": str(out / "latest-manifest.json"),
+            "export_version": manifest["export_version"],
+            "uploaded_object_count": uploaded,
+        }
+        if job_id:
+            repository.append_job_event(job_id, "completed", result)
+        return result
+    except Exception as exc:
+        if job_id:
+            repository.append_job_event(job_id, "failed", {"type": type(exc).__name__, "message": str(exc)})
+        raise
 
 
 def _now() -> str:

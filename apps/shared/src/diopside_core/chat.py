@@ -33,7 +33,9 @@ def normalize_live_chat_items(items: list[dict[str, Any]], video_id: str) -> lis
 def normalize_replay_actions(actions: list[dict[str, Any]], video_id: str) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     for action in actions:
-        add_action = action.get("replayChatItemAction", {}).get("actions", [action])[0]
+        replay_action = action.get("replayChatItemAction", {})
+        replay_offset_msec = _int_or_none(replay_action.get("videoOffsetTimeMsec"))
+        add_action = replay_action.get("actions", [action])[0]
         item = add_action.get("addChatItemAction", {}).get("item") or add_action.get("addLiveChatTickerItemAction", {}).get("item") or action
         renderer_type, renderer = _first_renderer(item)
         if renderer_type in {"liveChatTextMessageRenderer", "liveChatPaidMessageRenderer", "liveChatPaidStickerRenderer", "liveChatTickerPaidMessageItemRenderer"}:
@@ -51,7 +53,7 @@ def normalize_replay_actions(actions: list[dict[str, Any]], video_id: str) -> li
                     "author_badges": [badge for badge in author_badges if badge],
                     "timestamp_usec": int(renderer.get("timestampUsec", "0") or 0),
                     "timestamp_text": _simple_text(renderer.get("timestampText")),
-                    "video_offset_time_msec": int(renderer.get("videoOffsetTimeMsec", "0") or 0),
+                    "video_offset_time_msec": replay_offset_msec if replay_offset_msec is not None else int(renderer.get("videoOffsetTimeMsec", "0") or 0),
                     "message_runs": runs,
                     "message_text": text,
                     "purchase_amount_text": _simple_text(renderer.get("purchaseAmountText")),
@@ -109,6 +111,15 @@ def _simple_text(value: Any) -> str | None:
     if "runs" in value:
         return "".join(run.get("text", "") for run in value["runs"])
     return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _badges(author: dict[str, Any]) -> list[str]:

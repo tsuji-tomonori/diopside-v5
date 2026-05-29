@@ -68,5 +68,8 @@ def test_cloudformation_template_parses_and_worker_can_consume_queues():
         "DIOPSIDE_NORMALIZE_QUEUE_URL",
         "DIOPSIDE_AGGREGATE_QUEUE_URL",
         "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
+        "DIOPSIDE_YOUTUBE_API_KEY",
     ]:
         assert name in env
+    assert "YouTubeApiKey" in template["Parameters"]
+    assert template["Parameters"]["YouTubeApiKey"]["NoEcho"] is True

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import hashlib
 from typing import Any
 
 from diopside_core import (
@@ -48,6 +49,10 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
             result = chat_normalize(repo, payload.get("input", payload))
         elif job_type == "rebuild_artifacts":
             result = rebuild_artifacts(repo, payload.get("input", payload))
+        elif job_type == "retry_job":
+            result = retry_job(repo, payload.get("input", payload))
+        elif job_type == "cancel_job":
+            result = cancel_job(repo, payload.get("input", payload))
         else:
             raise ValueError(f"unsupported job_type: {job_type}")
         repo.append_job_event(job_id, "completed", result)
@@ -132,16 +137,32 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         }
         if next_poll["next_page_token"] and not next_poll["rate_limited"]:
             _enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video_id}", "input": {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_poll["next_page_token"]}}, delay_seconds=min(delay_seconds, 900))
-    repo.put_item({"item_type": "ChatMessageChunkManifest", "pk": f"VIDEO#{video_id}", "sk": f"CHAT#RAW#{source}#{now_iso()}", "video_id": video_id, "source": source, "message_count": len(messages), "messages": messages, "next_poll": next_poll})
     raw_key = f"raw/youtube/chat/video_id={video_id}/source={source}/{now_iso()}.jsonl"
-    _write_blob(raw_key, "\n".join(json.dumps(message, ensure_ascii=False) for message in messages).encode("utf-8"), "application/x-ndjson")
+    body = ("\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + ("\n" if messages else "")).encode("utf-8")
+    raw_uri = _write_blob(raw_key, body, "application/x-ndjson")
+    offsets = [int(message.get("video_offset_time_msec") or 0) for message in messages]
+    repo.put_item(
+        {
+            "item_type": "ChatMessageChunkManifest",
+            "pk": f"VIDEO#{video_id}",
+            "sk": f"CHAT#RAW#{source}#{now_iso()}",
+            "video_id": video_id,
+            "source": source,
+            "s3_uri": raw_uri,
+            "message_count": len(messages),
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "first_offset_msec": min(offsets) if offsets else None,
+            "last_offset_msec": max(offsets) if offsets else None,
+            "next_poll": next_poll,
+        }
+    )
     return {"video_id": video_id, "source": source, "message_count": len(messages), "next_poll": next_poll}
 
 
 def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video_id = params["video_id"]
     chunks = repo.list_chat_chunks(video_id)
-    messages = [message for chunk in chunks for message in chunk.get("messages", [])]
+    messages = [message for chunk in chunks for message in _read_jsonl(chunk["s3_uri"])]
     summary = summarize_chat_messages(messages)
     repo.put_chat_aggregate(video_id, summary)
     normalized_key = f"processed/chat-normalized/video_id={video_id}/part-000.jsonl"
@@ -150,6 +171,35 @@ def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     _write_blob(aggregate_key, json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
     repo.put_item({"item_type": "ChatManifest", "pk": f"VIDEO#{video_id}", "sk": "CHAT#MANIFEST", "video_id": video_id, "normalized_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}", "message_count": len(messages), "updated_at": now_iso()})
     return {"video_id": video_id, "message_count": len(messages), "top_term_count": len(summary["top_terms"])}
+
+
+def retry_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    target_job_id = params["target_job_id"]
+    target = repo.get_job(target_job_id)
+    if not target:
+        raise ValueError(f"target job does not exist: {target_job_id}")
+    state = target.get("derived_state")
+    if state not in {"failed", "retryable"}:
+        raise ValueError(f"target job is not retryable: {state}")
+    repo.append_job_event(target_job_id, "retry_requested", {"reason": params.get("reason")})
+    queue_env = _queue_env_for_job_type(target["job_type"])
+    enqueued = _enqueue_job(
+        queue_env,
+        {"job_type": target["job_type"], "job_id": target_job_id, "input": target.get("payload", {}), "retry_of": target_job_id},
+    )
+    return {"target_job_id": target_job_id, "target_job_type": target["job_type"], "enqueued": bool(enqueued)}
+
+
+def cancel_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    target_job_id = params["target_job_id"]
+    target = repo.get_job(target_job_id)
+    if not target:
+        raise ValueError(f"target job does not exist: {target_job_id}")
+    state = target.get("derived_state")
+    if state in {"succeeded", "failed", "cancelled"}:
+        raise ValueError(f"target job is already terminal: {state}")
+    repo.append_job_event(target_job_id, "cancelled", {"reason": params.get("reason")})
+    return {"target_job_id": target_job_id, "cancelled": True}
 
 
 def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -193,6 +243,40 @@ def _write_blob(key: str, body: bytes, content_type: str, bucket_env: str = "DIO
         path.write_bytes(body)
         return str(path)
     return key
+
+
+def _read_jsonl(uri: str) -> list[dict[str, Any]]:
+    if uri.startswith("s3://"):
+        if "/" not in uri[5:]:
+            raise ValueError(f"invalid s3 uri: {uri}")
+        bucket, key = uri[5:].split("/", 1)
+        import boto3
+
+        body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
+        return _parse_jsonl(body.decode("utf-8"))
+    path = pathlib.Path(uri)
+    if not path.is_absolute():
+        local_root = os.environ.get("DIOPSIDE_LOCAL_ARTIFACT_DIR")
+        if local_root:
+            path = pathlib.Path(local_root) / uri
+    return _parse_jsonl(path.read_text(encoding="utf-8"))
+
+
+def _parse_jsonl(text: str) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _queue_env_for_job_type(job_type: str) -> str:
+    return {
+        "metadata_sync": "DIOPSIDE_METADATA_QUEUE_URL",
+        "live_status_scan": "DIOPSIDE_METADATA_QUEUE_URL",
+        "chat_collect": "DIOPSIDE_CHAT_QUEUE_URL",
+        "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
+        "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+        "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
+        "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
+        "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
+    }[job_type]
 
 
 def _enqueue_job(queue_env: str, payload: dict[str, Any], delay_seconds: int = 0) -> str | None:

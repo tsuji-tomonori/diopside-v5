@@ -3,6 +3,9 @@ import os
 
 os.environ.setdefault("DIOPSIDE_LOCAL_FIXTURE_MODE", "true")
 
+import diopside_api.handler as handler
+from diopside_core import MemoryRepository
+
 from diopside_api.handler import lambda_handler
 
 
@@ -34,6 +37,34 @@ def test_public_video_search_and_detail():
     assert status == 200
     assert detail["schema_version"] == "public-video-detail/v1"
     assert detail["chat_summary"]["wordcloud_url"]
+
+
+def test_home_uses_repository_when_table_name_is_configured(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "repo001",
+            "title": "repository video",
+            "published_at": "2026-05-29T00:00:00Z",
+            "tags": ["repo"],
+            "public": True,
+        }
+    )
+    monkeypatch.setenv("DIOPSIDE_TABLE_NAME", "unit-table")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+    monkeypatch.setattr(
+        handler,
+        "_load_json",
+        lambda path: (_ for _ in ()).throw(AssertionError(f"fixture manifest should not be loaded: {path}")),
+    )
+
+    status, body = call("GET", "/api/home")
+
+    assert status == 200
+    assert body["latest_videos"][0]["video_id"] == "repo001"
+    assert body["popular_tags"][0]["label"] == "repo"
+    monkeypatch.delenv("DIOPSIDE_TABLE_NAME", raising=False)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
 
 
 def test_admin_requires_auth():
