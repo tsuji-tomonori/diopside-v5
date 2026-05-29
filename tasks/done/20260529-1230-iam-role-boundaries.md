@@ -1,6 +1,6 @@
 # IAM最小権限見直し
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -60,3 +60,17 @@ IAM 境界は運用・セキュリティに関わるため、README に現状の
 
 - 実 AWS deploy は行わないため、IAM permission の実行時検証は CloudFormation contract と既存テストに留まる。
 - 今後 worker をさらに job type 別 role に分ける余地は残る。
+
+## 完了記録
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/23
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/23#issuecomment-4570149757
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/23#issuecomment-4570149758
+- 作業レポート: `reports/working/20260529-1230-iam-role-boundaries-report.md`
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_cloudformation_contract.py`: 15 passed
+- `npm test`: 59 passed
+- `npm run verify`: 成功
