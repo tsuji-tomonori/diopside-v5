@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import hashlib
+from collections import Counter
 from typing import Any
 
 from diopside_core import (
@@ -270,15 +271,62 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video_id = params["video_id"]
     chunks = repo.list_chat_chunks(video_id)
-    messages = [message for chunk in chunks for message in _read_jsonl(chunk["s3_uri"])]
-    summary = summarize_chat_messages(messages)
+    aggregator = ChatAggregateAccumulator()
+    normalized_body = bytearray()
+    for chunk in chunks:
+        for message in _iter_jsonl(chunk["s3_uri"]):
+            aggregator.add(message)
+            normalized_body.extend(json.dumps(message, ensure_ascii=False).encode("utf-8"))
+            normalized_body.extend(b"\n")
+    summary = aggregator.summary()
     repo.put_chat_aggregate(video_id, summary)
     normalized_key = f"processed/chat-normalized/video_id={video_id}/part-000.jsonl"
     aggregate_key = f"processed/chat-aggregate/video_id={video_id}/summary.json"
-    _write_blob(normalized_key, "\n".join(json.dumps(message, ensure_ascii=False) for message in messages).encode("utf-8"), "application/x-ndjson", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
+    _write_blob(normalized_key, bytes(normalized_body), "application/x-ndjson", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
     _write_blob(aggregate_key, json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
-    repo.put_item({"item_type": "ChatManifest", "pk": f"VIDEO#{video_id}", "sk": "CHAT#MANIFEST", "video_id": video_id, "normalized_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}", "message_count": len(messages), "updated_at": now_iso()})
-    return {"video_id": video_id, "message_count": len(messages), "top_term_count": len(summary["top_terms"])}
+    repo.put_item({"item_type": "ChatManifest", "pk": f"VIDEO#{video_id}", "sk": "CHAT#MANIFEST", "video_id": video_id, "normalized_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}", "message_count": summary["message_count"], "updated_at": now_iso()})
+    return {"video_id": video_id, "message_count": summary["message_count"], "top_term_count": len(summary["top_terms"])}
+
+
+class ChatAggregateAccumulator:
+    def __init__(self, bucket_sec: int = 60) -> None:
+        self.bucket_sec = bucket_sec
+        self.message_count = 0
+        self.authors: set[str] = set()
+        self.paid_message_count = 0
+        self.emoji_count = 0
+        self.terms: Counter[str] = Counter()
+        self.timeline: Counter[int] = Counter()
+        self.term_timeline: dict[str, Counter[int]] = {}
+
+    def add(self, message: dict[str, Any]) -> None:
+        self.message_count += 1
+        author = message.get("author_external_channel_id") or message.get("author_name")
+        if author:
+            self.authors.add(author)
+        if message.get("message_type") == "paid":
+            self.paid_message_count += 1
+        self.emoji_count += sum(1 for run in message.get("message_runs", []) if run.get("type") == "emoji")
+        offset = int(message.get("video_offset_time_msec") or 0) // 1000
+        bucket_offset = (offset // self.bucket_sec) * self.bucket_sec
+        self.timeline[bucket_offset] += 1
+        for term in _chat_terms(message.get("message_text", "")):
+            self.terms[term] += 1
+            self.term_timeline.setdefault(term, Counter())[bucket_offset] += 1
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "message_count": self.message_count,
+            "unique_author_count": len(self.authors),
+            "paid_message_count": self.paid_message_count,
+            "emoji_count": self.emoji_count,
+            "timeline_buckets": [{"offset_sec": offset, "message_count": count} for offset, count in sorted(self.timeline.items())],
+            "top_terms": [{"term": term, "score": count} for term, count in self.terms.most_common(40)],
+            "term_timeline": {
+                term: [{"offset_sec": offset, "count": count} for offset, count in sorted(bucket_counts.items())]
+                for term, bucket_counts in sorted(self.term_timeline.items())
+            },
+        }
 
 
 def retry_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -385,24 +433,50 @@ def _write_json_blob(key: str, payload: dict[str, Any], bucket_env: str = "DIOPS
 
 
 def _read_jsonl(uri: str) -> list[dict[str, Any]]:
+    return list(_iter_jsonl(uri))
+
+
+def _iter_jsonl(uri: str):
     if uri.startswith("s3://"):
         if "/" not in uri[5:]:
             raise ValueError(f"invalid s3 uri: {uri}")
         bucket, key = uri[5:].split("/", 1)
         import boto3
 
-        body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
-        return _parse_jsonl(body.decode("utf-8"))
+        body = boto3.client("s3").get_object(Bucket=bucket, Key=key)["Body"]
+        for raw_line in body.iter_lines():
+            line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+            if line.strip():
+                yield json.loads(line)
+        return
     path = pathlib.Path(uri)
     if not path.is_absolute():
         local_root = os.environ.get("DIOPSIDE_LOCAL_ARTIFACT_DIR")
         if local_root:
             path = pathlib.Path(local_root) / uri
-    return _parse_jsonl(path.read_text(encoding="utf-8"))
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                yield json.loads(line)
 
 
 def _parse_jsonl(text: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _chat_terms(text: str) -> list[str]:
+    import re
+
+    stopwords = {"これ", "それ", "あれ", "する", "いる", "ある", "こと", "ため", "さん", "ちゃん", "https", "http", "www"}
+    cleaned = re.sub(r"https?://\S+", " ", text)
+    cleaned = re.sub(r"[\u3000\s\W_]+", " ", cleaned, flags=re.UNICODE)
+    result = []
+    for raw in cleaned.split():
+        term = raw.strip().lower()
+        if len(term) < 2 or term in stopwords:
+            continue
+        result.append(term)
+    return result
 
 
 def _queue_env_for_job_type(job_type: str) -> str:

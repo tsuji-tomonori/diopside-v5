@@ -538,6 +538,80 @@ def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, 
     assert repo.get_chat_aggregate("vid001")["top_terms"][0]["term"] == "ありがとう"
 
 
+def test_summarize_chat_messages_accepts_single_pass_iterable():
+    consumed = False
+
+    def messages():
+        nonlocal consumed
+        assert consumed is False
+        consumed = True
+        yield {"message_type": "text", "author_external_channel_id": "a1", "message_runs": [{"type": "emoji"}], "message_text": "ありがとう", "video_offset_time_msec": 60000}
+        yield {"message_type": "paid", "author_external_channel_id": "a2", "message_runs": [], "message_text": "ありがとう", "video_offset_time_msec": 61000}
+
+    summary = summarize_chat_messages(messages())
+
+    assert summary["message_count"] == 2
+    assert summary["unique_author_count"] == 2
+    assert summary["paid_message_count"] == 1
+    assert summary["emoji_count"] == 1
+    assert summary["top_terms"][0] == {"term": "ありがとう", "score": 2}
+
+
+def test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(pipeline, "_read_jsonl", lambda uri: (_ for _ in ()).throw(AssertionError("_read_jsonl should not be used by chat_normalize")))
+    repo = MemoryRepository()
+    for index, text in enumerate(["ありがとう ありがとう", "おはよう"]):
+        raw_path = tmp_path / f"raw/youtube/chat/video_id=vid-stream/source=replay/part-{index:03d}.jsonl"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(
+            json.dumps(
+                {
+                    "message_id": f"m{index}",
+                    "video_id": "vid-stream",
+                    "source": "replay",
+                    "message_type": "paid" if index == 1 else "text",
+                    "author_external_channel_id": f"a{index}",
+                    "author_name": None,
+                    "message_runs": [{"type": "text", "text": text}],
+                    "message_text": text,
+                    "video_offset_time_msec": 60000 + index * 1000,
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        repo.put_item(
+            {
+                "item_type": "ChatMessageChunkManifest",
+                "pk": "VIDEO#vid-stream",
+                "sk": f"CHAT#RAW#replay#{index}",
+                "video_id": "vid-stream",
+                "source": "replay",
+                "s3_uri": str(raw_path),
+                "message_count": 1,
+                "sha256": "fixture",
+                "first_offset_msec": 60000 + index * 1000,
+                "last_offset_msec": 60000 + index * 1000,
+                "next_poll": None,
+            }
+        )
+
+    normalized = chat_normalize(repo, {"video_id": "vid-stream"})
+
+    normalized_path = tmp_path / "processed/chat-normalized/video_id=vid-stream/part-000.jsonl"
+    aggregate_path = tmp_path / "processed/chat-aggregate/video_id=vid-stream/summary.json"
+    normalized_rows = [json.loads(line) for line in normalized_path.read_text(encoding="utf-8").splitlines()]
+    summary = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert normalized["message_count"] == 2
+    assert normalized["top_term_count"] == 2
+    assert len(normalized_rows) == 2
+    assert summary["message_count"] == 2
+    assert summary["paid_message_count"] == 1
+    assert repo.get_chat_aggregate("vid-stream")["top_terms"][0]["term"] == "ありがとう"
+
+
 def test_timestamp_candidates_include_keyword_spike():
     summary = summarize_chat_messages(
         [

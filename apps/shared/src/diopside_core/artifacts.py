@@ -3,19 +3,27 @@ from __future__ import annotations
 import html
 import re
 from collections import Counter
-from typing import Any
+from typing import Any, Iterable
 
 STOPWORDS = {"これ", "それ", "あれ", "する", "いる", "ある", "こと", "ため", "さん", "ちゃん", "https", "http", "www"}
 
 
-def summarize_chat_messages(messages: list[dict[str, Any]], bucket_sec: int = 60) -> dict[str, Any]:
-    authors = {msg.get("author_external_channel_id") or msg.get("author_name") for msg in messages if msg.get("author_external_channel_id") or msg.get("author_name")}
-    paid = [msg for msg in messages if msg.get("message_type") == "paid"]
-    emoji_count = sum(1 for msg in messages for run in msg.get("message_runs", []) if run.get("type") == "emoji")
+def summarize_chat_messages(messages: Iterable[dict[str, Any]], bucket_sec: int = 60) -> dict[str, Any]:
+    message_count = 0
+    authors = set()
+    paid_message_count = 0
+    emoji_count = 0
     terms = Counter()
     timeline: Counter[int] = Counter()
     term_timeline: dict[str, Counter[int]] = {}
     for msg in messages:
+        message_count += 1
+        author = msg.get("author_external_channel_id") or msg.get("author_name")
+        if author:
+            authors.add(author)
+        if msg.get("message_type") == "paid":
+            paid_message_count += 1
+        emoji_count += sum(1 for run in msg.get("message_runs", []) if run.get("type") == "emoji")
         offset = int(msg.get("video_offset_time_msec") or 0) // 1000
         bucket_offset = (offset // bucket_sec) * bucket_sec
         timeline[bucket_offset] += 1
@@ -23,9 +31,9 @@ def summarize_chat_messages(messages: list[dict[str, Any]], bucket_sec: int = 60
             terms[term] += 1
             term_timeline.setdefault(term, Counter())[bucket_offset] += 1
     return {
-        "message_count": len(messages),
+        "message_count": message_count,
         "unique_author_count": len(authors),
-        "paid_message_count": len(paid),
+        "paid_message_count": paid_message_count,
         "emoji_count": emoji_count,
         "timeline_buckets": [{"offset_sec": offset, "message_count": count} for offset, count in sorted(timeline.items())],
         "top_terms": [{"term": term, "score": count} for term, count in terms.most_common(40)],
