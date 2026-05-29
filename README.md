@@ -102,6 +102,55 @@ YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `
 
 CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
 
+## DLQ運用手順
+
+CloudFormation では各 worker queue に `maxReceiveCount=3` の redrive policy を設定し、3 回処理に失敗した message を対応する DLQ へ移動します。
+
+| 元queue | DLQ | 主なjob |
+|---|---|---|
+| `MetadataQueue` | `MetadataDlq` | `metadata_sync`、`live_status_scan`、`retry_job`、`cancel_job` |
+| `ChatQueue` | `ChatDlq` | `chat_collect` |
+| `NormalizeQueue` | `NormalizeDlq` | `chat_normalize` |
+| `AggregateQueue` | `AggregateDlq` | `rebuild_artifacts`、`quota_rollup`、`cleanup` |
+| `StaticExportQueue` | `StaticExportDlq` | `static_export` |
+
+DLQ depth は CloudWatch metric `AWS/SQS ApproximateNumberOfMessagesVisible` で確認します。CLI で確認する場合は、対象 stack の logical resource id から queue URL を特定し、`ApproximateNumberOfMessages` と `ApproximateNumberOfMessagesNotVisible` を確認します。
+
+```sh
+DLQ_URL=$(aws cloudformation describe-stack-resource \
+  --stack-name diopside-prod \
+  --logical-resource-id MetadataDlq \
+  --query 'StackResourceDetail.PhysicalResourceId' \
+  --output text)
+
+aws sqs get-queue-attributes \
+  --queue-url "$DLQ_URL" \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible
+```
+
+原因調査では、まず DLQ message を 1 件だけ短い visibility timeout で確認し、`job_id`、`job_type`、`input`、`retry_of` を控えます。次に `GET /api/admin/jobs/{job_id}` または DynamoDB の `JobEvent` を確認し、最後の `failed` event の `message` と `debug_uri` を確認します。`debug_uri` がある場合は Raw/processed bucket の failed debug artifact を取得し、例外型、入力 payload、外部 API の応答分類を確認します。
+
+```sh
+aws sqs receive-message \
+  --queue-url "$DLQ_URL" \
+  --max-number-of-messages 1 \
+  --visibility-timeout 30 \
+  --attribute-names All \
+  --message-attribute-names All
+```
+
+再投入は、原因が解消済みで同じ payload を再実行しても安全な場合だけ行います。推奨は管理 API の `POST /api/admin/jobs/{job_id}/retry` で、`retry_requested` event を残して元 job type の queue へ再投入する方法です。DLQ message を直接元 queue へ送るのは、`JobEvent` と管理画面の追跡が崩れないことを確認できる緊急時に限定します。直接再投入した場合も、操作前後の DLQ message id、job_id、理由、投入先 queue を作業メモまたは PR/incident report に残します。
+
+破棄は、message が古い deploy 由来、入力データが修復不能、または再投入で重複副作用が出ると判断できる場合だけ実施します。破棄前に message body、message id、job_id、debug_uri、判断理由を記録し、必要な raw/debug artifact を保存します。CLI で破棄する場合は `receive-message` で得た `ReceiptHandle` を使って 1 件ずつ削除し、bulk purge は同一原因の大量滞留で全件破棄が妥当と確認できる場合だけ使います。
+
+```sh
+aws sqs delete-message \
+  --queue-url "$DLQ_URL" \
+  --receipt-handle "<receipt-handle>"
+```
+
+再投入後は、元 queue の visible/not visible 数、DLQ depth、対象 job の `JobEvent`、関連 S3 artifact、`GET /api/admin/jobs/{job_id}` の `derived_state` を確認します。再発防止では、失敗分類が入力 validation、YouTube quota/rate limit、S3/DynamoDB permission、parser schema drift、artifact contract failure のどれかを切り分け、必要に応じて unit test、contract test、README 手順、CloudWatch Alarm の閾値を更新します。
+
 ## quota 節約方針
 
 - 通常巡回では `search.list` を使わず、uploads playlist の `playlistItems.list` と `videos.list` を使う。
