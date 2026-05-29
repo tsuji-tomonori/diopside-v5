@@ -1,6 +1,6 @@
 # アクセシビリティ改善
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -52,3 +52,17 @@ UI 属性・style の改善であり README 更新は不要。変更内容と検
 ## リスク
 
 - 実スクリーンリーダーでの手動確認は未実施に留まる。
+
+## 完了記録
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/31
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/31#issuecomment-4570453539
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/31#issuecomment-4570453537
+- 作業レポート: `reports/working/20260529-1430-web-accessibility-report.md`
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `npm test`: 59 passed
+- `npm run build`: 成功
+- `npm run e2e:local`: 成功
