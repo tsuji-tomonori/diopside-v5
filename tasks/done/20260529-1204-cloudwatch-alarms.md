@@ -1,6 +1,6 @@
 # 最低限のCloudWatch Alarm
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -60,3 +60,12 @@
 
 - Function URL origin では API Gateway の 5xx metric は使えないため、API 5xx は API Lambda 側の error metric または log metric filter のどちらで検知するかを実装時に確認する。
 - 実 CloudWatch alarm の発火確認は実 AWS deploy 後の確認事項として残る。
+
+## 完了確認
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/21
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/21#issuecomment-4570074134
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/21#issuecomment-4570075695
+- 作業レポート: `reports/working/20260529-1204-cloudwatch-alarms-report.md`
+- 検証: `git diff --check`、CloudFormation targeted pytest、`npm test`、`npm run verify`
+- 未実施: 実 AWS 環境での CloudWatch Alarm 作成、発火、通知確認
