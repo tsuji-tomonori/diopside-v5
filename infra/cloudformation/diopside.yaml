@@ -357,6 +357,27 @@ Resources:
   StaticExportDlq:
     Type: AWS::SQS::Queue
 
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: diopside-scheduler-send-message
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource:
+                  - Fn::GetAtt: [MetadataQueue, Arn]
+                  - Fn::GetAtt: [AggregateQueue, Arn]
+
   ApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -673,6 +694,82 @@ Resources:
       FunctionName:
         Ref: StaticExporterFunction
       BatchSize: 1
+
+  MetadataSyncSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: "diopside-${EnvName}-metadata-sync"
+      Description: Low-frequency metadata sync dispatch.
+      State: ENABLED
+      ScheduleExpression: rate(12 hours)
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn:
+          Fn::GetAtt: [MetadataQueue, Arn]
+        RoleArn:
+          Fn::GetAtt: [SchedulerRole, Arn]
+        Input:
+          Fn::Sub: |
+            {"job_type":"metadata_sync","job_id":"scheduler-metadata-sync-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"metadata-sync-<aws.scheduler.scheduled-time>","max_results":25}}
+
+  LiveStatusScanSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: "diopside-${EnvName}-live-status-scan"
+      Description: Low-frequency live status scan dispatch.
+      State: ENABLED
+      ScheduleExpression: rate(30 minutes)
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn:
+          Fn::GetAtt: [MetadataQueue, Arn]
+        RoleArn:
+          Fn::GetAtt: [SchedulerRole, Arn]
+        Input:
+          Fn::Sub: |
+            {"job_type":"live_status_scan","job_id":"scheduler-live-status-scan-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"live-status-scan-<aws.scheduler.scheduled-time>"}}
+
+  QuotaRollupSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: "diopside-${EnvName}-quota-rollup"
+      Description: Daily quota usage rollup dispatch.
+      State: ENABLED
+      ScheduleExpression: rate(1 day)
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn:
+          Fn::GetAtt: [AggregateQueue, Arn]
+        RoleArn:
+          Fn::GetAtt: [SchedulerRole, Arn]
+        Input:
+          Fn::Sub: |
+            {"job_type":"quota_rollup","job_id":"scheduler-quota-rollup-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"quota-rollup-<aws.scheduler.scheduled-time>"}}
+
+  CleanupSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name:
+        Fn::Sub: "diopside-${EnvName}-cleanup"
+      Description: Weekly safe cleanup report dispatch.
+      State: ENABLED
+      ScheduleExpression: rate(7 days)
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn:
+          Fn::GetAtt: [AggregateQueue, Arn]
+        RoleArn:
+          Fn::GetAtt: [SchedulerRole, Arn]
+        Input:
+          Fn::Sub: |
+            {"job_type":"cleanup","job_id":"scheduler-cleanup-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"cleanup-<aws.scheduler.scheduled-time>","dry_run":true}}
 
 Outputs:
   CloudFrontDomainName:
