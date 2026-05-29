@@ -1,6 +1,6 @@
 # S3 bucket policy / OAC検証
 
-状態: do
+状態: done
 
 ## 背景
 

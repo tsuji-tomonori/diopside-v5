@@ -27,7 +27,7 @@
 ## 成果物
 
 - S3 OAC / bucket policy contract test の強化。
-- 作業 task: `tasks/do/20260529-1123-s3-oac-bucket-policy-contract.md`
+- 作業 task: `tasks/done/20260529-1123-s3-oac-bucket-policy-contract.md`
 
 ## 検証
 
