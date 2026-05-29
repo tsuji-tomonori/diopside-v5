@@ -44,9 +44,11 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
         }
         timestamps = video.get("timestamps") or build_timestamp_candidates(aggregate, video.get("description", ""))
         wordcloud_url = None
+        wordcloud_artifact = None
         if aggregate.get("top_terms"):
             wordcloud_url = f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.svg"
             (artifacts_dir / f"{video_id}.svg").write_text(generate_wordcloud_svg(aggregate["top_terms"]), encoding="utf-8")
+            wordcloud_artifact = {"path": wordcloud_url, "content_type": "image/svg+xml"}
             repository.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": wordcloud_url, "content_type": "image/svg+xml"})
         repository.put_artifact(video_id, {"artifact_type": "timestamp", "public_url_path": f"/data/v/{version}/public/videos/{video_id}.json", "content_type": "application/json"})
         detail_path = f"/data/v/{version}/public/videos/{video_id}.json"
@@ -70,6 +72,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
                 "schema_version": "public-video-detail/v1",
                 "video": public_video,
                 "chat_summary": {**aggregate, "wordcloud_url": wordcloud_url},
+                "artifacts": {"wordcloud": wordcloud_artifact},
                 "timestamps": timestamps,
             },
         )

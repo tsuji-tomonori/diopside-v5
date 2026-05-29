@@ -34,6 +34,22 @@ for (const item of videos.items) {
   if (detail.schema_version !== "public-video-detail/v1") throw new Error(`invalid detail schema for ${item.video_id}`);
   if (!detail.video?.youtube_url) throw new Error(`detail ${item.video_id} missing youtube_url`);
   if (!("wordcloud_url" in (detail.chat_summary || {}))) throw new Error(`detail ${item.video_id} missing chat_summary.wordcloud_url`);
+  if (!("artifacts" in detail)) throw new Error(`detail ${item.video_id} missing artifacts`);
+  const wordcloud = detail.artifacts?.wordcloud;
+  if (item.wordcloud_available) {
+    if (!wordcloud?.path) throw new Error(`detail ${item.video_id} missing artifacts.wordcloud.path`);
+    if (wordcloud.content_type !== "image/svg+xml") throw new Error(`detail ${item.video_id} invalid wordcloud content_type`);
+    if (wordcloud.path !== detail.chat_summary.wordcloud_url) throw new Error(`detail ${item.video_id} wordcloud path mismatch`);
+    if (!wordcloud.path.startsWith(`/data/v/${manifest.export_version}/public/artifacts/wordcloud/`)) {
+      throw new Error(`detail ${item.video_id} invalid wordcloud path: ${wordcloud.path}`);
+    }
+    const svg = await readFile(join(root, wordcloud.path.replace(/^\//, "")), "utf8");
+    if (!svg.startsWith("<svg ") || !svg.includes("diopside wordcloud")) {
+      throw new Error(`invalid wordcloud SVG for ${item.video_id}`);
+    }
+  } else if (wordcloud !== null || detail.chat_summary.wordcloud_url !== null) {
+    throw new Error(`detail ${item.video_id} must not expose fake wordcloud`);
+  }
   for (const timestamp of detail.timestamps || []) {
     for (const key of ["offset_sec", "label", "source"]) {
       if (!(key in timestamp)) throw new Error(`timestamp for ${item.video_id} missing ${key}`);
