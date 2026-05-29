@@ -103,6 +103,14 @@ YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `
 - replay chat collect は公開アーカイブ HTML の `ytInitialData` から取得できる replay action と continuation を best-effort で抽出する。未知 renderer は失敗や破棄にせず `message_type=unknown` / `parse_warning=unknown_renderer` として raw JSONL に残し、manifest/result の `parser_stats` と `next_poll` に action 数、unknown 件数、continuation 件数を記録する。
 - quota 使用は `QuotaUsage` item に method/units/details として記録する。
 
+## normalized chat schema
+
+`processed/chat-normalized/video_id={video_id}/part-000.jsonl` と raw chat JSONL 内の正規化 message は `schema_version=chat-message/v1` として扱います。live/replay の入力差分を吸収し、`message_type` は `text`、`paid`、`sticker`、`unknown` のいずれかに正規化します。
+
+必須 key は `message_id`、`video_id`、`source`、`message_type`、`author`、`timestamp_usec`、`timestamp_text`、`offset_msec`、`video_offset_time_msec`、`message_runs`、`plain_text`、`message_text`、`paid`、`sticker`、`raw_ref`、`raw_renderer_type`、`raw_renderer`、`parse_warning`、`collected_at` です。既存集計互換のため `author_external_channel_id`、`author_name`、`author_badges`、`purchase_amount_text` も同時に出力します。
+
+unknown renderer は raw chat JSONL には `raw_renderer` として保存しますが、DynamoDB の `ChatMessageChunkManifest` には本文や renderer body を保存せず、`s3_uri`、件数、hash、offset、`parser_stats` などの要約だけを残します。
+
 ## ローカル検証
 
 ```sh

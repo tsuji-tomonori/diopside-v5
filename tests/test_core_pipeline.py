@@ -4,7 +4,7 @@ import pytest
 
 from botocore.exceptions import ClientError
 
-from diopside_core import DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
 from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
 
@@ -174,6 +174,91 @@ def test_replay_parser_normalizes_known_and_unknown_renderer():
     assert messages[0]["video_offset_time_msec"] == 83000
     assert messages[0]["message_runs"][1]["type"] == "emoji"
     assert messages[1]["parse_warning"] == "unknown_renderer"
+
+
+def test_normalized_chat_message_schema_contract_for_live_and_replay_variants():
+    live_messages = normalize_live_chat_items(
+        [
+            {
+                "id": "live-text",
+                "snippet": {"type": "textMessageEvent", "displayMessage": "hello", "publishedAt": "2026-05-29T00:00:00Z", "elapsedTimeMsec": "12000"},
+                "authorDetails": {"channelId": "live-author", "displayName": "Live Alice", "isChatSponsor": True},
+            },
+            {
+                "id": "live-paid",
+                "snippet": {"type": "superChatEvent", "displayMessage": "paid hello", "publishedAt": "2026-05-29T00:00:01Z", "elapsedTimeMsec": "13000"},
+                "authorDetails": {"channelId": "paid-author", "displayName": "Paid Bob"},
+            },
+        ],
+        "vid-schema",
+    )
+    replay_messages = normalize_replay_actions(
+        [
+            {
+                "addChatItemAction": {
+                    "item": {
+                        "liveChatTextMessageRenderer": {
+                            "id": "replay-text",
+                            "authorExternalChannelId": "replay-author",
+                            "authorName": {"simpleText": "Replay Carol"},
+                            "timestampUsec": "1000",
+                            "videoOffsetTimeMsec": "14000",
+                            "message": {"runs": [{"text": "emoji "}, {"emoji": {"emojiId": "e1", "shortcuts": [":tomoe:"], "isCustomEmoji": True}}]},
+                        }
+                    }
+                }
+            },
+            {
+                "addChatItemAction": {
+                    "item": {
+                        "liveChatPaidMessageRenderer": {
+                            "id": "replay-paid",
+                            "authorExternalChannelId": "paid-replay-author",
+                            "timestampUsec": "2000",
+                            "videoOffsetTimeMsec": "15000",
+                            "purchaseAmountText": {"simpleText": "￥500"},
+                            "message": {"runs": [{"text": "super chat"}]},
+                        }
+                    }
+                }
+            },
+            {
+                "addChatItemAction": {
+                    "item": {
+                        "liveChatPaidStickerRenderer": {
+                            "id": "replay-sticker",
+                            "authorExternalChannelId": "sticker-author",
+                            "timestampUsec": "3000",
+                            "videoOffsetTimeMsec": "16000",
+                            "purchaseAmountText": {"simpleText": "￥200"},
+                            "sticker": {"emojiId": "stk1", "image": {"accessibility": {"accessibilityData": {"label": "sticker label"}}, "thumbnails": [{"url": "https://example.invalid/sticker.png"}]}},
+                        }
+                    }
+                }
+            },
+            {"liveChatMembershipItemRenderer": {"id": "unknown-membership"}},
+        ],
+        "vid-schema",
+    )
+    messages = [*live_messages, *replay_messages]
+
+    assert {message["message_type"] for message in messages} == {"text", "paid", "sticker", "unknown"}
+    for message in messages:
+        assert set(CHAT_MESSAGE_REQUIRED_KEYS) <= set(message)
+        assert message["schema_version"] == CHAT_MESSAGE_SCHEMA_VERSION
+        assert message["plain_text"] == message["message_text"]
+        assert message["offset_msec"] == message["video_offset_time_msec"]
+        assert set(message["author"]) == {"display_name", "channel_id_hash", "badges"}
+        assert set(message["paid"]) == {"is_paid", "amount_text", "currency"}
+    assert live_messages[0]["author"]["channel_id_hash"].startswith("sha256:")
+    assert live_messages[1]["message_type"] == "paid"
+    assert replay_messages[0]["message_runs"][1]["type"] == "emoji"
+    assert replay_messages[0]["message_runs"][1]["emoji_id"] == "e1"
+    assert replay_messages[1]["paid"]["amount_text"] == "￥500"
+    assert replay_messages[2]["message_type"] == "sticker"
+    assert replay_messages[2]["sticker"]["emoji_id"] == "stk1"
+    assert replay_messages[3]["parse_warning"] == "unknown_renderer"
+    assert replay_messages[3]["raw_renderer"]["id"] == "unknown-membership"
 
 
 def test_public_replay_initial_data_extractor():
