@@ -1,6 +1,6 @@
 # package artifact検証
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -45,6 +45,21 @@ CI/テスト追加であり README 手順の変更は不要の見込み。packag
 - targeted pytest
 - `npm test`
 - `npm run verify`
+
+## 完了結果
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/34
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/34#issuecomment-4570658175
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/34#issuecomment-4570660362
+- GitHub Actions `CI / npm verify`: 成功
+
+## 検証結果
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_package_deploy.py`: 2 passed
+- `npm test`: 61 passed
+- `npm run verify`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## リスク
 

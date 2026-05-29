@@ -29,6 +29,9 @@
 - `tools/package_deploy.py`
 - `tests/test_package_deploy.py`
 - `tasks/do/20260529-1536-package-artifact-verification.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/34
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/34#issuecomment-4570658175
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/34#issuecomment-4570660362
 
 ## 検証
 
@@ -40,6 +43,7 @@
   - `npm run build`: 成功
   - `npm run package:deploy`: 成功
   - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
 
 ## fit 評価
 
@@ -49,4 +53,4 @@
 ## 未対応・制約・リスク
 
 - 実 AWS deploy artifact の S3 upload や Lambda 上での import 確認は P4-02 の対象外のため未実施。
-- PR 作成後、GitHub Actions 上の `CI / npm verify` 成功を確認する必要がある。
+- GitHub Apps による PR top-level comment は 403 のため、`gh pr comment` で代替した。
