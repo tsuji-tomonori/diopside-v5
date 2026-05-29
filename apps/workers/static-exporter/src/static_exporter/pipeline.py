@@ -65,25 +65,88 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    channel_id = params.get("channel_id", "manual")
+    playlist_page_token = params.get("page_token")
+    playlist_next_page_token = None
+    raw_playlist_uri = None
+    raw_videos_uri = None
+    enqueued_next_page = None
     if params.get("video_resources"):
         resources = params["video_resources"]
     else:
         client = params.get("youtube_client") or YouTubeClient()
         channel = _channel_config(repo, params)
-        playlist = client.playlist_items(channel["uploads_playlist_id"], params.get("page_token"), int(params.get("max_results", 50)))
-        repo.record_quota_usage("playlistItems.list", 1, {"channel_id": channel["channel_id"]})
+        channel_id = channel["channel_id"]
+        playlist_page_token = playlist_page_token if playlist_page_token is not None else _metadata_cursor(repo, channel_id).get("next_page_token")
+        playlist = client.playlist_items(channel["uploads_playlist_id"], playlist_page_token, int(params.get("max_results", 50)))
+        raw_playlist_uri = _write_json_blob(
+            f"raw/youtube/metadata/channel_id={channel_id}/playlistItems/{now_iso()}.json",
+            playlist,
+        )
+        repo.record_quota_usage("playlistItems.list", 1, {"channel_id": channel_id, "page_token": playlist_page_token})
         video_ids = [item["contentDetails"]["videoId"] for item in playlist.get("items", [])]
-        resources = client.videos(video_ids).get("items", []) if video_ids else []
+        videos_response = client.videos(video_ids) if video_ids else {"items": []}
+        raw_videos_uri = _write_json_blob(
+            f"raw/youtube/metadata/channel_id={channel_id}/videos/{now_iso()}.json",
+            videos_response,
+        )
+        resources = videos_response.get("items", [])
+        playlist_next_page_token = playlist.get("nextPageToken")
         if video_ids:
-            repo.record_quota_usage("videos.list", 1, {"video_count": len(video_ids)})
+            repo.record_quota_usage("videos.list", 1, {"video_count": len(video_ids), "channel_id": channel_id})
+        if playlist_next_page_token:
+            enqueued_next_page = _enqueue_job(
+                "DIOPSIDE_METADATA_QUEUE_URL",
+                {
+                    "job_type": "metadata_sync",
+                    "job_id": f"manual-metadata-{channel_id}",
+                    "input": {
+                        "channel_id": channel_id,
+                        "uploads_playlist_id": channel["uploads_playlist_id"],
+                        "page_token": playlist_next_page_token,
+                        "max_results": int(params.get("max_results", 50)),
+                    },
+                },
+            )
     saved = []
     for resource in resources:
-        _write_blob(f"raw/youtube/metadata/video_id={resource['id']}/{now_iso()}.json", json.dumps(resource, ensure_ascii=False).encode("utf-8"), "application/json")
-        video = normalize_video_resource(resource)
+        resource_raw_uri = raw_videos_uri
+        if not resource_raw_uri and params.get("video_resources"):
+            resource_raw_uri = _write_json_blob(
+                f"raw/youtube/metadata/video_id={resource['id']}/{now_iso()}.json",
+                resource,
+            )
+        video = {**normalize_video_resource(resource), **({"raw_metadata_uri": resource_raw_uri} if resource_raw_uri else {})}
         repo.put_video(video)
-        repo.put_item({"item_type": "ChannelCursor", "pk": f"CHANNEL#{video.get('channel_id')}", "sk": "CURSOR#metadata", "last_video_id": video["video_id"], "updated_at": now_iso()})
+        channel_id = video.get("channel_id") or channel_id
         saved.append(video["video_id"])
-    return {"saved_video_ids": saved, "saved_count": len(saved)}
+    repo.put_item(
+        {
+            "item_type": "ChannelCursor",
+            "pk": f"CHANNEL#{channel_id}",
+            "sk": "CURSOR#metadata",
+            "channel_id": channel_id,
+            "cursor_name": "metadata",
+            "page_token": playlist_page_token,
+            "next_page_token": playlist_next_page_token,
+            "last_video_id": saved[0] if saved else None,
+            "last_video_ids": saved,
+            "raw_playlist_uri": raw_playlist_uri,
+            "raw_videos_uri": raw_videos_uri,
+            "saved_count": len(saved),
+            "updated_at": now_iso(),
+        }
+    )
+    return {
+        "channel_id": channel_id,
+        "saved_video_ids": saved,
+        "saved_count": len(saved),
+        "page_token": playlist_page_token,
+        "next_page_token": playlist_next_page_token,
+        "raw_playlist_uri": raw_playlist_uri,
+        "raw_videos_uri": raw_videos_uri,
+        "enqueued_next_page": bool(enqueued_next_page),
+    }
 
 
 def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -223,6 +286,10 @@ def _channel_config(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _metadata_cursor(repo: Any, channel_id: str) -> dict[str, Any]:
+    return repo.get_item(f"CHANNEL#{channel_id}", "CURSOR#metadata") or {}
+
+
 def _repository() -> Any:
     if os.environ.get("DIOPSIDE_TABLE_NAME"):
         return DynamoRepository(os.environ["DIOPSIDE_TABLE_NAME"])
@@ -243,6 +310,10 @@ def _write_blob(key: str, body: bytes, content_type: str, bucket_env: str = "DIO
         path.write_bytes(body)
         return str(path)
     return key
+
+
+def _write_json_blob(key: str, payload: dict[str, Any], bucket_env: str = "DIOPSIDE_RAW_BUCKET") -> str:
+    return _write_blob(key, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env=bucket_env)
 
 
 def _read_jsonl(uri: str) -> list[dict[str, Any]]:

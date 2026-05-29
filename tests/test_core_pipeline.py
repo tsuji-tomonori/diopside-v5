@@ -5,6 +5,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from diopside_core import DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+import static_exporter.pipeline as pipeline
 from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
 
 
@@ -50,6 +51,94 @@ def test_youtube_client_uses_http_mock(monkeypatch):
     assert "videos?" in requested["url"]
     assert "key=test-key" in requested["url"]
     assert requested["timeout"] == 20
+
+
+class FakeYouTubeMetadataClient:
+    def __init__(self):
+        self.playlist_calls = []
+        self.video_calls = []
+
+    def playlist_items(self, playlist_id, page_token=None, max_results=50):
+        self.playlist_calls.append({"playlist_id": playlist_id, "page_token": page_token, "max_results": max_results})
+        return {
+            "nextPageToken": "next-token",
+            "items": [
+                {"contentDetails": {"videoId": "vid001"}},
+                {"contentDetails": {"videoId": "vid002"}},
+            ],
+        }
+
+    def videos(self, video_ids):
+        self.video_calls.append(list(video_ids))
+        return {
+            "items": [
+                {
+                    "id": video_id,
+                    "snippet": {"title": video_id, "description": "", "publishedAt": "2026-05-28T00:00:00Z", "channelId": "ch"},
+                    "contentDetails": {"duration": "PT1M"},
+                    "liveStreamingDetails": {},
+                    "statistics": {},
+                    "status": {"privacyStatus": "public"},
+                }
+                for video_id in video_ids
+            ]
+        }
+
+
+def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload}) or "queued")
+    repo = MemoryRepository()
+    client = FakeYouTubeMetadataClient()
+
+    result = metadata_sync(
+        repo,
+        {
+            "youtube_client": client,
+            "channel_id": "ch",
+            "uploads_playlist_id": "uploads",
+            "max_results": 2,
+        },
+    )
+
+    cursor = repo.get_item("CHANNEL#ch", "CURSOR#metadata")
+    video = repo.get_video("vid001")
+    assert result["next_page_token"] == "next-token"
+    assert result["raw_playlist_uri"]
+    assert result["raw_videos_uri"]
+    assert cursor["next_page_token"] == "next-token"
+    assert cursor["last_video_ids"] == ["vid001", "vid002"]
+    assert "items" not in cursor
+    assert video["raw_metadata_uri"] == result["raw_videos_uri"]
+    assert "items" not in video
+    assert client.playlist_calls[0]["page_token"] is None
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_METADATA_QUEUE_URL"
+    assert enqueued[0]["payload"]["input"]["page_token"] == "next-token"
+    assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/playlistItems").glob("*.json"))
+    assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/videos").glob("*.json"))
+
+
+def test_metadata_sync_resumes_from_channel_cursor(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: None)
+    repo = MemoryRepository()
+    repo.put_item(
+        {
+            "item_type": "ChannelCursor",
+            "pk": "CHANNEL#ch",
+            "sk": "CURSOR#metadata",
+            "channel_id": "ch",
+            "cursor_name": "metadata",
+            "next_page_token": "resume-token",
+            "updated_at": "2026-05-29T00:00:00Z",
+        }
+    )
+    client = FakeYouTubeMetadataClient()
+
+    metadata_sync(repo, {"youtube_client": client, "channel_id": "ch", "uploads_playlist_id": "uploads"})
+
+    assert client.playlist_calls[0]["page_token"] == "resume-token"
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
