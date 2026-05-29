@@ -6,7 +6,7 @@
 
 - Public UI: `apps/web/public` を S3 + CloudFront で静的配信する。
 - Public data: `apps/workers/static-exporter` が DynamoDB/S3 read model から `/data/latest-manifest.json` と `/data/v/{export_version}/public/...` を生成する。
-- API: `apps/api` の Python Lambda handler が public API と Bearer token + CSRF 付き管理 API を提供する。
+- API: `apps/api` の Python Lambda handler が CloudFront `/api/*` 経由で public API と Bearer token + CSRF 付き管理 API を提供する。
 - Worker: `static_exporter.pipeline` が metadata sync、live status scan、chat collect、chat normalize、artifact rebuild を SQS 経由で実行する。
 - Storage: DynamoDB single-table を小さな正本、S3 を raw/processed/public artifact の正本にする。
 - 採用しないもの: SQL 系 DB、OpenSearch、ECS、EC2、常時起動サーバー。
@@ -19,9 +19,10 @@
 | `/assets/*` | Web S3 | 長 TTL |
 | `/data/latest-manifest.json` | Public data S3 | 短 TTL |
 | `/data/v/*` | Public data S3 | 長 TTL immutable |
-| `/api/*` | Lambda Function URL | no-store/no-cache |
+| `/api/*` | Lambda Function URL origin via CloudFront OAC | no-store/no-cache |
 
 S3 origin は OAC と bucket policy で CloudFront 経由の `s3:GetObject` に限定します。
+API の利用者向け endpoint は CloudFront の `ApiEndpoint` output です。Lambda Function URL は `AWS_IAM` + CloudFront OAC で保護された internal origin で、ブラウザ・運用スクリプト・管理UIから直接呼びません。
 CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/data/v/*`、`/assets/*` の順に評価し、template contract test で origin と cache policy を検証します。post-deploy smoke は CloudFront 経由で `/`、静的 asset、manifest、versioned public data、API を取得し、API の no-store header と CloudFront 経由 header を確認します。
 
 ## DynamoDB item schema
