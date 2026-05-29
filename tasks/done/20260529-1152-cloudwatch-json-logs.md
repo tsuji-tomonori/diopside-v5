@@ -1,6 +1,6 @@
 # CloudWatch JSONログ
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -61,3 +61,12 @@ API と worker の実行結果を、`trace_id`、`job_id`、`video_id`、`result
 
 - stdout logging は CloudWatch へ送られるため、payload 全体や認証情報は出さない。
 - 実 CloudWatch Logs Insights での検索は実 AWS deploy 後の確認事項として残る。
+
+## 完了確認
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/20
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/20#issuecomment-4570047834
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/20#issuecomment-4570049285
+- 作業レポート: `reports/working/20260529-1152-cloudwatch-json-logs-report.md`
+- 検証: `git diff --check`、`python3 -m py_compile apps/api/src/diopside_api/handler.py apps/workers/static-exporter/src/static_exporter/pipeline.py`、targeted pytest、`npm test`、`npm run verify`
+- 未実施: 実 AWS CloudWatch Logs への出力と Logs Insights での検索
