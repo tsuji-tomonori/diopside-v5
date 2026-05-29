@@ -178,7 +178,7 @@ Resources:
             Condition:
               StringEquals:
                 AWS:SourceArn:
-                  Fn::Sub: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+                  Fn::Sub: "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
   PublicDataBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -198,7 +198,7 @@ Resources:
             Condition:
               StringEquals:
                 AWS:SourceArn:
-                  Fn::Sub: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+                  Fn::Sub: "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
 
   RawBucket:
     Type: AWS::S3::Bucket

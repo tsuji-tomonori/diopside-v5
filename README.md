@@ -21,7 +21,7 @@
 | `/data/v/*` | Public data S3 | 長 TTL immutable |
 | `/api/*` | Lambda Function URL origin via CloudFront OAC | no-store/no-cache |
 
-S3 origin は OAC と bucket policy で CloudFront 経由の `s3:GetObject` に限定します。
+S3 origin は REST origin + OAC と bucket policy で CloudFront 経由の `s3:GetObject` に限定します。`WebBucket` と `PublicDataBucket` は public access block を有効にし、bucket policy は `cloudfront.amazonaws.com` principal、対象 distribution の `AWS:SourceArn`、`s3:GetObject` のみを許可します。
 API の利用者向け endpoint は CloudFront の `ApiEndpoint` output です。Lambda Function URL は `AWS_IAM` + CloudFront OAC で保護された internal origin で、ブラウザ・運用スクリプト・管理UIから直接呼びません。
 CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/data/v/*`、`/assets/*` の順に評価し、template contract test で origin と cache policy を検証します。post-deploy smoke は CloudFront 経由で `/`、静的 asset、manifest、versioned public data、API を取得し、API の no-store header と CloudFront 経由 header を確認します。
 

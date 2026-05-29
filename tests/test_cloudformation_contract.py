@@ -97,6 +97,59 @@ def test_lambda_function_url_is_cloudfront_origin_only():
     assert outputs["ApiFunctionUrlOrigin"]["Description"].startswith("Internal Lambda Function URL origin")
 
 
+def test_s3_origins_are_private_and_oac_only():
+    resources = _template()["Resources"]
+    distribution = resources["CloudFrontDistribution"]["Properties"]["DistributionConfig"]
+    origins = {origin["Id"]: origin for origin in distribution["Origins"]}
+    s3_oac = resources["CloudFrontOac"]["Properties"]["OriginAccessControlConfig"]
+
+    assert s3_oac["OriginAccessControlOriginType"] == "s3"
+    assert s3_oac["SigningBehavior"] == "always"
+    assert s3_oac["SigningProtocol"] == "sigv4"
+    for origin_id, bucket_name in [("web-s3", "WebBucket"), ("public-data-s3", "PublicDataBucket")]:
+        origin = origins[origin_id]
+        assert origin["DomainName"] == {"Fn::GetAtt": [bucket_name, "RegionalDomainName"]}
+        assert origin["OriginAccessControlId"] == {"Ref": "CloudFrontOac"}
+        assert origin["S3OriginConfig"] == {"OriginAccessIdentity": ""}
+        assert "Website" not in str(origin)
+
+
+def test_web_and_public_data_bucket_policies_allow_only_cloudfront_oac_reads():
+    resources = _template()["Resources"]
+    expected_source_arn = {"Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"}
+    for policy_name, bucket_name, sid, resource_sub in [
+        ("WebBucketPolicy", "WebBucket", "AllowCloudFrontReadWeb", "${WebBucket.Arn}/*"),
+        ("PublicDataBucketPolicy", "PublicDataBucket", "AllowCloudFrontReadPublicData", "${PublicDataBucket.Arn}/*"),
+    ]:
+        policy = resources[policy_name]["Properties"]
+        assert policy["Bucket"] == {"Ref": bucket_name}
+        statements = policy["PolicyDocument"]["Statement"]
+        assert len(statements) == 1
+        statement = statements[0]
+        assert statement["Sid"] == sid
+        assert statement["Effect"] == "Allow"
+        assert statement["Principal"] == {"Service": "cloudfront.amazonaws.com"}
+        assert statement["Action"] == "s3:GetObject"
+        assert statement["Resource"] == {"Fn::Sub": resource_sub}
+        assert statement["Condition"] == {"StringEquals": {"AWS:SourceArn": expected_source_arn}}
+        assert statement["Principal"] != "*"
+        assert not (isinstance(statement["Principal"], dict) and statement["Principal"].get("AWS") == "*")
+        assert statement["Action"] != "s3:*"
+        assert statement["Action"] != ["s3:*"]
+
+
+def test_web_and_public_data_buckets_block_public_access():
+    resources = _template()["Resources"]
+    for bucket_name in ["WebBucket", "PublicDataBucket"]:
+        block = resources[bucket_name]["Properties"]["PublicAccessBlockConfiguration"]
+        assert block == {
+            "BlockPublicAcls": True,
+            "BlockPublicPolicy": True,
+            "IgnorePublicAcls": True,
+            "RestrictPublicBuckets": True,
+        }
+
+
 def test_cloudfront_cache_policy_ttls_match_behavior_contract():
     resources = _template()["Resources"]
     api = resources["ApiNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
