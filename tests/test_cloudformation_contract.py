@@ -155,6 +155,51 @@ def test_web_and_public_data_buckets_block_public_access():
         }
 
 
+def test_raw_and_processed_buckets_define_lifecycle_retention_contracts():
+    resources = _template()["Resources"]
+    raw_rules = {
+        rule["Id"]: rule for rule in resources["RawBucket"]["Properties"]["LifecycleConfiguration"]["Rules"]
+    }
+    processed_rules = {
+        rule["Id"]: rule for rule in resources["ProcessedBucket"]["Properties"]["LifecycleConfiguration"]["Rules"]
+    }
+
+    assert raw_rules["raw-metadata-retention"] == {
+        "Id": "raw-metadata-retention",
+        "Status": "Enabled",
+        "Prefix": "raw/youtube/metadata/",
+        "Transitions": [{"StorageClass": "STANDARD_IA", "TransitionInDays": 90}],
+        "ExpirationInDays": 365,
+    }
+    assert raw_rules["raw-chat-retention"] == {
+        "Id": "raw-chat-retention",
+        "Status": "Enabled",
+        "Prefix": "raw/youtube/chat/",
+        "Transitions": [{"StorageClass": "STANDARD_IA", "TransitionInDays": 30}],
+        "ExpirationInDays": 180,
+    }
+    assert raw_rules["failed-debug-expire"] == {
+        "Id": "failed-debug-expire",
+        "Status": "Enabled",
+        "Prefix": "failed/",
+        "ExpirationInDays": 90,
+    }
+    assert processed_rules["processed-chat-normalized-retention"] == {
+        "Id": "processed-chat-normalized-retention",
+        "Status": "Enabled",
+        "Prefix": "processed/chat-normalized/",
+        "Transitions": [{"StorageClass": "STANDARD_IA", "TransitionInDays": 90}],
+        "ExpirationInDays": 730,
+    }
+    assert processed_rules["processed-chat-aggregate-retention"] == {
+        "Id": "processed-chat-aggregate-retention",
+        "Status": "Enabled",
+        "Prefix": "processed/chat-aggregate/",
+        "Transitions": [{"StorageClass": "STANDARD_IA", "TransitionInDays": 90}],
+        "ExpirationInDays": 730,
+    }
+
+
 def test_cloudfront_cache_policy_ttls_match_behavior_contract():
     resources = _template()["Resources"]
     api = resources["ApiNoStoreCachePolicy"]["Properties"]["CachePolicyConfig"]
