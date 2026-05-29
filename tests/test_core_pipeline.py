@@ -6,7 +6,7 @@ from botocore.exceptions import ClientError
 
 from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
-from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, dispatch_job, metadata_sync, rebuild_artifacts, retry_job
+from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -759,6 +759,46 @@ def test_retry_and_cancel_job_update_target_events():
     cancelled = cancel_job(repo, {"target_job_id": queued["job_id"], "reason": "manual"})
     assert cancelled["cancelled"] is True
     assert repo.get_job(queued["job_id"])["derived_state"] == "cancelled"
+
+
+def test_quota_rollup_summarizes_usage_without_side_effects():
+    repo = MemoryRepository()
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=2, job_id="job-video")
+    repo.record_quota_usage("playlistItems.list", 1, {}, channel_id="ch", video_count=2, job_id="job-playlist")
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-live")
+
+    result = quota_rollup(repo, {"requested_by": "scheduler"})
+
+    assert result == {
+        "requested_by": "scheduler",
+        "item_count": 3,
+        "total_units": 3,
+        "by_method": {"videos.list": 2, "playlistItems.list": 1},
+    }
+    assert len(repo.list_quota_usage()) == 3
+
+
+def test_cleanup_returns_safe_dry_run_report_without_deleting():
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "vid001", "title": "keep", "published_at": "2026-05-29T00:00:00Z"})
+
+    result = cleanup(repo, {"requested_by": "scheduler", "dry_run": False, "policy_version": "test"})
+
+    assert result == {"requested_by": "scheduler", "dry_run": True, "deleted_count": 0, "policy_version": "test"}
+    assert repo.get_video("vid001")["title"] == "keep"
+
+
+def test_dispatch_job_supports_scheduled_maintenance_jobs():
+    repo = MemoryRepository()
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-quota")
+
+    quota = dispatch_job(repo, {"job_type": "quota_rollup", "job_id": "scheduler-quota", "input": {"requested_by": "scheduler"}})
+    cleanup_result = dispatch_job(repo, {"job_type": "cleanup", "job_id": "scheduler-cleanup", "input": {"requested_by": "scheduler"}})
+
+    assert quota["status"] == "succeeded"
+    assert quota["total_units"] == 1
+    assert cleanup_result["status"] == "succeeded"
+    assert cleanup_result["deleted_count"] == 0
 
 
 class FakeDynamoTable:

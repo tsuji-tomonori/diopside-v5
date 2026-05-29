@@ -56,6 +56,10 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
             result = retry_job(repo, params)
         elif job_type == "cancel_job":
             result = cancel_job(repo, params)
+        elif job_type == "quota_rollup":
+            result = quota_rollup(repo, params)
+        elif job_type == "cleanup":
+            result = cleanup(repo, params)
         else:
             raise ValueError(f"unsupported job_type: {job_type}")
         repo.append_job_event(job_id, "completed", result)
@@ -402,6 +406,32 @@ def cancel_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"target job is already terminal: {state}")
     repo.append_job_event(target_job_id, "cancelled", {"reason": params.get("reason")})
     return {"target_job_id": target_job_id, "cancelled": True}
+
+
+def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    usage = repo.list_quota_usage(int(params.get("limit", 10000)))
+    by_method: dict[str, int] = {}
+    total_units = 0
+    for item in usage:
+        method = item.get("method") or "unknown"
+        units = int(item.get("units") or 0)
+        by_method[method] = by_method.get(method, 0) + units
+        total_units += units
+    return {
+        "requested_by": params.get("requested_by", "scheduler"),
+        "item_count": len(usage),
+        "total_units": total_units,
+        "by_method": by_method,
+    }
+
+
+def cleanup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "requested_by": params.get("requested_by", "scheduler"),
+        "dry_run": True,
+        "deleted_count": 0,
+        "policy_version": params.get("policy_version", "v1"),
+    }
 
 
 def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:

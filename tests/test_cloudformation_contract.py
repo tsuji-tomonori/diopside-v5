@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,10 @@ CfnLoader.add_multi_constructor("!", _unknown_constructor)
 
 def _template():
     return yaml.load(Path("infra/cloudformation/diopside.yaml").read_text(encoding="utf-8"), Loader=CfnLoader)
+
+
+def _schedule_input(schedule):
+    return json.loads(schedule["Properties"]["Target"]["Input"]["Fn::Sub"])
 
 
 def test_cloudfront_oac_and_outputs_are_defined():
@@ -206,3 +211,52 @@ def test_cloudformation_template_parses_and_worker_can_consume_queues():
         assert name in env
     assert "YouTubeApiKey" in template["Parameters"]
     assert template["Parameters"]["YouTubeApiKey"]["NoEcho"] is True
+
+
+def test_scheduler_role_can_only_send_to_maintenance_queues():
+    resources = _template()["Resources"]
+    role = resources["SchedulerRole"]["Properties"]
+    assume = role["AssumeRolePolicyDocument"]["Statement"][0]
+    statement = role["Policies"][0]["PolicyDocument"]["Statement"][0]
+
+    assert assume["Principal"] == {"Service": "scheduler.amazonaws.com"}
+    assert assume["Action"] == "sts:AssumeRole"
+    assert statement["Effect"] == "Allow"
+    assert statement["Action"] == "sqs:SendMessage"
+    assert statement["Resource"] == [
+        {"Fn::GetAtt": ["MetadataQueue", "Arn"]},
+        {"Fn::GetAtt": ["AggregateQueue", "Arn"]},
+    ]
+
+
+def test_eventbridge_scheduler_dispatches_low_frequency_maintenance_jobs():
+    resources = _template()["Resources"]
+    expected = {
+        "MetadataSyncSchedule": ("rate(12 hours)", "MetadataQueue", "metadata_sync"),
+        "LiveStatusScanSchedule": ("rate(30 minutes)", "MetadataQueue", "live_status_scan"),
+        "QuotaRollupSchedule": ("rate(1 day)", "AggregateQueue", "quota_rollup"),
+        "CleanupSchedule": ("rate(7 days)", "AggregateQueue", "cleanup"),
+    }
+
+    for schedule_name, (expression, queue_name, job_type) in expected.items():
+        schedule = resources[schedule_name]
+        props = schedule["Properties"]
+        target = props["Target"]
+        payload = _schedule_input(schedule)
+
+        assert schedule["Type"] == "AWS::Scheduler::Schedule"
+        assert props["State"] == "ENABLED"
+        assert props["ScheduleExpression"] == expression
+        assert props["FlexibleTimeWindow"] == {"Mode": "OFF"}
+        assert target["Arn"] == {"Fn::GetAtt": [queue_name, "Arn"]}
+        assert target["RoleArn"] == {"Fn::GetAtt": ["SchedulerRole", "Arn"]}
+        assert payload["job_type"] == job_type
+        assert payload["job_id"].startswith(f"scheduler-{job_type.replace('_', '-')}-")
+        assert "<aws.scheduler.execution-id>" in payload["job_id"]
+        assert payload["input"]["requested_by"] == "scheduler"
+        assert "<aws.scheduler.scheduled-time>" in payload["input"]["idempotency_key"]
+
+    metadata_payload = _schedule_input(resources["MetadataSyncSchedule"])
+    cleanup_payload = _schedule_input(resources["CleanupSchedule"])
+    assert metadata_payload["input"]["max_results"] == 25
+    assert cleanup_payload["input"]["dry_run"] is True
