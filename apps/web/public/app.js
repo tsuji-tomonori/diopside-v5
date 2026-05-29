@@ -19,6 +19,8 @@ const state = {
   year: "",
   duration: "",
   sort: "published_desc",
+  wordcloud: "",
+  timestamp: "",
   favorites: store.get("favorites", []),
   history: store.get("history", []),
   recentSearches: store.get("recent-searches", [])
@@ -31,6 +33,9 @@ const els = {
   count: document.querySelector("#resultCount"),
   detail: document.querySelector("#videoDetail"),
   filterSheet: document.querySelector("#filterSheet"),
+  filterForm: document.querySelector("#filterForm"),
+  filterTag: document.querySelector("#filterTagSelect"),
+  clearFilter: document.querySelector("#clearFilterButton"),
   quick: document.querySelector("#quickChips"),
   recent: document.querySelector("#recentSearches"),
   clearTag: document.querySelector("#clearTagButton"),
@@ -73,9 +78,17 @@ const filtered = () => {
     const text = `${video.title} ${video.tags.join(" ")}`.toLowerCase();
     const yearOk = !state.year || String(video.published_at || "").startsWith(state.year);
     const durationOk = !state.duration || durationMatch(video.duration_sec, state.duration);
-    return tagOk && yearOk && durationOk && (!q || text.includes(q));
+    const wordcloudOk = availabilityMatch(video.wordcloud_available, state.wordcloud);
+    const timestampOk = availabilityMatch(video.timestamp_available, state.timestamp);
+    return tagOk && yearOk && durationOk && wordcloudOk && timestampOk && (!q || text.includes(q));
   });
   return list.sort((a, b) => state.sort === "duration_desc" ? Number(b.duration_sec || 0) - Number(a.duration_sec || 0) : String(b.published_at || "").localeCompare(String(a.published_at || "")));
+};
+
+const availabilityMatch = (value, mode) => {
+  if (!mode) return true;
+  const available = value === true;
+  return mode === "yes" ? available : !available;
 };
 
 const durationMatch = (seconds, mode) => {
@@ -141,6 +154,35 @@ const renderRecent = () => {
       renderList();
     }}));
   }
+};
+
+const renderFilterOptions = () => {
+  const current = state.selectedTag || "";
+  els.filterTag.replaceChildren(el("option", { value: "", text: "すべて" }));
+  for (const tag of state.tags) {
+    els.filterTag.append(el("option", { value: tag.label, text: `${tag.label} ${tag.video_count}` }));
+  }
+  els.filterTag.value = current;
+};
+
+const syncFilterForm = () => {
+  els.filterForm.elements.tag.value = state.selectedTag || "";
+  els.filterForm.elements.year.value = state.year;
+  els.filterForm.elements.duration.value = state.duration;
+  els.filterForm.elements.sort.value = state.sort;
+  els.filterForm.elements.wordcloud.value = state.wordcloud;
+  els.filterForm.elements.timestamp.value = state.timestamp;
+};
+
+const applyFilterForm = () => {
+  const data = new FormData(els.filterForm);
+  state.selectedTag = String(data.get("tag") || "") || null;
+  state.year = String(data.get("year") || "");
+  state.duration = String(data.get("duration") || "");
+  state.sort = String(data.get("sort") || "published_desc");
+  state.wordcloud = String(data.get("wordcloud") || "");
+  state.timestamp = String(data.get("timestamp") || "");
+  render();
 };
 
 const renderList = () => {
@@ -209,10 +251,17 @@ const selectTag = (tag) => {
   render();
 };
 
-const showLatest = async () => {
-  Object.assign(state, { query: "", selectedTag: null, year: "", duration: "", sort: "published_desc" });
-  els.search.value = "";
+const clearFilters = ({ includeQuery = false } = {}) => {
+  Object.assign(state, { selectedTag: null, year: "", duration: "", sort: "published_desc", wordcloud: "", timestamp: "" });
+  if (includeQuery) {
+    state.query = "";
+    els.search.value = "";
+  }
   render();
+};
+
+const showLatest = async () => {
+  clearFilters({ includeQuery: true });
   if (state.videos[0]) await showDetail(state.videos[0]);
 };
 
@@ -225,6 +274,8 @@ const rememberSearch = () => {
 };
 
 const render = () => {
+  renderFilterOptions();
+  syncFilterForm();
   renderQuick();
   renderTags();
   renderRecent();
@@ -254,24 +305,26 @@ els.clearTag.addEventListener("click", () => {
   render();
 });
 
+els.clearFilter.addEventListener("click", () => {
+  clearFilters();
+});
+
 document.querySelector(".bottom-nav").addEventListener("click", async (event) => {
   const action = event.target?.dataset?.action;
-  if (action === "filter") els.filterSheet.showModal();
+  if (action === "filter") {
+    syncFilterForm();
+    els.filterSheet.showModal();
+  }
   if (action === "admin") els.admin.showModal();
   if (action === "clear") {
-    Object.assign(state, { query: "", selectedTag: null, year: "", duration: "", sort: "published_desc" });
-    els.search.value = "";
-    render();
+    clearFilters({ includeQuery: true });
   }
   if (action === "latest") await showLatest();
 });
 
-document.querySelector("#filterForm").addEventListener("change", (event) => {
-  const data = new FormData(event.currentTarget);
-  state.year = String(data.get("year") || "");
-  state.duration = String(data.get("duration") || "");
-  state.sort = String(data.get("sort") || "published_desc");
-  renderList();
+els.filterForm.addEventListener("change", applyFilterForm);
+els.filterForm.addEventListener("input", (event) => {
+  if (event.target?.name === "year") applyFilterForm();
 });
 
 document.querySelector("#adminJobForm").addEventListener("submit", async (event) => {

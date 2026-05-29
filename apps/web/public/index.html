@@ -74,6 +74,11 @@
           <h2>絞り込み</h2>
           <button type="submit" aria-label="閉じる">閉じる</button>
         </div>
+        <label>タグ
+          <select name="tag" id="filterTagSelect">
+            <option value="">すべて</option>
+          </select>
+        </label>
         <label>年 <input name="year" inputmode="numeric" placeholder="2026"></label>
         <label>長さ
           <select name="duration">
@@ -89,6 +94,24 @@
             <option value="duration_desc">長い順</option>
           </select>
         </label>
+        <label>wordcloud
+          <select name="wordcloud">
+            <option value="">すべて</option>
+            <option value="yes">あり</option>
+            <option value="no">なし</option>
+          </select>
+        </label>
+        <label>timestamp
+          <select name="timestamp">
+            <option value="">すべて</option>
+            <option value="yes">あり</option>
+            <option value="no">なし</option>
+          </select>
+        </label>
+        <div class="sheet-actions">
+          <button type="button" id="clearFilterButton">条件を解除</button>
+          <button type="submit">適用して閉じる</button>
+        </div>
       </form>
     </dialog>
     <dialog id="adminPanel" class="bottom-sheet">
