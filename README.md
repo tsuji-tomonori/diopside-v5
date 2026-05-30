@@ -6,7 +6,7 @@
 
 - Public UI: `apps/web/public` を S3 + CloudFront で静的配信する。
 - Public data: `apps/workers/static-exporter` が DynamoDB/S3 read model から `/data/latest-manifest.json` と `/data/v/{export_version}/public/...` を生成する。
-- API: `apps/api` の Python Lambda handler が CloudFront `/api/*` 経由で public API と Bearer token + CSRF 付き管理 API を提供する。
+- API: `apps/api` の Python Lambda handler が CloudFront `/api/*` 経由で public API と HttpOnly cookie + CSRF 付き管理 API を提供する。CLI / automation 向け Bearer fallback も維持する。
 - Worker: `static_exporter.pipeline` が metadata sync、live status scan、chat collect、chat normalize、artifact rebuild、retry/cancel、quota rollup、cleanup を SQS 経由で実行する。`static_exporter.handler` は static export job を実行する。
 - Storage: DynamoDB single-table を小さな正本、S3 を raw/processed/public artifact の正本にする。
 - 採用しないもの: SQL 系 DB、OpenSearch、ECS、EC2、常時起動サーバー。
@@ -96,8 +96,9 @@ S3 upload 時は `/data/v/{export_version}/public/...` の versioned data を先
 | `DIOPSIDE_TABLE_NAME` | DynamoDB table |
 | `DIOPSIDE_PUBLIC_DATA_BUCKET` | public data S3 bucket |
 | `DIOPSIDE_PUBLIC_DATA_PREFIX` | public data prefix。既定 `data` |
-| `DIOPSIDE_ADMIN_TOKEN` | 管理 API Bearer token |
-| `DIOPSIDE_ADMIN_CSRF_TOKEN` | 管理 API CSRF token |
+| `DIOPSIDE_ADMIN_TOKEN` | 管理 API session passphrase と CLI / automation 用 Bearer fallback token |
+| `DIOPSIDE_ADMIN_SESSION_SECRET` | 管理 API session cookie 署名 secret。未設定時は `DIOPSIDE_ADMIN_TOKEN` を利用 |
+| `DIOPSIDE_ADMIN_CSRF_TOKEN` | CLI / automation 用 Bearer fallback CSRF token |
 | `DIOPSIDE_METADATA_QUEUE_URL` | metadata/live-status/retry/cancel queue |
 | `DIOPSIDE_CHAT_QUEUE_URL` | chat collect queue |
 | `DIOPSIDE_NORMALIZE_QUEUE_URL` | chat normalize queue |
@@ -136,6 +137,8 @@ Lambda の実行 role は職務ごとに分離します。
 | `GET /api/random-videos` | `public-random-videos/v1` | rotate した random video list |
 | `GET /api/videos/{video_id}` | `public-video-detail/v1` | video detail と chat summary |
 | `GET /api/videos/{video_id}/artifacts` | `public-video-artifacts/v1` | video artifact list |
+| `POST /api/admin/session` | `admin-session/v1` | 管理 session cookie と CSRF token を発行 |
+| `GET /api/admin/me` | `admin-session/v1` | 管理 session と CSRF token を確認 |
 | `GET /api/admin/jobs` | `admin-job-list/v1` | 管理 job list |
 | `GET /api/admin/jobs/{job_id}` | `admin-job-detail/v1` | 管理 job detail と events |
 | `GET /api/admin/channels` | `admin-channel-list/v1` | channel list |
@@ -151,7 +154,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/retry` | job accepted response | `retry_job` を enqueue |
 | `POST /api/admin/jobs/{job_id}/cancel` | job accepted response | `cancel_job` を enqueue |
 
-管理 API は `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を要求します。管理 GET は CSRF 不要、管理 PUT/POST は CSRF 必須です。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。`POST /api/admin/artifacts/presigned-url` は `s3://` の private artifact だけを対象にし、`raw/`、`processed/`、`failed/` prefix 以外や public path には署名 URL を発行しません。
+管理 UI は `POST /api/admin/session` で `DIOPSIDE_ADMIN_TOKEN` 相当の passphrase を検証し、HttpOnly / Secure / SameSite=Lax の session cookie と `csrf_token` を受け取ります。管理 GET は cookie session だけで利用でき、管理 PUT/POST は cookie session と `X-CSRF-Token` を必須にします。CLI / automation は従来通り `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を fallback として利用できます。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。`POST /api/admin/artifacts/presigned-url` は `s3://` の private artifact だけを対象にし、`raw/`、`processed/`、`failed/` prefix 以外や public path には署名 URL を発行しません。
 
 ## public data schema
 
@@ -502,6 +505,6 @@ npm run smoke:post-deploy
 - `/api/health`、`/api/videos`、`/api/videos/{video_id}` が CloudFront 経由で読める。
 - `/data/latest-manifest.json` と versioned public JSON、wordcloud artifact が contract を満たす。
 - `/assets/*`、`/data/latest-manifest.json`、`/data/v/*`、`/api/*` が CloudFront 経由で応答し、`/api/*` は no-store header を返す。
-- 管理画面から token/CSRF を入力し、`static-export` や `metadata-sync` job を起動できる。
+- 管理画面から passphrase で session login し、`static-export` や `metadata-sync` job を起動できる。
 - `GET /api/admin/jobs` と `GET /api/admin/jobs/{job_id}` で状態と append-only event を確認できる。
 - `GET /api/admin/quota-usage` が quota usage schema を返す。

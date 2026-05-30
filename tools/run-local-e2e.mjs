@@ -159,8 +159,7 @@ async function checkBrowserFlows(url) {
 
         click('[data-action="admin"]');
         await waitFor(() => document.querySelector("#adminPanel").open);
-        setInput('#adminJobForm input[name="token"]', "local-secret");
-        setInput('#adminJobForm input[name="csrf"]', "local-csrf");
+        setInput('#adminJobForm input[name="passphrase"]', "local-secret");
         setSelect('#adminJobForm select[name="jobType"]', "static-export");
         document.querySelector("#adminJobForm").requestSubmit();
         await waitFor(() => text("#adminResult").includes("static_export") && document.querySelector('#adminJobId').value);

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import pathlib
+import secrets
 import time
 import uuid
 from dataclasses import dataclass
+from http.cookies import CookieError, SimpleCookie
 from typing import Any
 
 from diopside_core import DynamoRepository, MemoryRepository, now_iso
@@ -22,6 +27,8 @@ PUBLIC_DATA_PREFIX = os.environ.get("DIOPSIDE_PUBLIC_DATA_PREFIX", "data").strip
 SERVICE = "diopside"
 VERSION = os.environ.get("DIOPSIDE_VERSION", "local")
 _REPOSITORY: Any | None = None
+ADMIN_SESSION_COOKIE = "diopside_admin_session"
+ADMIN_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,13 @@ class Request:
     query: dict[str, str]
     headers: dict[str, str]
     body: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class AdminAuth:
+    mode: str
+    csrf_token: str | None = None
+    expires_at: int | None = None
 
 
 class ApiError(Exception):
@@ -90,8 +104,12 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
             return _video_detail(parts[2])
         if len(parts) == 4 and parts[3] == "artifacts":
             return _video_artifacts(parts[2])
+    if request.method == "POST" and request.path == "/api/admin/session":
+        return _create_admin_session(request.body or {}, trace_id)
     if request.path.startswith("/api/admin/"):
-        _require_admin(request)
+        admin_auth = _require_admin(request)
+        if request.method == "GET" and request.path == "/api/admin/me":
+            return _admin_me(admin_auth, trace_id)
         if request.method == "GET" and request.path == "/api/admin/jobs":
             return {"schema_version": "admin-job-list/v1", "items": _repository().list_jobs(), "trace_id": trace_id}
         if request.method == "GET" and request.path.startswith("/api/admin/jobs/"):
@@ -106,16 +124,16 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
         if request.method == "GET" and request.path == "/api/admin/quota-usage":
             return {"schema_version": "admin-quota-usage/v1", "items": _list_quota_usage(), "trace_id": trace_id}
         if request.method == "PUT" and request.path.startswith("/api/admin/channels/"):
-            _require_csrf(request)
+            _require_csrf(request, admin_auth)
             parts = request.path.strip("/").split("/")
             if len(parts) != 4:
                 raise ApiError(404, "NOT_FOUND", "指定された channel API は存在しません。")
             return _update_channel(parts[3], request.body or {}, trace_id)
         if request.method == "POST" and request.path == "/api/admin/artifacts/presigned-url":
-            _require_csrf(request)
+            _require_csrf(request, admin_auth)
             return _issue_artifact_presigned_url(request.body or {}, trace_id)
         if request.method == "POST":
-            return _start_job(request, trace_id)
+            return _start_job(request, trace_id, admin_auth)
     raise ApiError(404, "NOT_FOUND", "指定された API は存在しません。")
 
 
@@ -386,8 +404,8 @@ def _issue_artifact_presigned_url(body: dict[str, Any], trace_id: str) -> dict[s
     }
 
 
-def _start_job(request: Request, trace_id: str) -> dict[str, Any]:
-    _require_csrf(request)
+def _start_job(request: Request, trace_id: str, admin_auth: AdminAuth) -> dict[str, Any]:
+    _require_csrf(request, admin_auth)
     job_type = _job_type_from_path(request.path)
     body = _validate_job_body(job_type, request.body or {}, request.path)
     idempotency_key = body.get("idempotency_key") or request.headers.get("x-idempotency-key")
@@ -415,21 +433,127 @@ def _start_job(request: Request, trace_id: str) -> dict[str, Any]:
     }
 
 
-def _require_admin(request: Request) -> None:
+def _create_admin_session(body: dict[str, Any], trace_id: str) -> dict[str, Any]:
+    expected = os.environ.get("DIOPSIDE_ADMIN_TOKEN")
+    if not expected:
+        raise ApiError(503, "ADMIN_NOT_CONFIGURED", "管理 API token が設定されていません。")
+    if not isinstance(body, dict):
+        raise ApiError(400, "INVALID_JSON_BODY", "JSON object body が必要です。")
+    passphrase = str(body.get("passphrase") or body.get("token") or "")
+    if not hmac.compare_digest(passphrase, expected):
+        raise ApiError(401, "UNAUTHORIZED", "管理 API の認証に失敗しました。")
+    csrf_token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + ADMIN_SESSION_MAX_AGE_SECONDS
+    session_value = _sign_admin_session({"sub": "admin", "csrf": csrf_token, "exp": expires_at})
+    return {
+        "schema_version": "admin-session/v1",
+        "authenticated": True,
+        "csrf_token": csrf_token,
+        "expires_at": _iso_from_epoch(expires_at),
+        "trace_id": trace_id,
+        "_set_cookie": _admin_session_cookie(session_value),
+    }
+
+
+def _admin_me(admin_auth: AdminAuth, trace_id: str) -> dict[str, Any]:
+    csrf_token = admin_auth.csrf_token
+    if admin_auth.mode == "bearer":
+        csrf_token = os.environ.get("DIOPSIDE_ADMIN_CSRF_TOKEN")
+    return {
+        "schema_version": "admin-session/v1",
+        "authenticated": True,
+        "auth_mode": admin_auth.mode,
+        **({"csrf_token": csrf_token} if csrf_token else {}),
+        **({"expires_at": _iso_from_epoch(admin_auth.expires_at)} if admin_auth.expires_at else {}),
+        "trace_id": trace_id,
+    }
+
+
+def _require_admin(request: Request) -> AdminAuth:
     expected = os.environ.get("DIOPSIDE_ADMIN_TOKEN")
     if not expected:
         raise ApiError(503, "ADMIN_NOT_CONFIGURED", "管理 API token が設定されていません。")
     auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {expected}":
-        raise ApiError(401, "UNAUTHORIZED", "管理 API の認証に失敗しました。")
+    if hmac.compare_digest(auth, f"Bearer {expected}"):
+        return AdminAuth(mode="bearer")
+    session = _admin_session_from_request(request)
+    if session is not None:
+        return session
+    raise ApiError(401, "UNAUTHORIZED", "管理 API の認証に失敗しました。")
 
 
-def _require_csrf(request: Request) -> None:
+def _require_csrf(request: Request, admin_auth: AdminAuth) -> None:
+    actual = request.headers.get("x-csrf-token", "")
+    if admin_auth.mode == "cookie":
+        if not admin_auth.csrf_token or not hmac.compare_digest(actual, admin_auth.csrf_token):
+            raise ApiError(403, "CSRF_INVALID", "CSRF token が不正です。")
+        return
     expected = os.environ.get("DIOPSIDE_ADMIN_CSRF_TOKEN")
     if not expected:
         raise ApiError(503, "CSRF_NOT_CONFIGURED", "CSRF token が設定されていません。")
-    if request.headers.get("x-csrf-token") != expected:
+    if not hmac.compare_digest(actual, expected):
         raise ApiError(403, "CSRF_INVALID", "CSRF token が不正です。")
+
+
+def _admin_session_from_request(request: Request) -> AdminAuth | None:
+    raw_cookie = request.headers.get("cookie", "")
+    if not raw_cookie:
+        return None
+    cookie = SimpleCookie()
+    try:
+        cookie.load(raw_cookie)
+    except CookieError:
+        return None
+    morsel = cookie.get(ADMIN_SESSION_COOKIE)
+    if not morsel:
+        return None
+    payload = _verify_admin_session(morsel.value)
+    if payload is None:
+        return None
+    return AdminAuth(mode="cookie", csrf_token=str(payload["csrf"]), expires_at=int(payload["exp"]))
+
+
+def _sign_admin_session(payload: dict[str, Any]) -> str:
+    body = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = _b64(hmac.new(_admin_session_secret(), body.encode("ascii"), hashlib.sha256).digest())
+    return f"{body}.{signature}"
+
+
+def _verify_admin_session(value: str) -> dict[str, Any] | None:
+    try:
+        body, signature = value.split(".", 1)
+    except ValueError:
+        return None
+    expected_signature = _b64(hmac.new(_admin_session_secret(), body.encode("ascii"), hashlib.sha256).digest())
+    if not hmac.compare_digest(signature, expected_signature):
+        return None
+    try:
+        payload = json.loads(_b64decode(body).decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if payload.get("sub") != "admin" or not payload.get("csrf") or not isinstance(payload.get("exp"), int):
+        return None
+    if int(payload["exp"]) <= int(time.time()):
+        return None
+    return payload
+
+
+def _admin_session_secret() -> bytes:
+    secret = os.environ.get("DIOPSIDE_ADMIN_SESSION_SECRET") or os.environ.get("DIOPSIDE_ADMIN_TOKEN") or ""
+    return secret.encode("utf-8")
+
+
+def _admin_session_cookie(value: str) -> str:
+    return f"{ADMIN_SESSION_COOKIE}={value}; Max-Age={ADMIN_SESSION_MAX_AGE_SECONDS}; Path=/api/admin; HttpOnly; Secure; SameSite=Lax"
+
+
+def _b64(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+
+def _b64decode(value: str) -> bytes:
+    padded = value + ("=" * (-len(value) % 4))
+    return base64.urlsafe_b64decode(padded.encode("ascii"))
 
 
 def _job_type_from_path(path: str) -> str:
@@ -605,6 +729,10 @@ def _iso_after_seconds(seconds: int) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds))
 
 
+def _iso_from_epoch(epoch_seconds: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch_seconds))
+
+
 def _list_quota_usage() -> list[dict[str, Any]]:
     items = []
     for item in _repository().list_quota_usage(100):
@@ -643,14 +771,19 @@ def _public_data_key(relative_path: str) -> str:
 
 
 def _response(payload: dict[str, Any], status: int = 200, trace_id: str = "") -> dict[str, Any]:
+    headers = {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store, no-cache, max-age=0",
+        "x-trace-id": trace_id,
+    }
+    body = dict(payload)
+    set_cookie = body.pop("_set_cookie", None)
+    if set_cookie:
+        headers["set-cookie"] = str(set_cookie)
     return {
         "statusCode": status,
-        "headers": {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "no-store, no-cache, max-age=0",
-            "x-trace-id": trace_id,
-        },
-        "body": json.dumps(payload, ensure_ascii=False),
+        "headers": headers,
+        "body": json.dumps(body, ensure_ascii=False),
     }
 
 

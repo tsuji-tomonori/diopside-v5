@@ -11,7 +11,7 @@
 
 `.workspace/plan-20260530.txt` の最初の PR 方針に沿って、v0.4 設計書を repository 内に正本化し、現在の `main` 実装との初版 traceability を作成した。
 
-現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする AWS CDK、FastAPI on Lambda、Next.js static export、HttpOnly cookie + CSRF、BATCH-006/BATCH-017 などには差分または未対応が残る。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進めたが、wordcloud PNG は未対応で JSON/SVG を先行サポートとしている。API-007/API-022/API-023 は既存 Lambda handler に追加し、FastAPI 移行は後続課題として残す。
+現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする AWS CDK、FastAPI on Lambda、Next.js static export、BATCH-006/BATCH-017 などには差分または未対応が残る。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進めたが、wordcloud PNG は未対応で JSON/SVG を先行サポートとしている。API-007/API-022/API-023 は既存 Lambda handler に追加し、FastAPI 移行は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。
 
 ## 2. 正本化
 
@@ -29,7 +29,7 @@
 | P0-02 | Traceability | 初版 matrix を作成し、要求/API/STATIC/BATCH/Data/Infra/UI/Test を分類 | 対応 | 詳細コード証跡は後続 PR で補強 |
 | P0-03 | IaC | 現 main は `infra/cloudformation/diopside.yaml` 中心 | 差分あり | `infra/cdk-parity` で CDK synth と contract test を追加 |
 | P0-04 | API 基盤 | 現 main は Python Lambda handler 中心。API-001〜023 の route coverage は進んだが FastAPI/OpenAPI は未対応 | 差分あり | `api/fastapi-v04-contract` で FastAPI + OpenAPI へ移行 |
-| P0-05 | 管理認証 | Bearer token + CSRF。HttpOnly cookie session ではない | 差分あり | `admin/cookie-csrf-session` で session API と cookie 保護を追加 |
+| P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
 | P0-06 | API-001〜023 | API-007/API-022/API-023 を追加。FastAPI/OpenAPI と一部 route の詳細 contract は後続 | 部分対応 | `api/fastapi-v04-contract` で framework と OpenAPI 証跡を追加 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum を static exporter と contract check に追加。wordcloud PNG は未対応 | 部分対応 | PNG が必要な場合は後続 `static/wordcloud-png-artifact` で対応 |
 | P0-08 | DDB schema | README と repository に single-table 実装があるが v0.4 全 item との一致は未証明 | 要追加監査 | schema item ごとの contract test を追加 |

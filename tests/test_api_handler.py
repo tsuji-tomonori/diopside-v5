@@ -10,6 +10,11 @@ from diopside_api.handler import lambda_handler
 
 
 def call(method, path, body=None, headers=None, query=None):
+    response = call_response(method, path, body=body, headers=headers, query=query)
+    return response["statusCode"], json.loads(response["body"])
+
+
+def call_response(method, path, body=None, headers=None, query=None):
     event = {
         "rawPath": path,
         "requestContext": {"http": {"method": method}},
@@ -17,8 +22,7 @@ def call(method, path, body=None, headers=None, query=None):
         "queryStringParameters": query or {},
         "body": json.dumps(body) if body is not None else None,
     }
-    response = lambda_handler(event, None)
-    return response["statusCode"], json.loads(response["body"])
+    return lambda_handler(event, None)
 
 
 def test_health_public():
@@ -120,6 +124,71 @@ def test_admin_requires_auth():
     status, body = call("GET", "/api/admin/jobs")
     assert status == 503
     assert body["code"] == "ADMIN_NOT_CONFIGURED"
+
+
+def test_admin_session_cookie_auth_and_csrf(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ALLOW_DRY_RUN_JOBS", "true")
+
+    response = call_response("POST", "/api/admin/session", body={"passphrase": "secret"})
+    body = json.loads(response["body"])
+
+    assert response["statusCode"] == 200
+    assert body["schema_version"] == "admin-session/v1"
+    assert body["csrf_token"]
+    set_cookie = response["headers"]["set-cookie"]
+    assert "diopside_admin_session=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "Secure" in set_cookie
+    assert "SameSite=Lax" in set_cookie
+    cookie = set_cookie.split(";", 1)[0]
+
+    status, me = call("GET", "/api/admin/me", headers={"cookie": cookie})
+    assert status == 200
+    assert me["schema_version"] == "admin-session/v1"
+    assert me["auth_mode"] == "cookie"
+    assert me["csrf_token"] == body["csrf_token"]
+
+    status, jobs = call("GET", "/api/admin/jobs", headers={"cookie": cookie})
+    assert status == 200
+    assert jobs["schema_version"] == "admin-job-list/v1"
+
+    status, csrf_error = call(
+        "POST",
+        "/api/admin/jobs/static-export",
+        body={"idempotency_key": "cookie-missing-csrf", "scope": "all"},
+        headers={"cookie": cookie},
+    )
+    assert status == 403
+    assert csrf_error["code"] == "CSRF_INVALID"
+
+    status, unauthorized = call(
+        "POST",
+        "/api/admin/jobs/static-export",
+        body={"idempotency_key": "cookie-missing-auth", "scope": "all"},
+        headers={"x-csrf-token": body["csrf_token"]},
+    )
+    assert status == 401
+    assert unauthorized["code"] == "UNAUTHORIZED"
+
+    status, created = call(
+        "POST",
+        "/api/admin/jobs/static-export",
+        body={"idempotency_key": "cookie-session", "scope": "all"},
+        headers={"cookie": cookie, "x-csrf-token": body["csrf_token"]},
+    )
+    assert status == 200
+    assert created["job_type"] == "static_export"
+    assert created["dry_run"] is True
+
+
+def test_admin_session_rejects_invalid_passphrase(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+
+    status, body = call("POST", "/api/admin/session", body={"passphrase": "wrong"})
+
+    assert status == 401
+    assert body["code"] == "UNAUTHORIZED"
 
 
 def test_admin_job_dry_run(monkeypatch):

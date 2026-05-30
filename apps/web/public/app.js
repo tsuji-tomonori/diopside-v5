@@ -26,6 +26,10 @@ const state = {
   recentSearches: store.get("recent-searches", [])
 };
 
+const adminSession = {
+  csrfToken: ""
+};
+
 const els = {
   search: document.querySelector("#searchInput"),
   tags: document.querySelector("#tagFilters"),
@@ -47,7 +51,7 @@ const els = {
 };
 
 const json = async (path, options = {}) => {
-  const response = await fetch(path, { headers: { Accept: "application/json", ...(options.headers || {}) }, ...options });
+  const response = await fetch(path, { ...options, headers: { Accept: "application/json", ...(options.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.message || `failed to load ${path}: ${response.status}`);
   return body;
@@ -390,16 +394,16 @@ els.filterForm.addEventListener("input", (event) => {
 document.querySelector("#adminJobForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
-  const token = String(data.get("token") || "");
-  const csrf = String(data.get("csrf") || "");
   const jobType = String(data.get("jobType") || "static-export");
   const videoId = String(data.get("videoId") || "");
   const body = { idempotency_key: `${jobType}:${videoId || "all"}:${Date.now()}` };
   if (videoId && ["chat-collect", "chat-normalize", "rebuild-artifacts"].includes(jobType)) body.video_id = videoId;
   try {
+    await ensureAdminSession();
     const result = await json(`/api/admin/jobs/${jobType}`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-csrf-token": csrf },
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
       body: JSON.stringify(body)
     });
     document.querySelector("#adminJobId").value = result.job_id || "";
@@ -410,9 +414,40 @@ document.querySelector("#adminJobForm").addEventListener("submit", async (event)
   }
 });
 
-const adminHeaders = () => {
+const adminHeaders = ({ csrf = false } = {}) => {
+  const headers = {};
+  if (csrf) {
+    headers["content-type"] = "application/json";
+    headers["x-csrf-token"] = adminSession.csrfToken;
+  }
+  return headers;
+};
+
+const ensureAdminSession = async () => {
+  if (adminSession.csrfToken) return adminSession;
+  try {
+    const current = await json("/api/admin/me", { credentials: "same-origin" });
+    adminSession.csrfToken = current.csrf_token || "";
+    if (adminSession.csrfToken) return adminSession;
+  } catch {
+    adminSession.csrfToken = "";
+  }
+  const form = document.querySelector("#adminJobForm");
   const data = new FormData(document.querySelector("#adminJobForm"));
-  return { authorization: `Bearer ${String(data.get("token") || "")}` };
+  const passphrase = String(data.get("passphrase") || "");
+  if (!passphrase) {
+    throw new Error("管理 passphrase を入力してください。");
+  }
+  const session = await json("/api/admin/session", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passphrase })
+  });
+  adminSession.csrfToken = session.csrf_token || "";
+  form.elements.passphrase.value = "";
+  if (!adminSession.csrfToken) throw new Error("CSRF token を取得できませんでした。");
+  return adminSession;
 };
 
 const renderAdminJobResult = (result) => {
@@ -485,7 +520,8 @@ const renderJobDetail = (item) => {
 
 const loadAdminData = async (kind) => {
   try {
-    const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { headers: adminHeaders() });
+    await ensureAdminSession();
+    const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { credentials: "same-origin" });
     const items = result.items || [];
     els.adminData.replaceChildren(
       el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
@@ -502,7 +538,8 @@ const loadJobDetail = async (jobId) => {
     return;
   }
   try {
-    const result = await json(`/api/admin/jobs/${jobId}`, { headers: adminHeaders() });
+    await ensureAdminSession();
+    const result = await json(`/api/admin/jobs/${jobId}`, { credentials: "same-origin" });
     els.adminData.replaceChildren(renderJobDetail(result.item || {}));
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
