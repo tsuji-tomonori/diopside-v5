@@ -255,11 +255,13 @@ npm run e2e:local
 - `static-exporter.zip`
 - `diopside.yaml`
 
-実 AWS へのデプロイはこの作業では行いません。手動デプロイ例:
+実 AWS へのデプロイはこの作業では行いません。手動デプロイでは、rollback しやすいように release id ごとの artifact key を使います。
 
 ```sh
-aws s3 cp build/deploy/api.zip s3://<artifact-bucket>/diopside/api.zip
-aws s3 cp build/deploy/static-exporter.zip s3://<artifact-bucket>/diopside/static-exporter.zip
+RELEASE_ID=$(date -u +%Y%m%d%H%M%S)
+
+aws s3 cp build/deploy/api.zip s3://<artifact-bucket>/diopside/releases/${RELEASE_ID}/api.zip
+aws s3 cp build/deploy/static-exporter.zip s3://<artifact-bucket>/diopside/releases/${RELEASE_ID}/static-exporter.zip
 
 aws cloudformation deploy \
   --template-file build/deploy/diopside.yaml \
@@ -271,8 +273,8 @@ aws cloudformation deploy \
     AdminCsrfToken=<csrf-token> \
     YouTubeApiKey=<youtube-api-key> \
     LambdaArtifactBucket=<artifact-bucket> \
-    ApiCodeS3Key=diopside/api.zip \
-    StaticExporterCodeS3Key=diopside/static-exporter.zip
+    ApiCodeS3Key=diopside/releases/${RELEASE_ID}/api.zip \
+    StaticExporterCodeS3Key=diopside/releases/${RELEASE_ID}/static-exporter.zip
 ```
 
 スタック作成後は Web bucket に静的 UI を同期します。public data は worker の `static_export` job で生成します。初期疎通のみ local fixture を同期する場合は、本番データ export 前の一時手順であることを明示して扱います。
@@ -280,6 +282,133 @@ aws cloudformation deploy \
 ```sh
 npm run build
 aws s3 sync build/web s3://<web-bucket>/
+```
+
+## deploy runbook
+
+実 AWS への deploy、rollback、static export 再実行、CloudFront cache 確認は手動運用です。この repository 作業では実環境操作を実施していません。
+
+### 初回deploy
+
+1. local で package と test を通す。
+
+```sh
+npm run verify
+```
+
+2. `build/deploy/` の artifact を release id 付き key に upload する。
+
+```sh
+RELEASE_ID=$(date -u +%Y%m%d%H%M%S)
+aws s3 cp build/deploy/api.zip s3://<artifact-bucket>/diopside/releases/${RELEASE_ID}/api.zip
+aws s3 cp build/deploy/static-exporter.zip s3://<artifact-bucket>/diopside/releases/${RELEASE_ID}/static-exporter.zip
+```
+
+3. CloudFormation stack を作成する。`AdminToken`、`AdminCsrfToken`、`YouTubeApiKey` は template default や repository へ保存しない。
+
+```sh
+aws cloudformation deploy \
+  --template-file build/deploy/diopside.yaml \
+  --stack-name diopside-prod \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    EnvName=prod \
+    AdminToken=<token> \
+    AdminCsrfToken=<csrf-token> \
+    YouTubeApiKey=<youtube-api-key> \
+    LambdaArtifactBucket=<artifact-bucket> \
+    ApiCodeS3Key=diopside/releases/${RELEASE_ID}/api.zip \
+    StaticExporterCodeS3Key=diopside/releases/${RELEASE_ID}/static-exporter.zip
+```
+
+4. stack output から配信先を控える。
+
+```sh
+aws cloudformation describe-stacks \
+  --stack-name diopside-prod \
+  --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomainName'||OutputKey=='WebBucketName'||OutputKey=='PublicDataBucketName'||OutputKey=='ApiEndpoint']"
+```
+
+5. Web bucket へ静的 UI を同期し、管理 API から `static_export` job を起動して public data を生成する。
+
+```sh
+aws s3 sync build/web s3://<web-bucket>/ --delete
+
+curl -sS -X POST "https://<cloudfront-domain>/api/admin/jobs/static-export" \
+  -H "Authorization: Bearer <token>" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"all","idempotency_key":"initial-static-export"}'
+```
+
+6. `GET /api/admin/jobs/{job_id}`、post-deploy smoke、CloudFront cache 確認で完了判定する。
+
+### 更新deploy
+
+更新 deploy は初回 deploy と同じく `npm run verify`、release id 付き artifact upload、CloudFormation deploy、Web bucket sync、post-deploy smoke の順で行う。`ApiCodeS3Key` と `StaticExporterCodeS3Key` は新しい release id を指定し、前回の release id と stack output を作業メモに残す。
+
+コードだけの更新でも、public JSON schema や UI asset が変わった場合は `static_export` job を再実行する。UI だけの更新では Web bucket sync と CloudFront cache 確認を行い、API/Lambda artifact の key は変更しない。
+
+### rollback
+
+rollback は、直前に成功していた release id の artifact key を CloudFormation に再指定する。前回の Web artifact を保存している場合は Web bucket もその内容へ戻す。保存していない場合は、対応する git tag/commit から `npm run build` し直して `aws s3 sync build/web s3://<web-bucket>/ --delete` を実行する。
+
+```sh
+ROLLBACK_RELEASE_ID=<previous-release-id>
+
+aws cloudformation deploy \
+  --template-file build/deploy/diopside.yaml \
+  --stack-name diopside-prod \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    EnvName=prod \
+    AdminToken=<token> \
+    AdminCsrfToken=<csrf-token> \
+    YouTubeApiKey=<youtube-api-key> \
+    LambdaArtifactBucket=<artifact-bucket> \
+    ApiCodeS3Key=diopside/releases/${ROLLBACK_RELEASE_ID}/api.zip \
+    StaticExporterCodeS3Key=diopside/releases/${ROLLBACK_RELEASE_ID}/static-exporter.zip
+```
+
+rollback 後は `GET /api/health`、`GET /api/admin/jobs`、`latest-manifest.json`、CloudWatch Alarm、DLQ depth を確認する。schema 互換性が疑わしい rollback では `static_export` job を再実行し、versioned public data の manifest が期待する schema を指すことを確認する。
+
+### static export再実行
+
+public data の再生成は CloudFront 経由の管理 API で `static_export` job を起動する。`idempotency_key` は同じ作業を重複実行しないため、日付や incident id を含む値にする。
+
+```sh
+curl -sS -X POST "https://<cloudfront-domain>/api/admin/jobs/static-export" \
+  -H "Authorization: Bearer <token>" \
+  -H "X-CSRF-Token: <csrf-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"all","idempotency_key":"static-export-<yyyymmddhhmm>"}'
+```
+
+返却された `job_id` は `GET /api/admin/jobs/{job_id}` で追跡する。完了後は `https://<cloudfront-domain>/data/latest-manifest.json` を取得し、`export_version` と versioned public path が更新されたことを確認する。失敗時は `JobEvent`、CloudWatch JSON log、StaticExport DLQ、failed debug artifact を確認する。
+
+### CloudFront cache確認
+
+CloudFront の確認は、default route、asset、manifest、versioned public data、API の header と body を分けて見る。
+
+```sh
+curl -I "https://<cloudfront-domain>/"
+curl -I "https://<cloudfront-domain>/data/latest-manifest.json"
+curl -I "https://<cloudfront-domain>/data/v/<export_version>/public/index.json"
+curl -I "https://<cloudfront-domain>/api/health"
+```
+
+`/api/*` は `no-store` / `no-cache` 系 header を返すこと、`/data/latest-manifest.json` は短い cache、`/data/v/*` と `/assets/*` は versioned object として長い cache であることを確認する。manifest 更新後に古い `export_version` が返り続ける場合は、CloudFront distribution、S3 object、`static_export` job の順に切り分ける。緊急時だけ対象 path を限定して invalidation する。
+
+```sh
+DISTRIBUTION_ID=$(aws cloudformation describe-stack-resource \
+  --stack-name diopside-prod \
+  --logical-resource-id CloudFrontDistribution \
+  --query "StackResourceDetail.PhysicalResourceId" \
+  --output text)
+
+aws cloudfront create-invalidation \
+  --distribution-id ${DISTRIBUTION_ID} \
+  --paths "/data/latest-manifest.json" "/index.html"
 ```
 
 ## post-deploy e2e
