@@ -1,6 +1,6 @@
 # FastAPI public detail schema
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -87,3 +87,9 @@ API-005 `GET /api/videos/{video_id}`、API-007 `GET /api/archive-calendar`、API
 
 - response_model validation と既存 response shape にずれがある場合、runtime error になる。
 - 今回は public GET schema の baseline であり、admin schema 化には追加作業が必要。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583087983
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583088563
