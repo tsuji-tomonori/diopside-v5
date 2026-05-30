@@ -12,8 +12,8 @@
 | BATCH-002 | チャンネル情報取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | channel resource 専用 branch は未分離 |
 | BATCH-003 | uploads playlist差分取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | page token cursor と次 page 再投入を検証 |
 | BATCH-004 | 動画詳細取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | 状態変化 event item は v0.4 未整合 |
-| BATCH-005 | ライブ状態監視 | `live_status_scan` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | chat collect 開始はあるが NotificationPlan は未対応 |
-| BATCH-006 | 配信予定通知生成 | なし | なし | なし | 未対応 | NotificationPlan / SNS optional payload 未実装 |
+| BATCH-005 | ライブ状態監視 | `live_status_scan` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | chat collect / notification_plan / archive_finalize の後続投入に対応 |
+| BATCH-006 | 配信予定通知生成 | `notification_plan` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | NotificationPlan item 作成に対応。外部通知 delivery / DLQ は未実装 |
 | BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | Live Chat page 取得と requeue はあるが専用 worker 分離なし |
 | BATCH-008 | リプレイチャット初期化 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | initial data 解析はあるが初期化 worker と page collector は未分離 |
 | BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | continuation 自己再投入の専用 contract は不足 |
@@ -31,16 +31,18 @@
 
 ## 現 worker contract
 
-- `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
+- `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`notification_plan`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
 - `static_export` は `static_exporter.handler` が担当する。
-- queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `archive_finalize` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
+- queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `archive_finalize` / `notification_plan` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
+- `notification_plan` は `before_30min`、`at_start`、`archive_available` の `NotificationPlan` item を v0.4 key shape で冪等作成する。
 - `cleanup` は削除を実行せず、常に dry-run report を返す。
 - `retry_job` は対象 job の job_type から queue env を引き、`retry_requested` event を残して再投入する。
 
 ## 後続修正方針
 
-1. BATCH-006 `NotificationPlan` と `archive_finalize` の遅延 Scheduler 連携を実装し、配信予定・開始・archive_available の状態遷移を DDB item と job chain へ落とす。
-2. BATCH-011 / 012 / 013 / 014 を aggregate 統合処理から分離し、wordcloud / timestamp / file-output の job_type と queue contract を追加する。
-3. BATCH-008 / 009 は replay 初期化と page collector を分け、continuation の自己再投入 contract を明確にする。
-4. BATCH-016 は `QuotaUsage` call record から daily summary item を保存する形へ寄せる。
-5. v0.4 `JobMessage` 共通 schema に合わせ、API / Scheduler / worker 再投入の message fields を統一する。
+1. BATCH-006 の外部通知 delivery / DLQ / sent/skipped/failed 更新を実装する。
+2. `archive_finalize` の遅延 Scheduler 連携を実装し、archive_available の通知時刻を運用要件に合わせる。
+3. BATCH-011 / 012 / 013 / 014 を aggregate 統合処理から分離し、wordcloud / timestamp / file-output の job_type と queue contract を追加する。
+4. BATCH-008 / 009 は replay 初期化と page collector を分け、continuation の自己再投入 contract を明確にする。
+5. BATCH-016 は `QuotaUsage` call record から daily summary item を保存する形へ寄せる。
+6. v0.4 `JobMessage` 共通 schema に合わせ、API / Scheduler / worker 再投入の message fields を統一する。

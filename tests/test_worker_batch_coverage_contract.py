@@ -12,6 +12,7 @@ EXPECTED_QUEUE_ENVS = {
     "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
     "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "archive_finalize": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "notification_plan": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
     "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
     "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
@@ -28,8 +29,8 @@ def test_worker_batch_audit_covers_all_v04_batch_ids_and_current_jobs():
     for job_type in EXPECTED_QUEUE_ENVS:
         assert f"`{job_type}`" in audit
 
-    assert "BATCH-006" in audit and "未対応" in audit
-    assert "BATCH-017" in audit and "未対応" in audit
+    assert "BATCH-006" in audit and "外部通知 delivery" in audit
+    assert "BATCH-017" in audit and "遅延 Scheduler" in audit
     assert "部分実装" in audit
     assert "差分あり" in audit
 
@@ -49,6 +50,7 @@ def test_pipeline_dispatcher_declares_current_handler_jobs():
         "chat_normalize": "chat_normalize",
         "rebuild_artifacts": "rebuild_artifacts",
         "archive_finalize": "archive_finalize",
+        "notification_plan": "notification_plan",
         "retry_job": "retry_job",
         "cancel_job": "cancel_job",
         "quota_rollup": "quota_rollup",

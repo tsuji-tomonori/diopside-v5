@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
-from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
+from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, notification_plan, quota_rollup, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -245,6 +245,40 @@ def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
     assert enqueued[0]["queue_env"] == "DIOPSIDE_AGGREGATE_QUEUE_URL"
     assert enqueued[0]["payload"]["job_type"] == "archive_finalize"
     assert enqueued[0]["payload"]["input"]["video_id"] == "vid-live"
+
+
+def test_live_status_scan_enqueues_notification_plan_for_upcoming_video(monkeypatch):
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload}) or "queued")
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-upcoming",
+            "title": "upcoming",
+            "published_at": "2026-05-29T00:00:00Z",
+            "channel_id": "ch",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+            "live_state": "upcoming",
+        }
+    )
+
+    result = pipeline.live_status_scan(repo, {"skip_youtube_refresh": True, "job_id": "job-live"})
+
+    assert result["enqueue_notification_plan"] == ["vid-upcoming"]
+    assert enqueued == [
+        {
+            "queue_env": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+            "payload": {
+                "job_type": "notification_plan",
+                "job_id": "manual-notification-plan-vid-upcoming",
+                "input": {
+                    "video_id": "vid-upcoming",
+                    "scheduled_start_time": "2026-05-30T12:00:00Z",
+                    "requested_by": "live_status_scan",
+                },
+            },
+        }
+    ]
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
@@ -1063,6 +1097,7 @@ def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monk
     assert video["title"] == "vid-final"
     assert video["live_state"] == "archived"
     assert video["archive_finalized_at"]
+    assert repo.get_item("VID#vid-final", "NOTIFY#archive_available")["delivery_state"] == "planned"
     assert quota["method"] == "videos.list"
     assert quota["job_id"] == "job-finalize"
     assert [item["queue_env"] for item in enqueued] == ["DIOPSIDE_CHAT_QUEUE_URL", "DIOPSIDE_STATIC_EXPORT_QUEUE_URL"]
@@ -1070,6 +1105,35 @@ def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monk
     assert enqueued[0]["payload"]["input"]["mode"] == "replay"
     assert enqueued[1]["payload"]["job_type"] == "static_export"
     assert enqueued[1]["payload"]["input"]["scope"] == "video"
+
+
+def test_notification_plan_creates_due_items_idempotently():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-plan",
+            "title": "upcoming",
+            "published_at": "2026-05-29T00:00:00Z",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+        }
+    )
+
+    first = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify"})
+    second = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify-2"})
+
+    before = repo.get_item("VID#vid-plan", "NOTIFY#before_30min")
+    at_start = repo.get_item("VID#vid-plan", "NOTIFY#at_start")
+    assert first["planned_count"] == 2
+    assert second["planned_count"] == 2
+    assert before["due_at"] == "2026-05-30T11:30:00Z"
+    assert before["gsi3pk"] == "NOTIFY#DUE"
+    assert before["gsi3sk"] == "DUE#2026-05-30T11:30:00Z#vid-plan#before_30min"
+    assert before["delivery_state"] == "planned"
+    assert before["message_template_id"] == "before_30min"
+    assert before["created_at"]
+    assert before["updated_at"]
+    assert before["source_job_id"] == "job-notify-2"
+    assert at_start["due_at"] == "2026-05-30T12:00:00Z"
 
 
 def test_dispatch_job_supports_scheduled_maintenance_jobs():

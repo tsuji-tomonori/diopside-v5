@@ -103,12 +103,34 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
 
 
+def test_repository_accepts_notification_plan_v04_item_shape():
+    repo = MemoryRepository()
+
+    item = repo.put_item(
+        {
+            "item_type": "NotificationPlan",
+            "pk": "VID#vid001",
+            "sk": "NOTIFY#before_30min",
+            "video_id": "vid001",
+            "notification_type": "before_30min",
+            "due_at": "2026-05-30T11:30:00Z",
+            "delivery_state": "planned",
+            "gsi3pk": "NOTIFY#DUE",
+            "gsi3sk": "DUE#2026-05-30T11:30:00Z#vid001#before_30min",
+        }
+    )
+
+    assert item["item_type"] == "NotificationPlan"
+    assert repo.get_item("VID#vid001", "NOTIFY#before_30min")["gsi3pk"] == "NOTIFY#DUE"
+
+
 def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
     repo = MemoryRepository()
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"ChannelRef", "VideoMonthIndex", "NotificationPlan", "RandomBucket"} <= unsupported_v04_types
+    assert {"ChannelRef", "VideoMonthIndex", "RandomBucket"} <= unsupported_v04_types
+    assert "NotificationPlan" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

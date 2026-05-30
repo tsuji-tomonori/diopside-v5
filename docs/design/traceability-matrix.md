@@ -129,7 +129,7 @@
 | BATCH-003 | Batch | uploads playlist 差分取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 | BATCH-004 | Batch | 動画詳細取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 | BATCH-005 | Batch | ライブ状態監視。 | `infra/cloudformation/diopside.yaml`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 |
-| BATCH-006 | Batch | 配信予定通知生成。 | なし | なし | 未対応 |
+| BATCH-006 | Batch | 配信予定通知生成。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `docs/design/worker-batch-coverage-audit.md` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 |
 | BATCH-007 | Batch | 公式 Live Chat 取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 部分実装 |
 | BATCH-008 | Batch | リプレイチャット初期化。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 部分実装 |
 | BATCH-009 | Batch | リプレイチャットページ取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 部分実装 |

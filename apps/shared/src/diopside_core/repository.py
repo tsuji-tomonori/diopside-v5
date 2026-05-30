@@ -29,6 +29,7 @@ ITEM_TYPES = {
     "ChatMessageChunkManifest",
     "ChatAggregate",
     "Artifact",
+    "NotificationPlan",
     "Job",
     "JobEvent",
     "QuotaUsage",

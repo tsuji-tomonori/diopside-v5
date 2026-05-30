@@ -7,6 +7,7 @@ import hashlib
 import time
 import uuid
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from diopside_core import (
@@ -32,6 +33,7 @@ PIPELINE_JOB_HANDLERS = {
     "chat_normalize": "chat_normalize",
     "rebuild_artifacts": "rebuild_artifacts",
     "archive_finalize": "archive_finalize",
+    "notification_plan": "notification_plan",
     "retry_job": "retry_job",
     "cancel_job": "cancel_job",
     "quota_rollup": "quota_rollup",
@@ -45,6 +47,7 @@ JOB_QUEUE_ENVS = {
     "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
     "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "archive_finalize": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "notification_plan": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
     "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
     "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
@@ -85,6 +88,8 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
             result = rebuild_artifacts(repo, params)
         elif job_type == "archive_finalize":
             result = archive_finalize(repo, params)
+        elif job_type == "notification_plan":
+            result = notification_plan(repo, params)
         elif job_type == "retry_job":
             result = retry_job(repo, params)
         elif job_type == "cancel_job":
@@ -230,6 +235,7 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         videos = [{**video, **by_id.get(video["video_id"], {}), "_previous_live_state": video.get("live_state")} for video in videos]
     updated = []
     enqueued = []
+    notification_plan_video_ids = []
     for video in videos:
         before = video.pop("_previous_live_state", video.get("live_state"))
         if video.get("actual_end_time"):
@@ -245,6 +251,18 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             updated.append({"video_id": video["video_id"], "from": before, "to": video["live_state"]})
         if video["live_state"] == "live" and video.get("live_chat_id"):
             enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
+        if video["live_state"] == "upcoming" and video.get("scheduled_start_time"):
+            notification_plan_video_ids.append(video["video_id"])
+            enqueued.append(
+                _enqueue_job(
+                    "DIOPSIDE_AGGREGATE_QUEUE_URL",
+                    {
+                        "job_type": "notification_plan",
+                        "job_id": f"manual-notification-plan-{video['video_id']}",
+                        "input": {"video_id": video["video_id"], "scheduled_start_time": video["scheduled_start_time"], "requested_by": "live_status_scan"},
+                    },
+                )
+            )
         if before in {"upcoming", "live"} and video["live_state"] == "archived":
             enqueued.append(
                 _enqueue_job(
@@ -260,6 +278,7 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         "updated": updated,
         "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"],
         "enqueue_archive_finalize": [item["video_id"] for item in updated if item["to"] == "archived"],
+        "enqueue_notification_plan": notification_plan_video_ids,
         "enqueued": [item for item in enqueued if item],
     }
 
@@ -516,6 +535,7 @@ def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             refreshed = True
     finalized_at = now_iso()
     repo.put_video({**video, "video_id": video_id, "live_state": "archived", "archive_finalized_at": finalized_at})
+    archive_plan = _put_notification_plan(repo, video_id, "archive_available", params.get("due_at") or finalized_at, source_job_id=job_id)
     replay_enqueued = _enqueue_job(
         "DIOPSIDE_CHAT_QUEUE_URL",
         {
@@ -536,9 +556,24 @@ def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         "video_id": video_id,
         "refreshed": refreshed,
         "archive_finalized_at": finalized_at,
+        "notification_plan": archive_plan,
         "replay_enqueued": bool(replay_enqueued),
         "static_export_enqueued": bool(export_enqueued),
     }
+
+
+def notification_plan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    video = repo.get_video(video_id) or {"video_id": video_id}
+    scheduled_start_time = params.get("scheduled_start_time") or video.get("scheduled_start_time")
+    notification_types = params.get("notification_types")
+    if notification_types is None:
+        notification_types = ["before_30min", "at_start"] if scheduled_start_time else ["archive_available"]
+    plans = []
+    for notification_type in notification_types:
+        due_at = params.get("due_at") or _notification_due_at(notification_type, scheduled_start_time)
+        plans.append(_put_notification_plan(repo, video_id, notification_type, due_at, source_job_id=params.get("job_id")))
+    return {"video_id": video_id, "planned_count": len(plans), "items": plans}
 
 
 def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -551,6 +586,56 @@ def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     if aggregate.get("top_terms"):
         repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.svg", "content_type": "image/svg+xml"})
     return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
+
+
+def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due_at: str, source_job_id: str | None = None) -> dict[str, Any]:
+    stamp = now_iso()
+    existing = repo.get_item(f"VID#{video_id}", f"NOTIFY#{notification_type}") or {}
+    item = {
+        **existing,
+        "item_type": "NotificationPlan",
+        "pk": f"VID#{video_id}",
+        "sk": f"NOTIFY#{notification_type}",
+        "video_id": video_id,
+        "notification_type": notification_type,
+        "due_at": due_at,
+        "delivery_state": existing.get("delivery_state", "planned"),
+        "target": existing.get("target", "none"),
+        "message_template_id": existing.get("message_template_id") or notification_type,
+        "updated_at": stamp,
+        "gsi3pk": "NOTIFY#DUE",
+        "gsi3sk": f"DUE#{due_at}#{video_id}#{notification_type}",
+    }
+    if not item.get("created_at"):
+        item["created_at"] = stamp
+    if source_job_id:
+        item["source_job_id"] = source_job_id
+    return repo.put_item(item)
+
+
+def _notification_due_at(notification_type: str, scheduled_start_time: str | None) -> str:
+    if notification_type == "archive_available":
+        return now_iso()
+    if not scheduled_start_time:
+        raise ValueError(f"scheduled_start_time is required for notification_type: {notification_type}")
+    start = _parse_iso(scheduled_start_time)
+    if notification_type == "before_30min":
+        return _format_iso(start - timedelta(minutes=30))
+    if notification_type == "at_start":
+        return _format_iso(start)
+    raise ValueError(f"unsupported notification_type: {notification_type}")
+
+
+def _parse_iso(value: str) -> datetime:
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _log_worker_job(

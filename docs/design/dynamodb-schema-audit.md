@@ -22,7 +22,7 @@
 | `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `ChatMessageChunkManifest`、`CHAT#RAW#...` | 差分あり | raw page manifest 名と key が異なる |
 | `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` は `VIDEO#...` / `CHAT#AGGREGATE` | 差分あり | heatmap / source uri など required fields が未整合 |
 | `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` は `VIDEO#...` / `ARTIFACT#{artifact_type}` | 差分あり | artifact_version と content_hash required 化が必要 |
-| `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | なし | 未対応 | BATCH-006 と合わせて実装が必要 |
+| `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
 | `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | なし | 未対応 | static export history item は未保存 |
 | `Job` | `JOB#{job_id}` / `META` | `create_job` が同 key を保存 | 部分実装 | `dedupe_key` ではなく `idempotency_key`、`latest_state` ではなく `derived_state` |
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` は `EVENT#{time}#{uuid}` | 差分あり | seq / event_name / state_after ではなく event_type/details |
@@ -47,6 +47,6 @@
 
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
 2. `schema_version`、`entity_id`、`created_at`、`updated_at` の共通属性を repository writer に追加する。
-3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`NotificationPlan`、`StaticExport`、`RandomBucket` を専用 writer と query path で追加する。
+3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`StaticExport`、`RandomBucket` を専用 writer と query path で追加する。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
 5. `QuotaUsage` は call record と daily aggregate のどちらを正本にするか決め、v0.4 の `METHOD#{method}` item との整合を取る。

@@ -29,7 +29,7 @@ CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/dat
 
 物理 key は `pk` / `sk`、GSI は `by_public_date`、`by_tag`、`by_work_queue` です。実装は `apps/shared/src/diopside_core/repository.py` に集約しています。公開動画、job 一覧、quota usage 一覧は DynamoDB `scan` を使わず、公開動画は `by_public_date`、job/quota 一覧は `by_work_queue` の Query + pagination で取得します。
 
-v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version`、`ChannelRef`、`VideoMonthIndex`、`NotificationPlan`、`RandomBucket` などに未対応または差分があります。
+v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version`、`ChannelRef`、`VideoMonthIndex`、`RandomBucket` などに未対応または差分があります。`NotificationPlan` は v0.4 key shape で部分実装しています。
 
 | item_type | pk | sk | 主な用途 |
 |---|---|---|---|
@@ -194,11 +194,11 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/retry` | `retry_job` | failed/retryable job に `retry_requested` event を追加し、元 job type の queue へ再投入 |
 | `POST /api/admin/jobs/{job_id}/cancel` | `cancel_job` | 未完了 job に `cancelled` event を追加。完了済み/失敗済み job は拒否 |
 
-CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。`archive_finalize` は `live_status_scan` が `upcoming` / `live` から `archived` への遷移を検知したときに `AggregateQueue` へ投入し、replay `chat_collect` と `static_export` を後続投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
+CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。`notification_plan` は `live_status_scan` が upcoming 動画を検知したときに `before_30min` / `at_start` の `NotificationPlan` item を作成します。`archive_finalize` は `live_status_scan` が `upcoming` / `live` から `archived` への遷移を検知したときに `AggregateQueue` へ投入し、`archive_available` の `NotificationPlan`、replay `chat_collect`、`static_export` を後続投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
 
-worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
+worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`notification_plan`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
-BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、BATCH-006 配信予定通知生成、専用 file-output worker、worker 分割責務には未対応または差分があります。
+BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、外部通知 delivery、専用 file-output worker、worker 分割責務には未対応または差分があります。
 
 ## DLQ運用手順
 
