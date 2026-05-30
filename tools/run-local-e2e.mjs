@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 
 const baseUrl = process.env.DIOPSIDE_E2E_BASE_URL;
@@ -14,7 +16,7 @@ if (baseUrl) {
 
 async function runLocal() {
   await import("./build-web.mjs");
-  const web = await startStaticServer("build/web", 8786);
+  const web = await startStaticServer("build/web", 8786, "http://127.0.0.1:8787");
   const api = spawn("python3", ["-m", "diopside_api.local_server", "--port", "8787"], {
     env: {
       ...process.env,
@@ -32,6 +34,7 @@ async function runLocal() {
     await checkStatic("http://127.0.0.1:8786");
     await checkApi("http://127.0.0.1:8787");
     await checkAdminDryRun("http://127.0.0.1:8787");
+    await checkBrowserFlows("http://127.0.0.1:8786");
     console.log("local e2e passed");
   } finally {
     api.kill();
@@ -99,10 +102,160 @@ async function text(url) {
   return res.text();
 }
 
-async function startStaticServer(root, port) {
+async function checkBrowserFlows(url) {
+  const chrome = await startChrome();
+  try {
+    const client = await openChromePage(chrome.port, url);
+    try {
+      await client.send("Page.enable");
+      await client.send("Runtime.enable");
+      await client.send("Page.navigate", { url });
+      await waitFor(async () => {
+        const ready = await client.evaluate("document.readyState === 'complete' && document.querySelectorAll('.video-card').length > 0 && !!document.querySelector('#videoDetail .primary-link')");
+        return ready === true;
+      });
+      await client.evaluate(`(async () => {
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const waitFor = async (fn) => {
+          const start = Date.now();
+          while (Date.now() - start < 6000) {
+            if (fn()) return;
+            await wait(100);
+          }
+          throw new Error("browser flow timeout");
+        };
+        const text = (selector) => document.querySelector(selector)?.textContent || "";
+        const click = (selector) => {
+          const node = document.querySelector(selector);
+          if (!node) throw new Error("missing selector: " + selector);
+          node.click();
+        };
+        const setInput = (selector, value) => {
+          const node = document.querySelector(selector);
+          if (!node) throw new Error("missing input: " + selector);
+          node.value = value;
+          node.dispatchEvent(new Event("input", { bubbles: true }));
+          node.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        const setSelect = (selector, value) => {
+          const node = document.querySelector(selector);
+          if (!node) throw new Error("missing select: " + selector);
+          node.value = value;
+          node.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+
+        await waitFor(() => document.querySelector('#videoDetail .wordcloud'));
+        if (!document.querySelector('#videoDetail .primary-link[href*="youtube.com"]')) throw new Error("detail youtube link missing");
+        if (!document.querySelector('#videoDetail .timestamp-list a[href*="t=120s"]')) throw new Error("timestamp link missing");
+        if (!document.querySelector('#videoDetail .wordcloud')) throw new Error("wordcloud missing");
+
+        setInput("#searchInput", "検索");
+        await waitFor(() => text("#resultCount").includes("1件") && text("#videoList").includes("検索とタグ確認用アーカイブ"));
+
+        click('#tagFilters button[data-tag="歌枠"]');
+        await waitFor(() => text("#resultCount").includes("1件") && text("#videoList").includes("歌枠"));
+        click("#videoList .video-main");
+        await waitFor(() => text("#videoDetail").includes("検索とタグ確認用アーカイブ") && document.querySelector('#videoDetail .timestamp-list a[href*="t=60s"]'));
+
+        click('[data-action="admin"]');
+        await waitFor(() => document.querySelector("#adminPanel").open);
+        setInput('#adminJobForm input[name="token"]', "local-secret");
+        setInput('#adminJobForm input[name="csrf"]', "local-csrf");
+        setSelect('#adminJobForm select[name="jobType"]', "static-export");
+        document.querySelector("#adminJobForm").requestSubmit();
+        await waitFor(() => text("#adminResult").includes("static_export") && document.querySelector('#adminJobId').value);
+        click("#loadJobDetailButton");
+        await waitFor(() => text("#adminData").includes("JobEvent") && text("#adminData").includes("queued"));
+      })()`);
+    } finally {
+      client.close();
+    }
+  } finally {
+    await chrome.stop();
+  }
+}
+
+async function startChrome() {
+  const port = 9224;
+  const profile = await mkdtemp(join(tmpdir(), "diopside-chrome-"));
+  const proc = spawn("google-chrome", [
+    "--headless=new",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-default-browser-check",
+    `--user-data-dir=${profile}`,
+    `--remote-debugging-port=${port}`,
+    "about:blank"
+  ], { stdio: ["ignore", "ignore", "ignore"] });
+  await waitFor(() => fetch(`http://127.0.0.1:${port}/json/version`).then((res) => res.ok));
+  return {
+    port,
+    async stop() {
+      proc.kill();
+      await new Promise((resolve) => proc.once("exit", resolve));
+      await rm(profile, { recursive: true, force: true });
+    }
+  };
+}
+
+async function openChromePage(port, url) {
+  const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: "PUT" });
+  if (!response.ok) throw new Error(`failed to open chrome page: ${response.status}`);
+  const target = await response.json();
+  return createCdpClient(target.webSocketDebuggerUrl);
+}
+
+function createCdpClient(webSocketDebuggerUrl) {
+  const socket = new WebSocket(webSocketDebuggerUrl);
+  let nextId = 1;
+  const pending = new Map();
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (!message.id || !pending.has(message.id)) return;
+    const { resolve, reject } = pending.get(message.id);
+    pending.delete(message.id);
+    if (message.error) reject(new Error(message.error.message));
+    else resolve(message.result);
+  });
+  const opened = new Promise((resolve, reject) => {
+    socket.addEventListener("open", resolve, { once: true });
+    socket.addEventListener("error", reject, { once: true });
+  });
+  return {
+    async send(method, params = {}) {
+      await opened;
+      const id = nextId++;
+      socket.send(JSON.stringify({ id, method, params }));
+      return await new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+    },
+    async evaluate(expression) {
+      const result = await this.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (result.exceptionDetails) {
+        throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "evaluation failed");
+      }
+      return result.result.value;
+    },
+    close() {
+      socket.close();
+    }
+  };
+}
+
+async function startStaticServer(root, port, apiBaseUrl = null) {
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
   const server = createServer(async (req, res) => {
     const pathname = new URL(req.url, `http://127.0.0.1:${port}`).pathname;
+    if (apiBaseUrl && pathname.startsWith("/api/")) {
+      const upstream = await fetch(`${apiBaseUrl}${req.url}`, {
+        method: req.method,
+        headers: req.headers,
+        body: req.method === "GET" || req.method === "HEAD" ? undefined : req,
+        duplex: req.method === "GET" || req.method === "HEAD" ? undefined : "half"
+      });
+      res.writeHead(upstream.status, Object.fromEntries(upstream.headers));
+      res.end(Buffer.from(await upstream.arrayBuffer()));
+      return;
+    }
     const rel = normalize(pathname === "/" ? "index.html" : pathname.slice(1));
     const file = join(root, rel);
     if (!file.startsWith(root) || !existsSync(file)) {
