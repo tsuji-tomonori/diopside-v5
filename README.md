@@ -29,12 +29,13 @@ CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/dat
 
 物理 key は `pk` / `sk`、GSI は `by_public_date`、`by_tag`、`by_work_queue` です。実装は `apps/shared/src/diopside_core/repository.py` に集約しています。公開動画、job 一覧、quota usage 一覧は DynamoDB `scan` を使わず、公開動画は `by_public_date`、job/quota 一覧は `by_work_queue` の Query + pagination で取得します。
 
-v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version`、`ChannelRef` などに未対応または差分があります。`VideoMonthIndex`、`NotificationPlan`、`TagSummary`、`RandomBucket`、`StaticExport` は v0.4 key shape で部分実装しています。
+v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version` などに未対応または差分があります。`ChannelRef`、`VideoMonthIndex`、`NotificationPlan`、`TagSummary`、`RandomBucket`、`StaticExport` は v0.4 key shape で部分実装しています。
 
 | item_type | pk | sk | 主な用途 |
 |---|---|---|---|
 | `AppConfig` | `CONFIG#app` | `...` | channel/default 設定 |
 | `Channel` | `CHANNEL#{channel_id}` | `META` | 対象チャンネル |
+| `ChannelRef` | `APP#CHANNELS` | `CH#{channel_id}` | 管理チャンネル一覧 read model。`Channel` 更新時に同期し、一覧取得で優先利用 |
 | `ChannelCursor` | `CHANNEL#{channel_id}` | `CURSOR#{name}` | uploads playlist 差分位置。`page_token`、`next_page_token`、raw response URI、取得 video ids を保持 |
 | `Video` | `VIDEO#{video_id}` | `META` | 公開動画 metadata。公開対象のみ `by_public_date` に投影し、YouTube raw response は URI のみ保持 |
 | `VideoIndex` | `VIDEO#PUBLIC` | `{published_at}#{video_id}` | 公開日順 index 用 |

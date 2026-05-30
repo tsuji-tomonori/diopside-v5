@@ -32,7 +32,7 @@
 | P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
 | P0-06 | API-001〜023 | API-007/API-022/API-023 を追加し、API-008/API-009/API-013/API-015/API-016/API-019 の handler contract test を追加。FastAPI/OpenAPI は後続 | 部分対応 | `api/fastapi-v04-contract` で framework と OpenAPI 証跡を追加 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum、wordcloud PNG/JSON を static exporter と contract check に追加 | 対応 | SVG は互換 artifact として維持 |
-| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / schema_version / 残未対応 item の実装は後続 |
+| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。`ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / schema_version / 残未対応 item の実装は後続 |
 | P0-09 | Worker coverage | BATCH-001〜020 と現 pipeline/handler/job/queue/test の対応を `docs/design/worker-batch-coverage-audit.md` に整理し、job_type / queue mapping を test 化。BATCH-006 は `notification_plan`、BATCH-017 は `archive_finalize` job を追加 | 監査済み・差分あり | 外部通知 delivery、専用 file-output、worker 分割は後続実装 |
 | P0-10 | Dev deploy rehearsal | 実 dev 環境で YouTube 実データ 1 件の end-to-end 確認はこの PR では未実施 | 未検証 | credentials と dev stack がある環境で別途実施 |
 
@@ -40,7 +40,7 @@
 
 | priority | 項目 | 判定 | 補足 |
 |---|---|---|---|
-| P1 | チャンネル設定管理 | 部分対応 | `GET /api/admin/channels` と `PUT /api/admin/channels/{channel_id}` を追加。管理 UI は未対応 |
+| P1 | チャンネル設定管理 | 部分対応 | `GET /api/admin/channels` と `PUT /api/admin/channels/{channel_id}` を追加し、`ChannelRef` read model を保存・優先利用。管理 UI は未対応 |
 | P1 | タグ補正 | 部分対応 | `PUT /api/admin/videos/{video_id}/tags` で手動タグ追加・削除と static export 反映経路を追加。管理 UI は未対応 |
 | P1 | Archive calendar | 部分対応 | `/data/calendar/{year}.json` と `GET /api/archive-calendar` を追加。UI は未対応 |
 | P1 | Presigned URL | 対応 | `POST /api/admin/artifacts/presigned-url` を追加。private S3 artifact のみ署名対象 |

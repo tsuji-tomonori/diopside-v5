@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover - available in Lambda package.
 ITEM_TYPES = {
     "AppConfig",
     "Channel",
+    "ChannelRef",
     "ChannelCursor",
     "Video",
     "VideoIndex",
@@ -65,6 +66,30 @@ def video_month_key(published_at: str | None) -> str | None:
     if not (year.isdigit() and month.isdigit() and 1 <= int(month) <= 12):
         return None
     return f"{year}{month}"
+
+
+def channel_ref_item(channel: dict[str, Any]) -> dict[str, Any]:
+    channel_id = channel["channel_id"]
+    collect_enabled = bool(channel.get("collect_enabled", channel.get("enabled", True)))
+    channel_title = channel.get("channel_title") or channel.get("display_name") or channel_id
+    priority = int(channel.get("priority", 100))
+    stamp = now_iso()
+    return {
+        "item_type": "ChannelRef",
+        "pk": "APP#CHANNELS",
+        "sk": f"CH#{channel_id}",
+        "channel_id": channel_id,
+        "collect_enabled": collect_enabled,
+        "enabled": collect_enabled,
+        "priority": priority,
+        "channel_title": channel_title,
+        "display_name": channel.get("display_name") or channel_title,
+        "uploads_playlist_id": channel.get("uploads_playlist_id"),
+        "notification_enabled": bool(channel.get("notification_enabled", False)),
+        "metadata_interval_minutes": channel.get("metadata_interval_minutes"),
+        "live_scan_interval_minutes": channel.get("live_scan_interval_minutes"),
+        "updated_at": channel.get("updated_at") or stamp,
+    }
 
 
 def video_item(video: dict[str, Any]) -> dict[str, Any]:
@@ -511,6 +536,10 @@ class MemoryRepository:
         return deepcopy(chunks)
 
     def list_channels(self) -> list[dict[str, Any]]:
+        refs = [item for item in self.items.values() if item.get("item_type") == "ChannelRef"]
+        if refs:
+            refs.sort(key=lambda item: (int(item.get("priority", 100)), item.get("channel_id", "")))
+            return deepcopy(refs)
         channels = [item for item in self.items.values() if item.get("item_type") == "Channel"]
         channels.sort(key=lambda item: item.get("channel_id", ""))
         return deepcopy(channels)
@@ -528,9 +557,17 @@ class MemoryRepository:
             "channel_id": channel_id,
             "updated_at": stamp,
         }
+        if "collect_enabled" not in item:
+            item["collect_enabled"] = bool(item.get("enabled", True))
+        if "channel_title" not in item:
+            item["channel_title"] = item.get("display_name") or channel_id
+        if "priority" not in item:
+            item["priority"] = 100
         if not item.get("created_at"):
             item["created_at"] = stamp
-        return self.put_item(item)
+        saved = self.put_item(item)
+        self.put_item(channel_ref_item(saved))
+        return saved
 
     def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None:
         if ":" in artifact_id:
@@ -721,10 +758,17 @@ class DynamoRepository(MemoryRepository):
         return deepcopy(chunks)
 
     def list_channels(self) -> list[dict[str, Any]]:
-        response = self.table.scan(Limit=1000)
-        channels = [item for item in response.get("Items", []) if item.get("item_type") == "Channel"]
-        channels.sort(key=lambda item: item.get("channel_id", ""))
-        return deepcopy(channels)
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        refs = self._query_all(
+            KeyConditionExpression=Key("pk").eq("APP#CHANNELS") & Key("sk").begins_with("CH#"),
+            Limit=1000,
+        )
+        refs = [item for item in refs if item.get("item_type") == "ChannelRef"]
+        if refs:
+            refs.sort(key=lambda item: (int(item.get("priority", 100)), item.get("channel_id", "")))
+            return deepcopy(refs)
+        return super().list_channels()
 
     def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None:
         if ":" in artifact_id:

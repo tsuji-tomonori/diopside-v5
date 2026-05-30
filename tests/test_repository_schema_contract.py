@@ -104,6 +104,54 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
 
 
+def test_repository_writes_channel_ref_and_lists_channels_from_read_model():
+    repo = MemoryRepository()
+
+    channel = repo.put_channel(
+        {
+            "channel_id": "ch001",
+            "enabled": True,
+            "display_name": "白雪巴",
+            "uploads_playlist_id": "UUuploads",
+            "metadata_interval_minutes": 720,
+            "live_scan_interval_minutes": 30,
+            "notification_enabled": True,
+            "priority": 10,
+        }
+    )
+    ref = repo.get_item("APP#CHANNELS", "CH#ch001")
+
+    assert channel["item_type"] == "Channel"
+    assert ref["item_type"] == "ChannelRef"
+    assert ref["pk"] == "APP#CHANNELS"
+    assert ref["sk"] == "CH#ch001"
+    assert ref["channel_id"] == "ch001"
+    assert ref["collect_enabled"] is True
+    assert ref["enabled"] is True
+    assert ref["priority"] == 10
+    assert ref["channel_title"] == "白雪巴"
+    assert ref["display_name"] == "白雪巴"
+    assert ref["uploads_playlist_id"] == "UUuploads"
+    assert ref["notification_enabled"] is True
+    assert repo.list_channels() == [ref]
+
+
+def test_repository_list_channels_falls_back_to_channel_items_without_refs():
+    repo = MemoryRepository()
+    repo.put_item(
+        {
+            "item_type": "Channel",
+            "pk": "CHANNEL#ch001",
+            "sk": "META",
+            "channel_id": "ch001",
+            "display_name": "fallback",
+            "enabled": True,
+        }
+    )
+
+    assert repo.list_channels()[0]["item_type"] == "Channel"
+
+
 def test_repository_writes_random_bucket_for_public_videos_and_removes_private_entries():
     repo = MemoryRepository()
 
@@ -357,12 +405,13 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"ChannelRef", "VideoTagLink"} <= unsupported_v04_types
+    assert {"VideoTagLink"} <= unsupported_v04_types
     assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
     assert "StaticExport" not in unsupported_v04_types
     assert "TagSummary" not in unsupported_v04_types
     assert "VideoMonthIndex" not in unsupported_v04_types
+    assert "ChannelRef" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

@@ -790,9 +790,9 @@ def _list_channels() -> list[dict[str, Any]]:
 def _channel_response(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "channel_id": item["channel_id"],
-        "enabled": bool(item.get("enabled", True)),
+        "enabled": bool(item.get("enabled", item.get("collect_enabled", True))),
         "uploads_playlist_id": item.get("uploads_playlist_id"),
-        "display_name": item.get("display_name"),
+        "display_name": item.get("display_name") or item.get("channel_title"),
         "metadata_interval_minutes": item.get("metadata_interval_minutes"),
         "live_scan_interval_minutes": item.get("live_scan_interval_minutes"),
         "notification_enabled": bool(item.get("notification_enabled", False)),
