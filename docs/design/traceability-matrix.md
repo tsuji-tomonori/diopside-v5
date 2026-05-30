@@ -152,7 +152,7 @@
 | DDB-SCHEMA | DynamoDB | v0.4 item schema と key/GSI 設計。`ChannelRef`、`VideoMonthIndex`、`TagSummary` は read model として部分実装済み。 | `apps/shared/src/diopside_core/repository.py`, `README.md`, `docs/design/dynamodb-schema-audit.md` | `tests/test_repository_schema_contract.py`, `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_cloudformation_contract.py` | 監査済み・差分あり |
 | S3-PATH | S3 | raw/processed/public/export artifact path。 | `apps/workers/static-exporter/src/static_exporter/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_static_exporter.py`, `tests/test_core_pipeline.py` | 部分実装 |
 | CF-PATH | CloudFront | `/api/*`, `/data/*`, assets, SPA rewrite, OAC。 | `infra/cloudformation/diopside.yaml`, `README.md` | `tests/test_cloudformation_contract.py`, `tools/run-post-deploy-smoke.mjs` | 部分実装 |
-| IAC-CDK | IaC | AWS CDK を IaC 正本にする。 | なし。現 main は `infra/cloudformation/diopside.yaml` 中心 | なし | 差分あり |
+| IAC-CDK | IaC | AWS CDK を IaC 正本にする。 | `infra/cdk/bin/diopside-cdk.mjs`, `infra/cdk/README.md`, `cdk.json`, `infra/cloudformation/diopside.yaml`。現 CloudFormation を `CfnInclude` で synth する bootstrap 段階 | `tests/test_cdk_contract.py`, `tests/test_cloudformation_contract.py` | 部分実装 |
 | API-FASTAPI | Backend | FastAPI on Lambda を API 正本にする。 | `apps/api/src/diopside_api/fastapi_app.py`, `apps/api/src/diopside_api/openapi_contract.py`。現 deploy entrypoint は Python Lambda handler 中心 | `tests/test_openapi_contract.py` | 部分実装 |
 | WEB-NEXT | Frontend | Next.js static export + React client components。 | なし。現 main は `apps/web/public` の静的 SPA 中心 | `tools/run-local-e2e.mjs`, `tools/check-web-dom-safety.mjs` | 差分あり |
 | ADMIN-SESSION | Security | 管理 UI/API は HttpOnly cookie + CSRF で保護する。 | `apps/api/src/diopside_api/handler.py`, `apps/web/public/app.js` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 実装済 |
@@ -167,7 +167,7 @@
 
 | priority | branch 候補 | 対象 |
 |---|---|---|
-| P0 | `infra/cdk-parity` | `IAC-CDK` を差分ありから解消する。 |
+| P0 | `infra/cdk-parity` | CDK bootstrap は追加済み。L2 construct 分解、deploy runbook の CDK 基準化、実 deploy rehearsal を継続する。 |
 | P0 | `api/fastapi-v04-contract` | `API-FASTAPI` と API-001〜023 の未対応を解消する。 |
 | P0 | `web/next-static-export-v04` | `WEB-NEXT` を差分ありから解消する。 |
 | P0 | `admin/cookie-csrf-session` | `ADMIN-SESSION` と NFR-SEC-005 を v0.4 に寄せる。実装済。 |

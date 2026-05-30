@@ -1,0 +1,4 @@
+{
+  "app": "node infra/cdk/bin/diopside-cdk.mjs",
+  "output": "build/cdk.out"
+}
