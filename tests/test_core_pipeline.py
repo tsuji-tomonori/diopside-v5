@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -208,6 +209,40 @@ def test_replay_parser_normalizes_known_and_unknown_renderer():
     assert messages[0]["video_offset_time_msec"] == 83000
     assert messages[0]["message_runs"][1]["type"] == "emoji"
     assert messages[1]["parse_warning"] == "unknown_renderer"
+
+
+def test_replay_parser_golden_fixtures_cover_renderer_variants():
+    fixture_dir = Path("data/fixtures/replay-parser")
+    fixture = json.loads((fixture_dir / "golden-actions.json").read_text(encoding="utf-8"))
+    expected = json.loads((fixture_dir / "golden-expected.json").read_text(encoding="utf-8"))
+
+    messages = normalize_replay_actions(fixture["actions"], fixture["video_id"])
+
+    assert [_replay_projection(message) for message in messages] == expected["messages"]
+    for message in messages:
+        assert set(CHAT_MESSAGE_REQUIRED_KEYS) <= set(message)
+        assert message["source"] == "replay"
+        assert message["offset_msec"] == message["video_offset_time_msec"]
+
+
+def _replay_projection(message):
+    emoji_run = next((run for run in message["message_runs"] if run["type"] == "emoji"), None)
+    return {
+        "message_id": None if message["message_type"] == "unknown" else message["message_id"],
+        "message_type": message["message_type"],
+        "raw_renderer_type": message["raw_renderer_type"],
+        "offset_msec": message["offset_msec"],
+        "message_text": message["message_text"],
+        "run_types": [run["type"] for run in message["message_runs"]],
+        "emoji_id": emoji_run.get("emoji_id") if emoji_run else None,
+        "emoji_label": emoji_run.get("label") if emoji_run else None,
+        "is_custom_emoji": emoji_run.get("is_custom_emoji") if emoji_run else None,
+        "paid_amount_text": message["paid"]["amount_text"],
+        "sticker_emoji_id": message["sticker"]["emoji_id"] if message["sticker"] else None,
+        "sticker_alt_text": message["sticker"]["alt_text"] if message["sticker"] else None,
+        "parse_warning": message["parse_warning"],
+        "raw_renderer_id": message["raw_renderer"].get("id") if message["raw_renderer"] else None,
+    }
 
 
 def test_normalized_chat_message_schema_contract_for_live_and_replay_variants():

@@ -1,0 +1,139 @@
+{
+  "video_id": "golden-replay",
+  "actions": [
+    {
+      "replayChatItemAction": {
+        "videoOffsetTimeMsec": "120000",
+        "actions": [
+          {
+            "addChatItemAction": {
+              "item": {
+                "liveChatTextMessageRenderer": {
+                  "id": "text-1",
+                  "authorExternalChannelId": "author-text",
+                  "authorName": {"simpleText": "Text Alice"},
+                  "authorBadges": [{"liveChatAuthorBadgeRenderer": {"tooltip": "Member"}}],
+                  "timestampUsec": "1000",
+                  "timestampText": {"simpleText": "0:02"},
+                  "message": {
+                    "runs": [
+                      {"text": "hello "},
+                      {
+                        "emoji": {
+                          "emojiId": "emoji-wave",
+                          "shortcuts": [":wave:"],
+                          "isCustomEmoji": true,
+                          "image": {"accessibility": {"accessibilityData": {"label": "wave label"}}}
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "replayChatItemAction": {
+        "actions": [
+          {
+            "addChatItemAction": {
+              "item": {
+                "liveChatPaidMessageRenderer": {
+                  "id": "paid-1",
+                  "authorExternalChannelId": "author-paid",
+                  "authorName": {"simpleText": "Paid Bob"},
+                  "timestampUsec": "2000",
+                  "timestampText": {"simpleText": "0:03"},
+                  "videoOffsetTimeMsec": "125000",
+                  "purchaseAmountText": {"simpleText": "￥500"},
+                  "message": {"runs": [{"text": "super chat"}]}
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "replayChatItemAction": {
+        "videoOffsetTimeMsec": "130000",
+        "actions": [
+          {
+            "addChatItemAction": {
+              "item": {
+                "liveChatPaidStickerRenderer": {
+                  "id": "sticker-1",
+                  "authorExternalChannelId": "author-sticker",
+                  "authorName": {"simpleText": "Sticker Carol"},
+                  "timestampUsec": "3000",
+                  "timestampText": {"simpleText": "0:04"},
+                  "purchaseAmountText": {"simpleText": "$2.00"},
+                  "sticker": {
+                    "emojiId": "sticker-heart",
+                    "image": {
+                      "accessibility": {"accessibilityData": {"label": "heart sticker"}},
+                      "thumbnails": [{"url": "https://example.invalid/small.png"}, {"url": "https://example.invalid/large.png"}]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "replayChatItemAction": {
+        "videoOffsetTimeMsec": "135000",
+        "actions": [
+          {
+            "addLiveChatTickerItemAction": {
+              "item": {
+                "liveChatTickerPaidMessageItemRenderer": {
+                  "id": "ticker-paid-1",
+                  "authorExternalChannelId": "author-ticker",
+                  "authorName": {"simpleText": "Ticker Dan"},
+                  "timestampUsec": "4000",
+                  "timestampText": {"simpleText": "0:05"},
+                  "purchaseAmountText": {"simpleText": "CA$1.00"},
+                  "message": {"runs": [{"text": "ticker paid"}]}
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "replayChatItemAction": {
+        "videoOffsetTimeMsec": "140000",
+        "actions": [
+          {
+            "addChatItemAction": {
+              "item": {
+                "liveChatMembershipItemRenderer": {
+                  "id": "member-unknown",
+                  "authorExternalChannelId": "author-member"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "liveChatTextMessageRenderer": {
+        "id": "direct-text-1",
+        "authorExternalChannelId": "author-direct",
+        "authorName": {"simpleText": "Direct Eve"},
+        "timestampUsec": "5000",
+        "timestampText": {"simpleText": "0:06"},
+        "videoOffsetTimeMsec": "145000",
+        "message": {"runs": [{"text": "direct offset"}]}
+      }
+    }
+  ]
+}
