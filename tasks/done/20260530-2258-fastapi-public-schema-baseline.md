@@ -1,6 +1,6 @@
 # FastAPI public schema baseline
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -87,3 +87,9 @@
 
 - FastAPI response_model を直接使うため、既存 response shape と model 定義にずれがあると runtime validation error になる。
 - 今回は health/config の baseline であり、全 API の schema 化には追加作業が必要。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583044263
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583044561
