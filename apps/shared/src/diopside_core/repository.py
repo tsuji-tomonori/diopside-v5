@@ -249,11 +249,118 @@ def normalize_item_metadata(item: dict[str, Any], existing: dict[str, Any] | Non
     return normalized
 
 
+JOB_STATE_BY_EVENT_TYPE = {
+    "queued": "queued",
+    "started": "running",
+    "completed": "succeeded",
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "retry_requested": "retryable",
+    "retry_scheduled": "retryable",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+}
+
+
+def job_event_name(event_type: str) -> str:
+    if "." in event_type:
+        return event_type
+    aliases = {
+        "completed": "succeeded",
+        "cancelled": "canceled",
+    }
+    return f"job.{aliases.get(event_type, event_type)}"
+
+
+def job_state_after(event_type: str) -> str:
+    short_name = event_type.rsplit(".", 1)[-1]
+    return JOB_STATE_BY_EVENT_TYPE.get(short_name, short_name)
+
+
+def job_event_sort_key(item: dict[str, Any]) -> tuple[str, int, str]:
+    occurred_at = item.get("occurred_at") or item.get("created_at", "")
+    seq = item.get("seq")
+    if isinstance(seq, int):
+        return (occurred_at, seq, item.get("sk", ""))
+    sk = item.get("sk", "")
+    if sk.startswith("EVT#"):
+        try:
+            return (occurred_at, int(sk.removeprefix("EVT#")), sk)
+        except ValueError:
+            pass
+    return (occurred_at, 0, sk)
+
+
+def next_job_event_seq(events: list[dict[str, Any]]) -> int:
+    seqs: list[int] = []
+    for item in events:
+        seq = item.get("seq")
+        if isinstance(seq, int):
+            seqs.append(seq)
+            continue
+        sk = item.get("sk", "")
+        if sk.startswith("EVT#"):
+            try:
+                seqs.append(int(sk.removeprefix("EVT#")))
+            except ValueError:
+                continue
+    return (max(seqs) + 1) if seqs else 1
+
+
+def job_event_item(job_id: str, event_type: str, details: dict[str, Any] | None, seq: int) -> dict[str, Any]:
+    stamp = now_iso()
+    payload = details or {}
+    state_after = job_state_after(event_type)
+    return {
+        "item_type": "JobEvent",
+        "pk": f"JOB#{job_id}",
+        "sk": f"EVT#{seq:08d}",
+        "job_id": job_id,
+        "seq": seq,
+        "event_name": job_event_name(event_type),
+        "state_after": state_after,
+        "occurred_at": stamp,
+        "payload": payload,
+        "event_type": event_type,
+        "details": payload,
+        "created_at": stamp,
+    }
+
+
 def derive_job_state(events: list[dict[str, Any]]) -> str:
     if not events:
         return "queued"
-    terminal = {"completed": "succeeded", "failed": "failed", "cancelled": "cancelled"}
-    return terminal.get(events[-1]["event_type"], events[-1]["event_type"])
+    latest = sorted(events, key=job_event_sort_key)[-1]
+    state_after = latest.get("state_after")
+    if state_after:
+        return str(state_after)
+    return job_state_after(str(latest.get("event_type") or latest.get("event_name") or "queued"))
+
+
+def normalize_job_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in events:
+        event = deepcopy(item)
+        event_type = str(event.get("event_type") or event.get("event_name", "").rsplit(".", 1)[-1] or "queued")
+        if "event_name" not in event:
+            event["event_name"] = job_event_name(event_type)
+        if "state_after" not in event:
+            event["state_after"] = job_state_after(event_type)
+        if "payload" not in event:
+            event["payload"] = deepcopy(event.get("details", {}))
+        if "details" not in event:
+            event["details"] = deepcopy(event.get("payload", {}))
+        if "event_type" not in event:
+            event["event_type"] = event_type
+        if "occurred_at" not in event:
+            event["occurred_at"] = event.get("created_at")
+        normalized.append(event)
+    normalized.sort(key=job_event_sort_key)
+    return normalized
+
+
+def job_events_for_job(items: list[dict[str, Any]], job_id: str) -> list[dict[str, Any]]:
+    return [item for item in items if item.get("pk") == f"JOB#{job_id}" and item.get("item_type") == "JobEvent"]
 
 
 class Repository(Protocol):
@@ -552,8 +659,7 @@ class MemoryRepository:
         job = self.get_item(f"JOB#{job_id}", "META")
         if not job:
             return None
-        events = [item for (pk, _), item in self.items.items() if pk == f"JOB#{job_id}" and item.get("item_type") == "JobEvent"]
-        events.sort(key=lambda item: item["created_at"])
+        events = normalize_job_events(job_events_for_job(list(self.items.values()), job_id))
         job["events"] = deepcopy(events)
         job["derived_state"] = derive_job_state(events)
         return job
@@ -565,8 +671,8 @@ class MemoryRepository:
         return deepcopy(present[:limit])
 
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
-        stamp = now_iso()
-        return self.put_item({"item_type": "JobEvent", "pk": f"JOB#{job_id}", "sk": f"EVENT#{stamp}#{uuid.uuid4().hex}", "job_id": job_id, "event_type": event_type, "details": details or {}, "created_at": stamp})
+        events = job_events_for_job(list(self.items.values()), job_id)
+        return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
 
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
         chunks = [item for (pk, _), item in self.items.items() if pk == f"VIDEO#{video_id}" and item.get("item_type") == "ChatMessageChunkManifest"]
@@ -688,11 +794,17 @@ class DynamoRepository(MemoryRepository):
         if Key is None:
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
         response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
-        events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
-        events.sort(key=lambda item: item["created_at"])
+        events = normalize_job_events([item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"])
         job["events"] = deepcopy(events)
         job["derived_state"] = derive_job_state(events)
         return job
+
+    def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
+        events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
+        return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
 
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]:
         if Key is None:

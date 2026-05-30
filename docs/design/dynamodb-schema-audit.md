@@ -25,7 +25,7 @@
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
 | `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存 | 部分実装 | 管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
 | `Job` | `JOB#{job_id}` / `META` | `create_job` が同 key を保存 | 部分実装 | `dedupe_key` ではなく `idempotency_key`、`latest_state` ではなく `derived_state` |
-| `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` は `EVENT#{time}#{uuid}` | 差分あり | seq / event_name / state_after ではなく event_type/details |
+| `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` が `EVT#{seq}` と `event_name` / `state_after` / `occurred_at` / `payload` を保存。`event_type` / `details` は互換 alias として保持 | 部分実装 | 既存 `EVENT#...` item の backfill、同一 job への高並列 append 時の条件付き seq 採番は未対応 |
 | `Lock` | `LOCK#{lock_key}` / `META` | `ITEM_TYPES` で許可 | 部分実装 | 取得/解放 helper と TTL contract は未実装 |
 | `Idempotency` | `IDEMP#{dedupe_key}` / `META` | Memory は `idempotency_index`、DynamoDB は Job conditional put | 差分あり | 独立 item は未保存 |
 | `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 部分実装 | call record 互換は維持。quota threshold warning event は未実装 |
@@ -39,7 +39,7 @@
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
-- `JobEvent` は append-only item として保存され、現在状態は保存値ではなく末尾 event から導出する。
+- `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
 - `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、call record 一覧には混在させない。
 - チャット本文、raw response、大きな集計・成果物本体は DynamoDB に保存せず、S3 URI / public path / summary のみを保持する。
 
@@ -48,5 +48,5 @@
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
 2. item type ごとの詳細 `schema_version` 命名と既存 DynamoDB data の common metadata backfill 方針を決める。
 3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済みだが、rebuild/backfill/API表示は後続で扱う。
-4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
+4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せた。後続で既存 `EVENT#...` item の backfill と高並列 append 時の条件付き seq 採番を設計する。
 5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。

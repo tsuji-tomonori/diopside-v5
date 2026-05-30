@@ -101,7 +101,53 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert job["pk"] == f"JOB#{job['job_id']}"
     assert job["gsi3pk"] == "JOB#ALL"
     assert deduplicated is False
-    assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
+    assert repo.get_job(job["job_id"])["events"][0]["event_name"] == "job.queued"
+
+
+def test_repository_writes_job_events_with_v04_shape_and_legacy_aliases():
+    repo = MemoryRepository()
+    job, _ = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")
+    started = repo.append_job_event(job["job_id"], "started", {"worker": "static-exporter"})
+    completed = repo.append_job_event(job["job_id"], "completed", {"saved_count": 3})
+    detail = repo.get_job(job["job_id"])
+
+    assert started["item_type"] == "JobEvent"
+    assert started["pk"] == f"JOB#{job['job_id']}"
+    assert started["sk"] == "EVT#00000002"
+    assert started["seq"] == 2
+    assert started["event_name"] == "job.started"
+    assert started["state_after"] == "running"
+    assert started["occurred_at"]
+    assert started["payload"] == {"worker": "static-exporter"}
+    assert started["event_type"] == "started"
+    assert started["details"] == {"worker": "static-exporter"}
+    assert completed["sk"] == "EVT#00000003"
+    assert completed["event_name"] == "job.succeeded"
+    assert completed["state_after"] == "succeeded"
+    assert detail["derived_state"] == "succeeded"
+    assert [event["seq"] for event in detail["events"]] == [1, 2, 3]
+
+
+def test_repository_derives_job_state_from_legacy_job_event_shape():
+    repo = MemoryRepository()
+    job, _ = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:legacy")
+    repo.put_item(
+        {
+            "item_type": "JobEvent",
+            "pk": f"JOB#{job['job_id']}",
+            "sk": "EVENT#2099-01-01T00:00:00Z#legacy",
+            "job_id": job["job_id"],
+            "event_type": "failed",
+            "details": {"message": "boom"},
+            "created_at": "2099-01-01T00:00:00Z",
+        }
+    )
+    detail = repo.get_job(job["job_id"])
+
+    assert detail["derived_state"] == "failed"
+    assert detail["events"][-1]["event_name"] == "job.failed"
+    assert detail["events"][-1]["state_after"] == "failed"
+    assert detail["events"][-1]["payload"] == {"message": "boom"}
 
 
 def test_repository_adds_common_item_metadata_and_preserves_created_at():
