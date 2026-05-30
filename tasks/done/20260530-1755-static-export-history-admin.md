@@ -1,6 +1,6 @@
 # StaticExport history admin view
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -61,3 +61,30 @@ README の API/UI 説明、`docs/design/traceability-matrix.md`、`docs/design/d
 - 本番 UI に固定 export 履歴を表示せず、API items または empty/error state だけを表示すること。
 - local fixture seed が本番 handler に入らないこと。
 - 返却 field に不要な secret が含まれないこと。
+
+## 完了結果
+
+- `GET /api/admin/static-exports` を追加し、`admin-static-export-list/v1` で StaticExport 履歴を返すようにした。
+- 管理 UI から static export 履歴を読み込み、export version、publish state、件数、manifest URI、content hash を表示できるようにした。
+- local fixture mode の API server で fixture manifest 由来の `StaticExport` item を seed し、local e2e で表示確認した。
+- README、OpenAPI contract、docs consistency、DDB audit、audit report、作業レポートを更新した。
+- 作業レポート: `reports/working/20260530-1755-static-export-history-admin.md`
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582326065
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582326066
+
+## 検証結果
+
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m pytest tests/test_api_handler.py::test_admin_static_export_history_returns_visible_fields`: pass
+- `node --check apps/web/public/app.js`: pass
+- `python3 -m py_compile apps/api/src/diopside_api/handler.py apps/api/src/diopside_api/local_server.py apps/api/src/diopside_api/openapi_contract.py`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `node tools/check-web-dom-safety.mjs`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m diopside_api.openapi_contract`: pass
+- `npm run e2e:local`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（135 tests + build/package/local e2e）
+
+## 未実施・制約
+
+- 実 AWS 環境での履歴表示は未実施。理由: dev/prod DynamoDB の既存履歴データ確認を伴うため、環境指定後に実施する。
+- 既存 StaticExport item の backfill と過去 export の `superseded` 更新は後続対象。
