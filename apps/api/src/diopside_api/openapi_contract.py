@@ -70,8 +70,16 @@ def build_openapi_contract() -> dict[str, Any]:
             response_schema = {"$ref": "#/components/schemas/PublicHomeResponse"}
         elif route.design_id == "API-004":
             response_schema = {"$ref": "#/components/schemas/PublicVideoListResponse"}
+        elif route.design_id == "API-005":
+            response_schema = {"$ref": "#/components/schemas/PublicVideoDetailResponse"}
         elif route.design_id == "API-006":
             response_schema = {"$ref": "#/components/schemas/PublicTagListResponse"}
+        elif route.design_id == "API-007":
+            response_schema = {"$ref": "#/components/schemas/PublicArchiveCalendarResponse"}
+        elif route.design_id == "API-008":
+            response_schema = {"$ref": "#/components/schemas/PublicRandomVideosResponse"}
+        elif route.design_id == "API-009":
+            response_schema = {"$ref": "#/components/schemas/PublicVideoArtifactsResponse"}
         operation: dict[str, Any] = {
             "operationId": operation_id(route),
             "summary": route.summary,
@@ -211,6 +219,104 @@ def build_openapi_contract() -> dict[str, Any]:
                         "schema_version": {"const": "public-tag-list/v1"},
                         "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicTagItem"}},
                         "generated_at": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                },
+                "PublicVideoDetailVideo": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["video_id", "title"],
+                    "properties": {
+                        "video_id": {"type": "string"},
+                        "youtube_url": {"type": ["string", "null"]},
+                        "title": {"type": "string"},
+                        "description": {"type": ["string", "null"]},
+                        "published_at": {"type": ["string", "null"], "format": "date-time"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+                "PublicVideoDetailResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "video"],
+                    "properties": {
+                        "schema_version": {"const": "public-video-detail/v1"},
+                        "video": {"$ref": "#/components/schemas/PublicVideoDetailVideo"},
+                        "chat_summary": {"type": "object", "additionalProperties": True},
+                        "artifacts": {"type": ["object", "null"], "additionalProperties": True},
+                        "timestamps": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                    },
+                },
+                "ArchiveYearItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["year", "video_count"],
+                    "properties": {
+                        "year": {"type": "integer"},
+                        "video_count": {"type": "integer"},
+                    },
+                },
+                "ArchiveMonthItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["month", "video_count"],
+                    "properties": {
+                        "year": {"type": ["integer", "null"]},
+                        "month": {"type": "integer"},
+                        "video_count": {"type": "integer"},
+                    },
+                },
+                "ArchiveDayItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["date", "video_count"],
+                    "properties": {
+                        "date": {"type": "string"},
+                        "video_count": {"type": "integer"},
+                        "video_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+                "PublicArchiveCalendarResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "generated_at", "months"],
+                    "properties": {
+                        "schema_version": {"const": "public-archive-calendar/v1"},
+                        "generated_at": {"type": "string", "format": "date-time"},
+                        "years": {"type": ["array", "null"], "items": {"$ref": "#/components/schemas/ArchiveYearItem"}},
+                        "year": {"type": ["string", "null"]},
+                        "months": {"type": "array", "items": {"$ref": "#/components/schemas/ArchiveMonthItem"}},
+                        "days": {"type": ["array", "null"], "items": {"$ref": "#/components/schemas/ArchiveDayItem"}},
+                    },
+                },
+                "PublicRandomVideosResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items", "seed", "generated_at"],
+                    "properties": {
+                        "schema_version": {"const": "public-random-videos/v1"},
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicVideoListItem"}},
+                        "seed": {"type": "string"},
+                        "generated_at": {"type": "string", "format": "date-time"},
+                    },
+                },
+                "PublicVideoArtifactItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["artifact_type"],
+                    "properties": {
+                        "artifact_type": {"type": "string"},
+                        "public_url_path": {"type": ["string", "null"]},
+                        "available": {"type": ["boolean", "null"]},
+                    },
+                },
+                "PublicVideoArtifactsResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "video_id", "items"],
+                    "properties": {
+                        "schema_version": {"const": "public-video-artifacts/v1"},
+                        "video_id": {"type": "string"},
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicVideoArtifactItem"}},
                     },
                 },
             },

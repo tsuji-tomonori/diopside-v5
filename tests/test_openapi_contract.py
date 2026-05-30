@@ -28,6 +28,10 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["paths"]["/api/home"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicHomeResponse"}
     assert spec["paths"]["/api/videos"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicVideoListResponse"}
     assert spec["paths"]["/api/tags"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicTagListResponse"}
+    assert spec["paths"]["/api/videos/{video_id}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicVideoDetailResponse"}
+    assert spec["paths"]["/api/archive-calendar"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicArchiveCalendarResponse"}
+    assert spec["paths"]["/api/random-videos"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicRandomVideosResponse"}
+    assert spec["paths"]["/api/videos/{video_id}/artifacts"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicVideoArtifactsResponse"}
     assert spec["paths"]["/api/videos/{video_id}"]["get"]["x-schema-version"] == "public-video-detail/v1"
     assert spec["paths"]["/api/admin/jobs/{job_id}/cancel"]["post"]["x-design-id"] == "API-019"
     assert spec["paths"]["/api/admin/channels/{channel_id}"]["put"]["x-schema-version"] == "admin-channel-config/v1"
@@ -38,6 +42,10 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["components"]["schemas"]["PublicHomeResponse"]["properties"]["latest_videos"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
     assert spec["components"]["schemas"]["PublicVideoListResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
     assert spec["components"]["schemas"]["PublicTagListResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicTagItem"}
+    assert spec["components"]["schemas"]["PublicVideoDetailResponse"]["properties"]["video"] == {"$ref": "#/components/schemas/PublicVideoDetailVideo"}
+    assert spec["components"]["schemas"]["PublicArchiveCalendarResponse"]["properties"]["months"]["items"] == {"$ref": "#/components/schemas/ArchiveMonthItem"}
+    assert spec["components"]["schemas"]["PublicRandomVideosResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
+    assert spec["components"]["schemas"]["PublicVideoArtifactsResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoArtifactItem"}
 
 
 def test_openapi_contract_routes_are_documented_and_present_in_lambda_handler_source():

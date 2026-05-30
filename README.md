@@ -144,7 +144,7 @@ Lambda の実行 role は職務ごとに分離します。
 ## 実装済み API と schema
 
 `apps/api/src/diopside_api/handler.py` が現在実装している API route は次の通りです。`tools/check-docs-consistency.mjs` はこの表と実装済み schema_version の対応を `npm test` で検証します。
-`apps/api/src/diopside_api/openapi_contract.py` は API-001〜023 と追加管理 route の OpenAPI 3.1 contract を依存なしで生成します。`apps/api/src/diopside_api/fastapi_app.py` は FastAPI adapter として既存 `lambda_handler` へ委譲します。deploy package は `requirements-api.txt` の FastAPI / Mangum 依存を `api.zip` に同梱し、Lambda entrypoint は `diopside_api.fastapi_lambda.lambda_handler` を使います。`GET /api/health`、`GET /api/config`、`GET /api/home`、`GET /api/videos`、`GET /api/tags` は FastAPI native route + Pydantic response model の baseline に対応済みです。残 API の Pydantic request / response schema 定義は後続対象です。
+`apps/api/src/diopside_api/openapi_contract.py` は API-001〜023 と追加管理 route の OpenAPI 3.1 contract を依存なしで生成します。`apps/api/src/diopside_api/fastapi_app.py` は FastAPI adapter として既存 `lambda_handler` へ委譲します。deploy package は `requirements-api.txt` の FastAPI / Mangum 依存を `api.zip` に同梱し、Lambda entrypoint は `diopside_api.fastapi_lambda.lambda_handler` を使います。public GET API の API-001〜009 は FastAPI native route + Pydantic response model の baseline に対応済みです。管理 API と追加 admin route の Pydantic request / response schema 定義は後続対象です。
 
 | API | schema_version | 内容 |
 |---|---|---|

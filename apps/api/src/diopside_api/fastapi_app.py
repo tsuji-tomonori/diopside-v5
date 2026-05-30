@@ -71,6 +71,68 @@ def create_app() -> Any:
         items: list[PublicTagItem]
         generated_at: str | None = None
 
+    class PublicVideoDetailVideo(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        video_id: str
+        title: str
+        youtube_url: str | None = None
+        description: str | None = None
+        published_at: str | None = None
+        tags: list[str] = []
+
+    class PublicVideoDetailResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        video: PublicVideoDetailVideo
+        chat_summary: dict[str, Any] = {}
+        artifacts: dict[str, Any] | None = None
+        timestamps: list[dict[str, Any]] = []
+
+    class ArchiveYearItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        year: int
+        video_count: int
+
+    class ArchiveMonthItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        month: int
+        video_count: int
+        year: int | None = None
+
+    class ArchiveDayItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        date: str
+        video_count: int
+        video_ids: list[str] = []
+
+    class PublicArchiveCalendarResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        generated_at: str
+        years: list[ArchiveYearItem] | None = None
+        year: str | None = None
+        months: list[ArchiveMonthItem]
+        days: list[ArchiveDayItem] | None = None
+
+    class PublicRandomVideosResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        items: list[PublicVideoListItem]
+        seed: str
+        generated_at: str
+
+    class PublicVideoArtifactItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        artifact_type: str
+        public_url_path: str | None = None
+        available: bool | None = None
+
+    class PublicVideoArtifactsResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        video_id: str
+        items: list[PublicVideoArtifactItem]
+
     app = FastAPI(title="diopside API", version="v0.4-contract")
 
     def custom_openapi() -> dict[str, Any]:
@@ -93,11 +155,27 @@ def create_app() -> Any:
     async def tags(request: Any) -> PublicTagListResponse:
         return PublicTagListResponse.model_validate(await _invoke_lambda_json(request, "GET"))
 
+    async def video_detail(request: Any) -> PublicVideoDetailResponse:
+        return PublicVideoDetailResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
+    async def archive_calendar(request: Any) -> PublicArchiveCalendarResponse:
+        return PublicArchiveCalendarResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
+    async def random_videos(request: Any) -> PublicRandomVideosResponse:
+        return PublicRandomVideosResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
+    async def video_artifacts(request: Any) -> PublicVideoArtifactsResponse:
+        return PublicVideoArtifactsResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
     _set_request_signature(health, Request)
     _set_request_signature(config, Request)
     _set_request_signature(home, Request)
     _set_request_signature(videos, Request)
     _set_request_signature(tags, Request)
+    _set_request_signature(video_detail, Request)
+    _set_request_signature(archive_calendar, Request)
+    _set_request_signature(random_videos, Request)
+    _set_request_signature(video_artifacts, Request)
 
     app.add_api_route(
         "/api/health",
@@ -139,8 +217,50 @@ def create_app() -> Any:
         operation_id="get_api_006",
         response_model=PublicTagListResponse,
     )
+    app.add_api_route(
+        "/api/videos/{video_id}",
+        video_detail,
+        methods=["GET"],
+        summary="動画詳細 API",
+        operation_id="get_api_005",
+        response_model=PublicVideoDetailResponse,
+    )
+    app.add_api_route(
+        "/api/archive-calendar",
+        archive_calendar,
+        methods=["GET"],
+        summary="年/月別アーカイブ API",
+        operation_id="get_api_007",
+        response_model=PublicArchiveCalendarResponse,
+    )
+    app.add_api_route(
+        "/api/random-videos",
+        random_videos,
+        methods=["GET"],
+        summary="ランダム動画 API",
+        operation_id="get_api_008",
+        response_model=PublicRandomVideosResponse,
+    )
+    app.add_api_route(
+        "/api/videos/{video_id}/artifacts",
+        video_artifacts,
+        methods=["GET"],
+        summary="動画成果物一覧 API",
+        operation_id="get_api_009",
+        response_model=PublicVideoArtifactsResponse,
+    )
 
-    native_paths = {("GET", "/api/health"), ("GET", "/api/config"), ("GET", "/api/home"), ("GET", "/api/videos"), ("GET", "/api/tags")}
+    native_paths = {
+        ("GET", "/api/health"),
+        ("GET", "/api/config"),
+        ("GET", "/api/home"),
+        ("GET", "/api/videos"),
+        ("GET", "/api/tags"),
+        ("GET", "/api/videos/{video_id}"),
+        ("GET", "/api/archive-calendar"),
+        ("GET", "/api/random-videos"),
+        ("GET", "/api/videos/{video_id}/artifacts"),
+    }
     for route in all_route_contracts():
         if (route.method, route.path) in native_paths:
             continue
