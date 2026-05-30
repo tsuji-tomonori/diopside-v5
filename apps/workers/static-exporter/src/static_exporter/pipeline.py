@@ -14,6 +14,7 @@ from diopside_core import (
     DynamoRepository,
     MemoryRepository,
     YouTubeClient,
+    build_job_message,
     build_timestamp_candidates,
     extract_initial_data_from_watch_html,
     extract_replay_actions_from_initial_data,
@@ -74,8 +75,9 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
     job_type = payload.get("job_type")
     job_id = payload.get("job_id", "manual")
-    trace_id = payload.get("trace_id") or payload.get("input", {}).get("trace_id") or f"trc_{uuid.uuid4().hex}"
-    params = {**payload.get("input", payload), "job_id": job_id}
+    message_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload.get("input", payload)
+    trace_id = payload.get("trace_id") or message_payload.get("trace_id") or f"trc_{uuid.uuid4().hex}"
+    params = {**message_payload, "job_id": job_id}
     repo.append_job_event(job_id, "started", {"job_type": job_type})
     try:
         if job_type == "metadata_sync":
@@ -166,16 +168,18 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         if playlist_next_page_token:
             enqueued_next_page = _enqueue_job(
                 "DIOPSIDE_METADATA_QUEUE_URL",
-                {
-                    "job_type": "metadata_sync",
-                    "job_id": f"manual-metadata-{channel_id}",
-                    "input": {
+                build_job_message(
+                    "metadata_sync",
+                    f"manual-metadata-{channel_id}",
+                    {
                         "channel_id": channel_id,
                         "uploads_playlist_id": channel["uploads_playlist_id"],
                         "page_token": playlist_next_page_token,
                         "max_results": int(params.get("max_results", 50)),
                     },
-                },
+                    requested_by="worker",
+                    trace_id=params.get("trace_id"),
+                ),
             )
     saved = []
     for resource in resources:
@@ -263,30 +267,45 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
                     "actual_start_time": video.get("actual_start_time"),
                     "actual_end_time": video.get("actual_end_time"),
                 },
-            )
+        )
         if video["live_state"] == "live" and video.get("live_chat_id"):
-            enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
+            enqueued.append(
+                _enqueue_job(
+                    "DIOPSIDE_CHAT_QUEUE_URL",
+                    build_job_message(
+                        "chat_collect",
+                        f"manual-live-{video['video_id']}",
+                        {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]},
+                        requested_by="worker",
+                        trace_id=params.get("trace_id"),
+                    ),
+                )
+            )
         if video["live_state"] == "upcoming" and video.get("scheduled_start_time"):
             notification_plan_video_ids.append(video["video_id"])
             enqueued.append(
                 _enqueue_job(
                     "DIOPSIDE_AGGREGATE_QUEUE_URL",
-                    {
-                        "job_type": "notification_plan",
-                        "job_id": f"manual-notification-plan-{video['video_id']}",
-                        "input": {"video_id": video["video_id"], "scheduled_start_time": video["scheduled_start_time"], "requested_by": "live_status_scan"},
-                    },
+                    build_job_message(
+                        "notification_plan",
+                        f"manual-notification-plan-{video['video_id']}",
+                        {"video_id": video["video_id"], "scheduled_start_time": video["scheduled_start_time"], "requested_by": "live_status_scan"},
+                        requested_by="worker",
+                        trace_id=params.get("trace_id"),
+                    ),
                 )
             )
         if before in {"upcoming", "live"} and video["live_state"] == "archived":
             enqueued.append(
                 _enqueue_job(
                     "DIOPSIDE_AGGREGATE_QUEUE_URL",
-                    {
-                        "job_type": "archive_finalize",
-                        "job_id": f"manual-archive-finalize-{video['video_id']}",
-                        "input": {"video_id": video["video_id"], "requested_by": "live_status_scan"},
-                    },
+                    build_job_message(
+                        "archive_finalize",
+                        f"manual-archive-finalize-{video['video_id']}",
+                        {"video_id": video["video_id"], "requested_by": "live_status_scan"},
+                        requested_by="worker",
+                        trace_id=params.get("trace_id"),
+                    ),
                 )
             )
     return {
@@ -381,11 +400,13 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         if action == "requeue":
             _enqueue_job(
                 "DIOPSIDE_CHAT_QUEUE_URL",
-                {
-                    "job_type": "chat_collect",
-                    "job_id": f"manual-live-{video_id}",
-                    "input": {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_page_token},
-                },
+                build_job_message(
+                    "chat_collect",
+                    f"manual-live-{video_id}",
+                    {"video_id": video_id, "mode": "live", "live_chat_id": video.get("live_chat_id") or params.get("live_chat_id"), "page_token": next_page_token},
+                    requested_by="worker",
+                    trace_id=params.get("trace_id"),
+                ),
                 delay_seconds=requeue_delay_seconds,
             )
     raw_key = f"raw/youtube/chat/video_id={video_id}/source={source}/{now_iso()}.jsonl"
@@ -489,7 +510,15 @@ def retry_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     queue_env = _queue_env_for_job_type(target["job_type"])
     enqueued = _enqueue_job(
         queue_env,
-        {"job_type": target["job_type"], "job_id": target_job_id, "input": target.get("payload", {}), "retry_of": target_job_id},
+        build_job_message(
+            target["job_type"],
+            target_job_id,
+            {**target.get("payload", {}), "retry_of": target_job_id},
+            idempotency_key=target.get("idempotency_key") or target.get("dedupe_key"),
+            requested_by="worker",
+            attempt=int(target.get("attempt", 0)) + 1,
+            trace_id=params.get("trace_id"),
+        ),
     )
     return {"target_job_id": target_job_id, "target_job_type": target["job_type"], "enqueued": bool(enqueued)}
 
@@ -619,19 +648,23 @@ def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     archive_plan = _put_notification_plan(repo, video_id, "archive_available", params.get("due_at") or finalized_at, source_job_id=job_id)
     replay_enqueued = _enqueue_job(
         "DIOPSIDE_CHAT_QUEUE_URL",
-        {
-            "job_type": "chat_collect",
-            "job_id": f"manual-replay-{video_id}",
-            "input": {"video_id": video_id, "mode": "replay", "requested_by": "archive_finalize"},
-        },
+        build_job_message(
+            "chat_collect",
+            f"manual-replay-{video_id}",
+            {"video_id": video_id, "mode": "replay", "requested_by": "archive_finalize"},
+            requested_by="worker",
+            trace_id=params.get("trace_id"),
+        ),
     )
     export_enqueued = _enqueue_job(
         "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
-        {
-            "job_type": "static_export",
-            "job_id": f"manual-static-export-{video_id}",
-            "input": {"scope": "video", "video_id": video_id, "requested_by": "archive_finalize"},
-        },
+        build_job_message(
+            "static_export",
+            f"manual-static-export-{video_id}",
+            {"scope": "video", "video_id": video_id, "requested_by": "archive_finalize"},
+            requested_by="worker",
+            trace_id=params.get("trace_id"),
+        ),
     )
     return {
         "video_id": video_id,
@@ -947,7 +980,18 @@ def _enqueue_job(queue_env: str, payload: dict[str, Any], delay_seconds: int = 0
         return None
     import boto3
 
-    args: dict[str, Any] = {"QueueUrl": queue_url, "MessageBody": json.dumps(payload, ensure_ascii=False)}
+    message = payload
+    if "payload" not in message and message.get("job_type") and message.get("job_id"):
+        message = build_job_message(
+            str(message["job_type"]),
+            str(message["job_id"]),
+            message.get("input", message),
+            idempotency_key=message.get("idempotency_key"),
+            requested_by=str(message.get("requested_by") or "worker"),
+            attempt=message.get("attempt"),
+            trace_id=message.get("trace_id"),
+        )
+    args: dict[str, Any] = {"QueueUrl": queue_url, "MessageBody": json.dumps(message, ensure_ascii=False)}
     if delay_seconds:
         args["DelaySeconds"] = delay_seconds
     boto3.client("sqs").send_message(**args)

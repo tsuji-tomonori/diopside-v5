@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from http.cookies import CookieError, SimpleCookie
 from typing import Any
 
-from diopside_core import DynamoRepository, MemoryRepository, now_iso
+from diopside_core import DynamoRepository, MemoryRepository, build_job_message, now_iso
 
 try:
     import boto3
@@ -511,7 +511,18 @@ def _start_job(request: Request, trace_id: str, admin_auth: AdminAuth) -> dict[s
     job_id = job["job_id"]
     queue_url = _queue_urls().get(job_type)
     if queue_url:
-        _enqueue(queue_url, {"job_id": job_id, "job_type": job_type, "input": body, "trace_id": trace_id})
+        _enqueue(
+            queue_url,
+            build_job_message(
+                job_type,
+                job_id,
+                body,
+                idempotency_key=idempotency_key,
+                requested_by="admin",
+                attempt=int(job.get("attempt", 0)),
+                trace_id=trace_id,
+            ),
+        )
         dry_run = False
     elif os.environ.get("DIOPSIDE_ALLOW_DRY_RUN_JOBS") == "true":
         dry_run = True
@@ -520,6 +531,7 @@ def _start_job(request: Request, trace_id: str, admin_auth: AdminAuth) -> dict[s
     return {
         "job_id": job_id,
         "job_type": job_type,
+        "latest_state": "queued",
         "derived_state": "queued",
         "deduplicated": deduplicated,
         "accepted_at": _now(),

@@ -194,7 +194,8 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
     assert all(item["video_count"] == 2 for item in usage)
     assert all(item["job_id"] == "job-meta" for item in usage)
     assert enqueued[0]["queue_env"] == "DIOPSIDE_METADATA_QUEUE_URL"
-    assert enqueued[0]["payload"]["input"]["page_token"] == "next-token"
+    assert enqueued[0]["payload"]["requested_by"] == "worker"
+    assert enqueued[0]["payload"]["payload"]["page_token"] == "next-token"
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/playlistItems").glob("*.json"))
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/videos").glob("*.json"))
 
@@ -257,7 +258,7 @@ def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
     assert result["enqueue_archive_finalize"] == ["vid-live"]
     assert enqueued[0]["queue_env"] == "DIOPSIDE_AGGREGATE_QUEUE_URL"
     assert enqueued[0]["payload"]["job_type"] == "archive_finalize"
-    assert enqueued[0]["payload"]["input"]["video_id"] == "vid-live"
+    assert enqueued[0]["payload"]["payload"]["video_id"] == "vid-live"
 
 
 def test_live_status_scan_enqueues_notification_plan_for_upcoming_video(monkeypatch):
@@ -284,7 +285,11 @@ def test_live_status_scan_enqueues_notification_plan_for_upcoming_video(monkeypa
             "payload": {
                 "job_type": "notification_plan",
                 "job_id": "manual-notification-plan-vid-upcoming",
-                "input": {
+                "idempotency_key": "notification_plan:manual-notification-plan-vid-upcoming",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {
                     "video_id": "vid-upcoming",
                     "scheduled_start_time": "2026-05-30T12:00:00Z",
                     "requested_by": "live_status_scan",
@@ -572,7 +577,7 @@ def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
     assert result["next_poll"]["requeue_delay_seconds"] == 900
     assert enqueued[0]["queue_env"] == "DIOPSIDE_CHAT_QUEUE_URL"
     assert enqueued[0]["delay_seconds"] == 900
-    assert enqueued[0]["payload"]["input"]["page_token"] == "next-live-token"
+    assert enqueued[0]["payload"]["payload"]["page_token"] == "next-live-token"
     assert chunks[0]["next_poll"]["action"] == "requeue"
     assert chunks[0]["item_type"] == "ChatPageManifest"
     assert chunks[0]["pk"] == "VID#live001"
@@ -869,7 +874,11 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
             "payload": {
                 "job_type": "chat_collect",
                 "job_id": "manual-live-live-int",
-                "input": {"video_id": "live-int", "mode": "live", "live_chat_id": "chat-int"},
+                "idempotency_key": "chat_collect:manual-live-live-int",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {"video_id": "live-int", "mode": "live", "live_chat_id": "chat-int"},
             },
             "delay_seconds": 0,
         }
@@ -1226,9 +1235,9 @@ def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monk
     assert quota["job_id"] == "job-finalize"
     assert [item["queue_env"] for item in enqueued] == ["DIOPSIDE_CHAT_QUEUE_URL", "DIOPSIDE_STATIC_EXPORT_QUEUE_URL"]
     assert enqueued[0]["payload"]["job_type"] == "chat_collect"
-    assert enqueued[0]["payload"]["input"]["mode"] == "replay"
+    assert enqueued[0]["payload"]["payload"]["mode"] == "replay"
     assert enqueued[1]["payload"]["job_type"] == "static_export"
-    assert enqueued[1]["payload"]["input"]["scope"] == "video"
+    assert enqueued[1]["payload"]["payload"]["scope"] == "video"
 
 
 def test_notification_plan_creates_due_items_idempotently():
@@ -1271,6 +1280,28 @@ def test_dispatch_job_supports_scheduled_maintenance_jobs():
     assert quota["total_units"] == 1
     assert cleanup_result["status"] == "succeeded"
     assert cleanup_result["deleted_count"] == 0
+
+
+def test_dispatch_job_accepts_v04_payload_job_message():
+    repo = MemoryRepository()
+
+    result = dispatch_job(
+        repo,
+        {
+            "job_id": "scheduler-cleanup-v04",
+            "job_type": "cleanup",
+            "idempotency_key": "cleanup:scheduler",
+            "requested_by": "scheduler",
+            "attempt": 0,
+            "trace_id": "trace-v04-message",
+            "payload": {"requested_by": "scheduler", "retention_days": 30},
+        },
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["deleted_count"] == 0
+    events = [item for item in repo.items.values() if item.get("pk") == "JOB#scheduler-cleanup-v04"]
+    assert [event["event_name"] for event in events] == ["job.started", "job.succeeded"]
 
 
 def test_worker_emits_json_success_log(capsys):

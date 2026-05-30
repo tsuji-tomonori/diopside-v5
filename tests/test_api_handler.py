@@ -331,6 +331,41 @@ def test_admin_job_dry_run(monkeypatch):
     os.environ.pop("DIOPSIDE_ALLOW_DRY_RUN_JOBS", None)
 
 
+def test_admin_job_enqueue_uses_v04_job_message(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_STATIC_EXPORT_QUEUE_URL", "https://sqs.example/static-export")
+    sent = []
+    monkeypatch.setattr(handler, "_enqueue", lambda queue_url, message: sent.append({"queue_url": queue_url, "message": message}))
+
+    status, body = call(
+        "POST",
+        "/api/admin/jobs/static-export",
+        body={"idempotency_key": "job-message-api", "scope": "all"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf", "x-trace-id": "trace-api-job-message"},
+    )
+
+    assert status == 200
+    assert body["latest_state"] == "queued"
+    assert sent == [
+        {
+            "queue_url": "https://sqs.example/static-export",
+            "message": {
+                "job_id": body["job_id"],
+                "job_type": "static_export",
+                "idempotency_key": "job-message-api",
+                "requested_by": "admin",
+                "attempt": 0,
+                "trace_id": "trace-api-job-message",
+                "payload": {"idempotency_key": "job-message-api", "scope": "all"},
+            },
+        }
+    ]
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    os.environ.pop("DIOPSIDE_STATIC_EXPORT_QUEUE_URL", None)
+
+
 def test_admin_job_body_validation(monkeypatch):
     monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
     monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")

@@ -711,6 +711,34 @@ def update_job_read_model(job: dict[str, Any], latest_state: str, *, next_run_at
     return updated
 
 
+def build_job_message(
+    job_type: str,
+    job_id: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    idempotency_key: str | None = None,
+    requested_by: str = "worker",
+    attempt: int | None = None,
+    trace_id: str | None = None,
+) -> dict[str, Any]:
+    normalized_payload = deepcopy(payload or {})
+    resolved_trace_id = trace_id or normalized_payload.get("trace_id") or f"trc_{uuid.uuid4().hex}"
+    resolved_attempt = attempt if attempt is not None else normalized_payload.get("attempt", 0)
+    try:
+        normalized_attempt = int(resolved_attempt)
+    except (TypeError, ValueError):
+        normalized_attempt = 0
+    return {
+        "job_id": job_id,
+        "job_type": job_type,
+        "idempotency_key": idempotency_key or normalized_payload.get("idempotency_key") or f"{job_type}:{job_id}",
+        "requested_by": requested_by,
+        "attempt": normalized_attempt,
+        "trace_id": resolved_trace_id,
+        "payload": normalized_payload,
+    }
+
+
 class Repository(Protocol):
     def put_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
     def get_item(self, pk: str, sk: str) -> dict[str, Any] | None: ...
