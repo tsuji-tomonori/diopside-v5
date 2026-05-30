@@ -125,7 +125,7 @@
 | design_id | category | requirement | implementation_files | tests | status |
 |---|---|---|---|---|---|
 | BATCH-001 | Batch | 定期メタデータ同期ディスパッチ。 | `infra/cloudformation/diopside.yaml`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_cloudformation_contract.py`, `tests/test_core_pipeline.py` | 部分実装 |
-| BATCH-002 | Batch | チャンネル情報取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | なし | 要追加監査 |
+| BATCH-002 | Batch | チャンネル情報取得。 | `apps/shared/src/diopside_core/youtube.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_core_pipeline.py`, `tests/test_repository_schema_contract.py` | 実装済 |
 | BATCH-003 | Batch | uploads playlist 差分取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 | BATCH-004 | Batch | 動画詳細取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 | BATCH-005 | Batch | ライブ状態監視。 | `infra/cloudformation/diopside.yaml`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 |

@@ -21,6 +21,7 @@ from diopside_core import (
     extract_replay_continuations_from_initial_data,
     fetch_public_replay_actions,
     normalize_live_chat_items,
+    normalize_channel_resource,
     normalize_replay_actions,
     normalize_video_resource,
     now_iso,
@@ -131,6 +132,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     job_id = params.get("job_id")
     playlist_page_token = params.get("page_token")
     playlist_next_page_token = None
+    raw_channel_uri = None
     raw_playlist_uri = None
     raw_videos_uri = None
     enqueued_next_page = None
@@ -141,8 +143,27 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         channel = _channel_config(repo, params)
         channel_id = channel["channel_id"]
         uploads_playlist_id = channel.get("uploads_playlist_id")
+        if channel_id and hasattr(client, "channels"):
+            channel_response = client.channels([channel_id])
+            raw_channel_uri = _write_json_blob(
+                f"raw/youtube/metadata/channel_id={channel_id}/channels/{now_iso()}.json",
+                channel_response,
+            )
+            channel_items = channel_response.get("items", [])
+            if channel_items:
+                normalized_channel = normalize_channel_resource(channel_items[0])
+                repo.put_channel(
+                    {
+                        **channel,
+                        **normalized_channel,
+                        "uploads_playlist_id": normalized_channel.get("uploads_playlist_id") or uploads_playlist_id,
+                        "raw_metadata_uri": raw_channel_uri,
+                    }
+                )
+                uploads_playlist_id = normalized_channel.get("uploads_playlist_id") or uploads_playlist_id
+            repo.record_quota_usage("channels.list", 1, {}, channel_id=channel_id, video_count=0, job_id=job_id)
         playlist_page_token = playlist_page_token if playlist_page_token is not None else _metadata_cursor(repo, channel_id).get("next_page_token")
-        playlist = client.playlist_items(channel["uploads_playlist_id"], playlist_page_token, int(params.get("max_results", 50)))
+        playlist = client.playlist_items(uploads_playlist_id, playlist_page_token, int(params.get("max_results", 50)))
         raw_playlist_uri = _write_json_blob(
             f"raw/youtube/metadata/channel_id={channel_id}/playlistItems/{now_iso()}.json",
             playlist,
@@ -173,7 +194,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
                     f"manual-metadata-{channel_id}",
                     {
                         "channel_id": channel_id,
-                        "uploads_playlist_id": channel["uploads_playlist_id"],
+                        "uploads_playlist_id": uploads_playlist_id,
                         "page_token": playlist_next_page_token,
                         "max_results": int(params.get("max_results", 50)),
                     },
@@ -215,6 +236,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         "next_page_token": playlist_next_page_token,
         "raw_playlist_uri": raw_playlist_uri,
         "raw_videos_uri": raw_videos_uri,
+        "raw_channel_uri": raw_channel_uri,
         "enqueued_next_page": bool(enqueued_next_page),
     }
 

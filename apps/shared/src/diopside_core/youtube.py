@@ -31,6 +31,9 @@ class YouTubeClient:
     def videos(self, video_ids: list[str]) -> dict[str, Any]:
         return self._get("videos", {"part": "snippet,contentDetails,liveStreamingDetails,statistics,status", "id": ",".join(video_ids), "maxResults": "50"})
 
+    def channels(self, channel_ids: list[str]) -> dict[str, Any]:
+        return self._get("channels", {"part": "snippet,contentDetails", "id": ",".join(channel_ids), "maxResults": "50"})
+
     def live_chat_messages(self, live_chat_id: str, page_token: str | None = None) -> dict[str, Any]:
         params = {"part": "snippet,authorDetails", "liveChatId": live_chat_id, "maxResults": "2000"}
         if page_token:
@@ -105,6 +108,23 @@ def normalize_video_resource(resource: dict[str, Any]) -> dict[str, Any]:
         "live_state": _live_state(snippet.get("liveBroadcastContent"), live),
         "tags": tags,
         "public": status.get("privacyStatus", "public") == "public",
+    }
+
+
+def normalize_channel_resource(resource: dict[str, Any]) -> dict[str, Any]:
+    snippet = resource.get("snippet", {})
+    content = resource.get("contentDetails", {})
+    related = content.get("relatedPlaylists", {})
+    return {
+        "channel_id": resource["id"],
+        "channel_title": snippet.get("title") or resource["id"],
+        "display_name": snippet.get("title") or resource["id"],
+        "description": snippet.get("description", ""),
+        "published_at": snippet.get("publishedAt"),
+        "custom_url": snippet.get("customUrl"),
+        "uploads_playlist_id": related.get("uploads"),
+        "collect_enabled": True,
+        "enabled": True,
     }
 
 

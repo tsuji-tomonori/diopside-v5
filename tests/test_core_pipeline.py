@@ -123,8 +123,22 @@ def test_youtube_client_rejects_malformed_response(monkeypatch, body):
 
 class FakeYouTubeMetadataClient:
     def __init__(self):
+        self.channel_calls = []
         self.playlist_calls = []
         self.video_calls = []
+
+    def channels(self, channel_ids):
+        self.channel_calls.append(list(channel_ids))
+        return {
+            "items": [
+                {
+                    "id": channel_id,
+                    "snippet": {"title": "白雪巴", "description": "channel description", "publishedAt": "2019-11-01T00:00:00Z"},
+                    "contentDetails": {"relatedPlaylists": {"uploads": "uploads"}},
+                }
+                for channel_id in channel_ids
+            ]
+        }
 
     def playlist_items(self, playlist_id, page_token=None, max_results=50):
         self.playlist_calls.append({"playlist_id": playlist_id, "page_token": page_token, "max_results": max_results})
@@ -172,10 +186,16 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
     )
 
     cursor = repo.get_channel_sync_cursor("ch")
+    channel = repo.get_channel("ch")
     video = repo.get_video("vid001")
     assert result["next_page_token"] == "next-token"
+    assert result["raw_channel_uri"]
     assert result["raw_playlist_uri"]
     assert result["raw_videos_uri"]
+    assert channel["channel_title"] == "白雪巴"
+    assert channel["display_name"] == "白雪巴"
+    assert channel["uploads_playlist_id"] == "uploads"
+    assert channel["raw_metadata_uri"] == result["raw_channel_uri"]
     assert cursor["item_type"] == "ChannelSyncCursor"
     assert cursor["pk"] == "CH#ch"
     assert cursor["sk"] == "CURSOR#uploads"
@@ -187,15 +207,17 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
     assert "items" not in cursor
     assert video["raw_metadata_uri"] == result["raw_videos_uri"]
     assert "items" not in video
+    assert client.channel_calls == [["ch"]]
     assert client.playlist_calls[0]["page_token"] is None
     usage = repo.list_quota_usage()
-    assert {item["method"] for item in usage} == {"playlistItems.list", "videos.list"}
+    assert {item["method"] for item in usage} == {"channels.list", "playlistItems.list", "videos.list"}
     assert all(item["channel_id"] == "ch" for item in usage)
-    assert all(item["video_count"] == 2 for item in usage)
+    assert {item["video_count"] for item in usage} == {0, 2}
     assert all(item["job_id"] == "job-meta" for item in usage)
     assert enqueued[0]["queue_env"] == "DIOPSIDE_METADATA_QUEUE_URL"
     assert enqueued[0]["payload"]["requested_by"] == "worker"
     assert enqueued[0]["payload"]["payload"]["page_token"] == "next-token"
+    assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/channels").glob("*.json"))
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/playlistItems").glob("*.json"))
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/videos").glob("*.json"))
 
