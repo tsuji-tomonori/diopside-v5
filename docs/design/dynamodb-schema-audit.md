@@ -29,7 +29,7 @@
 | `Lock` | `LOCK#{lock_key}` / `META` | `ITEM_TYPES` で許可 | 部分実装 | 取得/解放 helper と TTL contract は未実装 |
 | `Idempotency` | `IDEMP#{dedupe_key}` / `META` | Memory は `idempotency_index`、DynamoDB は Job conditional put | 差分あり | 独立 item は未保存 |
 | `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 部分実装 | call record 互換は維持。quota threshold warning event は未実装 |
-| `RandomBucket` | `RANDOM#DEFAULT` / `VID#{bucket_no}#{video_id}` | なし | 未対応 | random API は現状時刻 rotate |
+| `RandomBucket` | `RANDOM#DEFAULT` / `VID#{bucket_no}#{video_id}` | `put_video` が公開動画の `RandomBucket` を v0.4 key shape で保存し、random API が seed/count/tag/year 条件で参照 | 部分実装 | 専用 rebuild job と既存データ backfill は未対応 |
 
 ## 現 repository contract
 
@@ -47,6 +47,6 @@
 
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
 2. `schema_version`、`entity_id`、`created_at`、`updated_at` の共通属性を repository writer に追加する。
-3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`StaticExport`、`RandomBucket` を専用 writer と query path で追加する。
+3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`StaticExport` を専用 writer と query path で追加する。`RandomBucket` は writer/query path 追加済みだが、rebuild job と backfill は後続で扱う。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
 5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。

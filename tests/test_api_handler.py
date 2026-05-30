@@ -72,15 +72,37 @@ def test_public_video_search_and_detail():
     assert detail["chat_summary"]["wordcloud_url"]
 
 
-def test_random_videos_returns_limited_rotated_public_items(monkeypatch):
-    monkeypatch.setattr(handler.time, "time", lambda: 1)
-
-    status, body = call("GET", "/api/random-videos", query={"limit": "1"})
+def test_random_videos_returns_seeded_limited_public_items():
+    status, body = call("GET", "/api/random-videos", query={"count": "1", "seed": "unit-seed"})
+    _, repeated = call("GET", "/api/random-videos", query={"count": "1", "seed": "unit-seed"})
 
     assert status == 200
     assert body["schema_version"] == "public-random-videos/v1"
-    assert [item["video_id"] for item in body["items"]] == ["fixture002"]
+    assert body["items"] == repeated["items"]
+    assert len(body["items"]) == 1
+    assert body["seed"] == "unit-seed"
     assert body["generated_at"]
+
+
+def test_random_videos_filters_repository_random_bucket_and_validates_query(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "repo001", "title": "repo 1", "published_at": "2026-05-30T00:00:00Z", "tags": ["歌枠"], "public": True})
+    repo.put_video({"video_id": "repo002", "title": "repo 2", "published_at": "2025-05-30T00:00:00Z", "tags": ["雑談"], "public": True})
+    monkeypatch.setenv("DIOPSIDE_TABLE_NAME", "unit-table")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/random-videos", query={"count": "5", "seed": "stable", "tag": "歌枠", "year": "2026"})
+
+    assert status == 200
+    assert [item["video_id"] for item in body["items"]] == ["repo001"]
+    assert body["items"][0]["detail_path"] == "/api/videos/repo001"
+
+    invalid_status, invalid = call("GET", "/api/random-videos", query={"count": "21"})
+    assert invalid_status == 400
+    assert invalid["code"] == "INVALID_REQUEST"
+
+    monkeypatch.delenv("DIOPSIDE_TABLE_NAME", raising=False)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
 
 
 def test_video_artifacts_returns_fixture_items_and_not_found():

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from diopside_core.repository import ITEM_TYPES, MemoryRepository, video_item
+from diopside_core.repository import ITEM_TYPES, MemoryRepository, random_bucket_item, video_item
 
 
 V04_ITEM_TYPES = {
@@ -104,6 +104,42 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
 
 
+def test_repository_writes_random_bucket_for_public_videos_and_removes_private_entries():
+    repo = MemoryRepository()
+
+    video = repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive",
+            "published_at": "2026-05-30T00:00:00Z",
+            "duration_sec": 1200,
+            "thumbnail_url": "/thumb.jpg",
+            "tags": ["歌枠"],
+            "public": True,
+        }
+    )
+    expected_bucket = random_bucket_item(video)
+    bucket = repo.get_item("RANDOM#DEFAULT", expected_bucket["sk"])
+
+    assert bucket["item_type"] == "RandomBucket"
+    assert bucket["pk"] == "RANDOM#DEFAULT"
+    assert bucket["sk"].startswith("VID#")
+    assert bucket["bucket_no"] == expected_bucket["bucket_no"]
+    assert bucket["video_id"] == "vid001"
+    assert bucket["title"] == "archive"
+    assert bucket["thumbnail_url"] == "/thumb.jpg"
+    assert bucket["duration_sec"] == 1200
+    assert bucket["tags"] == ["歌枠"]
+    assert bucket["published_at"] == "2026-05-30T00:00:00Z"
+    assert "generated_at" in bucket
+    assert repo.list_random_videos() == [bucket]
+
+    repo.put_video({**video, "public": False})
+
+    assert repo.get_item("RANDOM#DEFAULT", expected_bucket["sk"]) is None
+    assert repo.list_random_videos() == []
+
+
 def test_repository_updates_video_tags_and_removes_stale_tag_index():
     repo = MemoryRepository()
     repo.put_video(
@@ -177,7 +213,8 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"ChannelRef", "VideoMonthIndex", "RandomBucket"} <= unsupported_v04_types
+    assert {"ChannelRef", "VideoMonthIndex", "TagSummary"} <= unsupported_v04_types
+    assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:

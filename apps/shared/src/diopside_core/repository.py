@@ -34,6 +34,7 @@ ITEM_TYPES = {
     "JobEvent",
     "QuotaUsage",
     "Lock",
+    "RandomBucket",
 }
 
 
@@ -67,6 +68,24 @@ def video_item(video: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
+    video_id = video["video_id"]
+    bucket_no = int(hashlib.sha256(video_id.encode("utf-8")).hexdigest()[:8], 16) % 10000
+    return {
+        "item_type": "RandomBucket",
+        "pk": "RANDOM#DEFAULT",
+        "sk": f"VID#{bucket_no:04d}#{video_id}",
+        "bucket_no": bucket_no,
+        "video_id": video_id,
+        "title": video.get("title", ""),
+        "thumbnail_url": video.get("thumbnail_url"),
+        "duration_sec": video.get("duration_sec"),
+        "published_at": video.get("published_at"),
+        "tags": video.get("tags", []),
+        "generated_at": now_iso(),
+    }
+
+
 def derive_job_state(events: list[dict[str, Any]]) -> str:
     if not events:
         return "queued"
@@ -81,6 +100,7 @@ class Repository(Protocol):
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]: ...
     def get_video(self, video_id: str) -> dict[str, Any] | None: ...
     def list_tags(self) -> list[dict[str, Any]]: ...
+    def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
@@ -161,7 +181,17 @@ class MemoryRepository:
                     "updated_at": now_iso(),
                 }
             )
+        random_bucket = random_bucket_item(item)
+        if item.get("public", True):
+            self.put_item(random_bucket)
+        else:
+            self.delete_item(random_bucket["pk"], random_bucket["sk"])
         return item
+
+    def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
+        items = [item for (pk, sk), item in self.items.items() if pk == "RANDOM#DEFAULT" and sk.startswith("VID#") and item.get("item_type") == "RandomBucket"]
+        items.sort(key=lambda item: item.get("sk", ""))
+        return deepcopy(items[:limit])
 
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]:
         video = self.get_video(video_id)
@@ -402,6 +432,17 @@ class DynamoRepository(MemoryRepository):
             if item.get("item_type") == "Video" and item.get("public", True)
         ]
         return deepcopy(videos[:limit])
+
+    def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        items = self._query_all(
+            KeyConditionExpression=Key("pk").eq("RANDOM#DEFAULT") & Key("sk").begins_with("VID#"),
+            Limit=limit,
+        )
+        items = [item for item in items if item.get("item_type") == "RandomBucket"]
+        items.sort(key=lambda item: item.get("sk", ""))
+        return deepcopy(items[:limit])
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
         if Key is None:

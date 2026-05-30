@@ -262,11 +262,45 @@ def _video_artifacts(video_id: str) -> dict[str, Any]:
 
 
 def _random_videos(query: dict[str, str]) -> dict[str, Any]:
-    items = _videos({})["items"]
-    limit = min(int(query.get("limit", "3")), 12)
-    offset = int(time.time()) % max(len(items), 1)
-    rotated = items[offset:] + items[:offset]
-    return {"schema_version": "public-random-videos/v1", "items": rotated[:limit], "generated_at": _now()}
+    count = _optional_int_query({"count": query.get("count") or query.get("limit")}, "count", minimum=1, maximum=20) or 1
+    year = _optional_int_query(query, "year", minimum=1970, maximum=9999)
+    seed = query.get("seed") or f"hour-{int(time.time()) // 3600}"
+    if not isinstance(seed, str) or not seed.strip() or len(seed) > 128:
+        raise ApiError(400, "INVALID_REQUEST", "seed は 1 から 128 文字の文字列で指定してください。")
+    tags = [tag.strip() for tag in query.get("tag", "").split(",") if tag.strip()]
+    if any(len(tag) > 64 for tag in tags):
+        raise ApiError(400, "INVALID_REQUEST", "tag は 64 文字以内で指定してください。")
+    items = _random_source_items()
+    if tags:
+        items = [item for item in items if all(tag in item.get("tags", []) for tag in tags)]
+    if year is not None:
+        items = [item for item in items if str(item.get("published_at") or "").startswith(str(year))]
+    ordered = sorted(items, key=lambda item: hashlib.sha256(f"{seed}:{item['video_id']}".encode("utf-8")).hexdigest())
+    return {"schema_version": "public-random-videos/v1", "items": ordered[:count], "seed": seed, "generated_at": _now()}
+
+
+def _random_source_items() -> list[dict[str, Any]]:
+    if os.environ.get("DIOPSIDE_TABLE_NAME"):
+        random_items = _repository().list_random_videos(limit=10000)
+        if random_items:
+            return [_random_video_response_item(item) for item in random_items]
+        return [_public_video_item(video) for video in _repository().list_videos(limit=10000)]
+    return _videos({"limit": "10000"})["items"]
+
+
+def _random_video_response_item(item: dict[str, Any]) -> dict[str, Any]:
+    video_id = item["video_id"]
+    return {
+        "video_id": video_id,
+        "title": item.get("title", ""),
+        "published_at": item.get("published_at"),
+        "duration_sec": item.get("duration_sec"),
+        "thumbnail_url": item.get("thumbnail_url"),
+        "tags": item.get("tags", []),
+        "detail_path": item.get("detail_path") or f"/api/videos/{video_id}",
+        "wordcloud_available": bool(item.get("wordcloud_available", False)),
+        "timestamp_available": bool(item.get("timestamp_available", False)),
+    }
 
 
 def _archive_calendar(query: dict[str, str]) -> dict[str, Any]:

@@ -1278,6 +1278,10 @@ class FakeDynamoTable:
         item = self.items.get((Key["pk"], Key["sk"]))
         return {"Item": dict(item)} if item else {}
 
+    def delete_item(self, Key):
+        self.items.pop((Key["pk"], Key["sk"]), None)
+        return {}
+
     def query(self, **kwargs):
         self.query_calls.append(kwargs)
         index_name = kwargs.get("IndexName")

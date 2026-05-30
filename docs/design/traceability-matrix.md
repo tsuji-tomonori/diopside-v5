@@ -36,7 +36,7 @@
 | FR-U-004 | UI | タグから関連動画を探索できる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py` | `tools/run-local-e2e.mjs`, `tests/test_api_handler.py` | 部分実装 |
 | FR-U-005 | UI | ワードクラウドを閲覧できる。 | `apps/web/public`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/run-local-e2e.mjs` | 部分実装 |
 | FR-U-006 | UI | タイムスタンプ候補を閲覧できる。 | `apps/web/public`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/run-local-e2e.mjs` | 部分実装 |
-| FR-U-007 | UI | ランダム動画を表示できる。 | `apps/api/src/diopside_api/handler.py`, `apps/web/public` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 部分実装 |
+| FR-U-007 | UI | ランダム動画を表示できる。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py`, `apps/web/public` | `tests/test_api_handler.py`, `tests/test_repository_schema_contract.py`, `tools/run-local-e2e.mjs` | 部分実装 |
 | FR-A-001 | Admin | 対象チャンネルを設定できる。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | なし | 未対応 |
 | FR-A-002 | Admin | 手動でメタデータ同期できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 実装済 |
 | FR-A-003 | Admin | 手動でチャット収集できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 部分実装 |
@@ -90,7 +90,7 @@
 | API-005 | API | `GET /api/videos/{video_id}` 動画詳細 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-006 | API | `GET /api/tags` タグ一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-007 | API | `GET /api/archive-calendar` 年/月別アーカイブ API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
-| API-008 | API | `GET /api/random-videos` ランダム動画 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
+| API-008 | API | `GET /api/random-videos` ランダム動画 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py`, `tests/test_repository_schema_contract.py` | 実装済 |
 | API-009 | API | `GET /api/videos/{video_id}/artifacts` 動画成果物一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-010 | API | `GET /api/admin/jobs` ジョブ一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-011 | API | `GET /api/admin/jobs/{job_id}` ジョブ詳細 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
