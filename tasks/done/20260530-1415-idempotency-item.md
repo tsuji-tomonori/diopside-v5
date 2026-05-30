@@ -39,12 +39,12 @@
 
 ## 受け入れ条件
 
-- [ ] `ITEM_TYPES` が `Idempotency` を許可する。
-- [ ] `create_job` が新規 job 作成時に `pk=IDEMP#{idempotency_key}` / `sk=META` の `Idempotency` item を保存する。
-- [ ] 既存の `create_job` 重複抑止が維持され、同じ `idempotency_key` は既存 job を deduplicated として返す。
-- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
-- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
-- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+- [x] `ITEM_TYPES` が `Idempotency` を許可する。
+- [x] `create_job` が新規 job 作成時に `pk=IDEMP#{idempotency_key}` / `sk=META` の `Idempotency` item を保存する。
+- [x] 既存の `create_job` 重複抑止が維持され、同じ `idempotency_key` は既存 job を deduplicated として返す。
+- [x] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [x] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [x] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
 
 ## 検証計画
 
@@ -53,6 +53,19 @@
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: pass（17 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（118 tests、build、package、local e2e）
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581786048
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581787229
 
 ## PR レビュー観点
 
@@ -67,4 +80,4 @@
 
 ## 状態
 
-in_progress
+done
