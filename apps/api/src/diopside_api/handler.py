@@ -122,7 +122,7 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
         if request.method == "GET" and request.path == "/api/admin/channels":
             return {"schema_version": "admin-channel-list/v1", "items": _list_channels(), "trace_id": trace_id}
         if request.method == "GET" and request.path == "/api/admin/quota-usage":
-            return {"schema_version": "admin-quota-usage/v1", "items": _list_quota_usage(), "trace_id": trace_id}
+            return _quota_usage_response(request.query, trace_id)
         if request.method == "GET" and request.path == "/api/admin/static-exports":
             return {"schema_version": "admin-static-export-list/v1", "items": _list_static_exports(), "trace_id": trace_id}
         if request.method == "PUT" and request.path.startswith("/api/admin/channels/"):
@@ -842,11 +842,30 @@ def _iso_from_epoch(epoch_seconds: int) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch_seconds))
 
 
-def _list_quota_usage() -> list[dict[str, Any]]:
+def _quota_usage_response(query: dict[str, str], trace_id: str) -> dict[str, Any]:
+    limit_per_day = int(os.environ.get("DIOPSIDE_YOUTUBE_QUOTA_LIMIT_PER_DAY", "10000"))
+    summaries = [_normalize_quota_summary(item) for item in _repository().list_quota_summaries(500)]
+    summaries = [item for item in summaries if _quota_filter_match(item, query)]
+    items = _list_quota_usage(query)
+    daily = _quota_daily_usage(summaries)
+    by_method = _quota_by_method_usage(summaries)
+    warning = _quota_warning(daily, limit_per_day)
+    return {
+        "schema_version": "admin-quota-usage/v1",
+        "items": items,
+        "daily": daily,
+        "by_method": by_method,
+        "limit_per_day": limit_per_day,
+        "warning": warning,
+        "trace_id": trace_id,
+    }
+
+
+def _list_quota_usage(query: dict[str, str] | None = None) -> list[dict[str, Any]]:
     items = []
     for item in _repository().list_quota_usage(100):
         details = item.get("details") or {}
-        items.append(
+        normalized = (
             {
                 **item,
                 "channel_id": item.get("channel_id", details.get("channel_id")),
@@ -854,7 +873,75 @@ def _list_quota_usage() -> list[dict[str, Any]]:
                 "job_id": item.get("job_id", details.get("job_id")),
             }
         )
+        if _quota_filter_match(normalized, query or {}):
+            items.append(normalized)
     return items
+
+
+def _normalize_quota_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "quota_date": _quota_date_key(item),
+        "method": item.get("method", "unknown"),
+        "call_count": int(item.get("call_count") or 0),
+        "units_used": int(item.get("units_used") or 0),
+        "unit_per_call": item.get("unit_per_call", 0),
+        "warning_emitted": bool(item.get("warning_emitted")),
+        "warning_threshold_units": item.get("warning_threshold_units"),
+        "warning_total_units": item.get("warning_total_units"),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def _quota_daily_usage(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for item in summaries:
+        date = item["quota_date"]
+        daily = grouped.setdefault(date, {"quota_date": date, "units_used": 0, "call_count": 0, "warning_emitted": False})
+        daily["units_used"] += item["units_used"]
+        daily["call_count"] += item["call_count"]
+        daily["warning_emitted"] = daily["warning_emitted"] or item["warning_emitted"]
+    return [grouped[date] for date in sorted(grouped, reverse=True)]
+
+
+def _quota_by_method_usage(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for item in summaries:
+        method = item["method"]
+        method_usage = grouped.setdefault(method, {"method": method, "units_used": 0, "call_count": 0, "warning_emitted": False})
+        method_usage["units_used"] += item["units_used"]
+        method_usage["call_count"] += item["call_count"]
+        method_usage["warning_emitted"] = method_usage["warning_emitted"] or item["warning_emitted"]
+    return [grouped[method] for method in sorted(grouped)]
+
+
+def _quota_warning(daily: list[dict[str, Any]], limit_per_day: int) -> str | None:
+    warning_days = [item for item in daily if item.get("warning_emitted")]
+    if not warning_days:
+        return None
+    latest = warning_days[0]
+    return f"{latest['quota_date']} の推定 quota 使用量が {latest['units_used']} / {limit_per_day} units に達しています。"
+
+
+def _quota_filter_match(item: dict[str, Any], query: dict[str, str]) -> bool:
+    quota_date = _quota_date_key(item)
+    from_date = (query.get("from") or "").replace("-", "")
+    to_date = (query.get("to") or "").replace("-", "")
+    method = query.get("method")
+    if from_date and quota_date < from_date:
+        return False
+    if to_date and quota_date > to_date:
+        return False
+    if method and item.get("method") != method:
+        return False
+    return True
+
+
+def _quota_date_key(item: dict[str, Any]) -> str:
+    if item.get("quota_date"):
+        return str(item["quota_date"]).replace("-", "")
+    if item.get("pk", "").startswith("QUOTA#"):
+        return str(item["pk"]).removeprefix("QUOTA#").replace("-", "")
+    return str(item.get("created_at") or "")[:10].replace("-", "")
 
 
 def _list_static_exports() -> list[dict[str, Any]]:

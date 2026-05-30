@@ -162,7 +162,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `GET /api/admin/jobs` | `admin-job-list/v1` | 管理 job list |
 | `GET /api/admin/jobs/{job_id}` | `admin-job-detail/v1` | 管理 job detail と events |
 | `GET /api/admin/channels` | `admin-channel-list/v1` | channel list |
-| `GET /api/admin/quota-usage` | `admin-quota-usage/v1` | quota usage list |
+| `GET /api/admin/quota-usage` | `admin-quota-usage/v1` | quota usage call records、daily summary、method summary、warning |
 | `GET /api/admin/static-exports` | `admin-static-export-list/v1` | static export history list |
 | `PUT /api/admin/channels/{channel_id}` | `admin-channel-config/v1` | channel config を更新 |
 | `PUT /api/admin/videos/{video_id}/tags` | `admin-video-tags/v1` | 動画の手動タグ追加・削除 |
@@ -320,7 +320,7 @@ Function URL origin では API Gateway の 5xx metric を使わないため、`A
 - live chat collect は `nextPageToken` があり、`offlineAt` と `rateLimitExceeded` がない場合だけ SQS delay で再投入する。`pollingIntervalMillis` は秒へ変換し、SQS の上限に合わせて `DelaySeconds` は 900 秒で clamp する。
 - `offlineAt` が返った場合は `next_poll.action=stop`、`rateLimitExceeded` の場合は `next_poll.action=retry_later` として raw chunk manifest に停止理由を残し、自動再投入しない。
 - replay chat collect は公開アーカイブ HTML の `ytInitialData` から取得できる replay action と continuation を best-effort で抽出する。未知 renderer は失敗や破棄にせず `message_type=unknown` / `parse_warning=unknown_renderer` として raw JSONL に残し、manifest/result の `parser_stats` と `next_poll` に action 数、unknown 件数、continuation 件数を記録する。
-- quota 使用は call record の `QuotaUsage` item に `method`、`units`、`video_count`、`channel_id`、`job_id` を top-level field として記録し、補足情報を `details` に残す。管理APIの `GET /api/admin/quota-usage` と管理UIの quota 表示では call record のみを返す。
+- quota 使用は call record の `QuotaUsage` item に `method`、`units`、`video_count`、`channel_id`、`job_id` を top-level field として記録し、補足情報を `details` に残す。管理APIの `GET /api/admin/quota-usage` は互換用の call record `items` に加え、daily summary 由来の `daily`、`by_method`、`limit_per_day`、`warning` を返す。管理 UI の quota 表示は現時点では call record 表示を維持する。
 - BATCH-016 `quota_rollup` は call record から `pk=QUOTA#{yyyyMMdd}` / `sk=METHOD#{method}` の daily summary を upsert し、`call_count`、`units_used`、`unit_per_call`、`source_record_count`、`warning_emitted` を保存する。日次合計が `warning_threshold_units` 以上なら `quota_threshold_warning` JobEvent を記録する。外部通知 delivery、管理 UI daily summary 表示、CloudWatch Alarm は後続対象。
 
 ## normalized chat schema

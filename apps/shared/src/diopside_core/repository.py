@@ -788,6 +788,7 @@ class Repository(Protocol):
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]: ...
     def list_channels(self) -> list[dict[str, Any]]: ...
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]: ...
+    def list_quota_summaries(self, limit: int = 100) -> list[dict[str, Any]]: ...
 
 
 @dataclass
@@ -1192,6 +1193,11 @@ class MemoryRepository:
         usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return deepcopy(usage[:limit])
 
+    def list_quota_summaries(self, limit: int = 100) -> list[dict[str, Any]]:
+        summaries = [item for item in self.items.values() if item.get("item_type") == "QuotaUsage" and item.get("sk", "").startswith("METHOD#")]
+        summaries.sort(key=lambda item: (item.get("quota_date", ""), item.get("method", "")), reverse=True)
+        return deepcopy(summaries[:limit])
+
 
 class DynamoRepository(MemoryRepository):
     """DynamoDB adapter with a memory-compatible surface for tests and Lambda.
@@ -1474,6 +1480,21 @@ class DynamoRepository(MemoryRepository):
             if item.get("item_type") == "QuotaUsage" and not item.get("sk", "").startswith("METHOD#")
         ]
         return deepcopy(usage[:limit])
+
+    def list_quota_summaries(self, limit: int = 100) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        summaries = [
+            item
+            for item in self._query_all(
+                IndexName="by_work_queue",
+                KeyConditionExpression=Key("gsi3pk").eq("QUOTA#ROLLUP"),
+                ScanIndexForward=False,
+                Limit=limit,
+            )
+            if item.get("item_type") == "QuotaUsage" and item.get("sk", "").startswith("METHOD#")
+        ]
+        return deepcopy(summaries[:limit])
 
     def _query_all(self, **kwargs: Any) -> list[dict[str, Any]]:
         limit = int(kwargs.pop("Limit", 100))

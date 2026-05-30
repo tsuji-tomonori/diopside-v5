@@ -474,8 +474,73 @@ def test_admin_quota_usage_returns_visible_fields(monkeypatch):
     assert body["items"][0]["video_count"] == 3
     assert body["items"][0]["channel_id"] == "ch"
     assert body["items"][0]["job_id"] == "job-1"
+    assert body["daily"] == []
+    assert body["by_method"] == []
+    assert body["limit_per_day"] == 10000
+    assert body["warning"] is None
     os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
     os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
+def test_admin_quota_usage_returns_daily_summary_warning_and_filters(monkeypatch):
+    repo = MemoryRepository()
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-video")
+    repo.record_quota_usage("liveChatMessages.list", 1, {}, channel_id="ch", video_count=0, job_id="job-chat")
+    repo.put_item(
+        {
+            "item_type": "QuotaUsage",
+            "pk": "QUOTA#20260530",
+            "sk": "METHOD#videos.list",
+            "record_type": "daily_method_summary",
+            "quota_date": "20260530",
+            "method": "videos.list",
+            "call_count": 3,
+            "units_used": 9,
+            "unit_per_call": 3,
+            "warning_emitted": True,
+            "warning_threshold_units": 8,
+            "warning_total_units": 11,
+            "updated_at": "2026-05-30T12:00:00Z",
+            "gsi3pk": "QUOTA#ROLLUP",
+            "gsi3sk": "20260530#videos.list",
+        }
+    )
+    repo.put_item(
+        {
+            "item_type": "QuotaUsage",
+            "pk": "QUOTA#20260530",
+            "sk": "METHOD#liveChatMessages.list",
+            "record_type": "daily_method_summary",
+            "quota_date": "20260530",
+            "method": "liveChatMessages.list",
+            "call_count": 2,
+            "units_used": 2,
+            "unit_per_call": 1,
+            "warning_emitted": True,
+            "warning_threshold_units": 8,
+            "warning_total_units": 11,
+            "updated_at": "2026-05-30T12:00:00Z",
+            "gsi3pk": "QUOTA#ROLLUP",
+            "gsi3sk": "20260530#liveChatMessages.list",
+        }
+    )
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_YOUTUBE_QUOTA_LIMIT_PER_DAY", "12")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/admin/quota-usage", headers={"authorization": "Bearer secret"}, query={"method": "videos.list", "from": "2026-05-30", "to": "2026-05-30"})
+
+    assert status == 200
+    assert [item["method"] for item in body["items"]] == ["videos.list"]
+    assert body["daily"] == [{"quota_date": "20260530", "units_used": 9, "call_count": 3, "warning_emitted": True}]
+    assert body["by_method"] == [{"method": "videos.list", "units_used": 9, "call_count": 3, "warning_emitted": True}]
+    assert body["limit_per_day"] == 12
+    assert body["warning"] == "20260530 の推定 quota 使用量が 9 / 12 units に達しています。"
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    os.environ.pop("DIOPSIDE_YOUTUBE_QUOTA_LIMIT_PER_DAY", None)
     monkeypatch.setattr(handler, "_REPOSITORY", None)
 
 

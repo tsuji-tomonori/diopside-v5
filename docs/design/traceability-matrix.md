@@ -102,7 +102,7 @@
 | API-017 | API | `POST /api/admin/jobs/static-export` 静的 export 開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py` | 実装済 |
 | API-018 | API | `POST /api/admin/jobs/{job_id}/retry` 失敗ジョブ再実行 API。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py` | 部分実装 |
 | API-019 | API | `POST /api/admin/jobs/{job_id}/cancel` ジョブキャンセル API。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py` | 実装済 |
-| API-020 | API | `GET /api/admin/quota-usage` quota 使用量 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
+| API-020 | API | `GET /api/admin/quota-usage` quota 使用量 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py`, `tests/test_repository_schema_contract.py` | 実装済 |
 | API-021 | API | `GET /api/admin/channels` 対象チャンネル設定取得 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-022 | API | `PUT /api/admin/channels/{channel_id}` 対象チャンネル設定更新 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py` | 実装済 |
 | API-023 | API | `POST /api/admin/artifacts/presigned-url` 管理用 S3 署名 URL 発行 API。 | `apps/api/src/diopside_api/handler.py`, `apps/api/src/diopside_api/openapi_contract.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py`, `tests/test_openapi_contract.py` | 実装済 |

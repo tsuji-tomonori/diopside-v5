@@ -876,6 +876,7 @@ def test_repository_keeps_quota_daily_summary_out_of_call_record_list():
     )
 
     assert repo.get_item("QUOTA#20260530", "METHOD#videos.list") == summary
+    assert repo.list_quota_summaries() == [summary]
     assert repo.list_quota_usage() == [call]
 
 
