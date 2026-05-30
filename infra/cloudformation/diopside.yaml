@@ -209,13 +209,20 @@ Resources:
               SSEAlgorithm: AES256
       LifecycleConfiguration:
         Rules:
-          - Id: raw-metadata-transition
+          - Id: raw-metadata-retention
             Status: Enabled
-            Prefix: youtube/raw/metadata/
+            Prefix: raw/youtube/metadata/
             Transitions:
               - StorageClass: STANDARD_IA
-                TransitionInDays: 180
+                TransitionInDays: 90
             ExpirationInDays: 365
+          - Id: raw-chat-retention
+            Status: Enabled
+            Prefix: raw/youtube/chat/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+            ExpirationInDays: 180
           - Id: failed-debug-expire
             Status: Enabled
             Prefix: failed/
@@ -233,6 +240,22 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: processed-chat-normalized-retention
+            Status: Enabled
+            Prefix: processed/chat-normalized/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+            ExpirationInDays: 730
+          - Id: processed-chat-aggregate-retention
+            Status: Enabled
+            Prefix: processed/chat-aggregate/
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+            ExpirationInDays: 730
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
