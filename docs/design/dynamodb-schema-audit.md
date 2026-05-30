@@ -4,6 +4,8 @@
 
 `docs/design/diopside_basic_design_v0.4.md` の 5.4.4 / 5.4.5 を正本とし、現 repository 実装は移行中の実装候補として扱う。現状は single-table、`pk` / `sk`、`by_public_date`、`by_tag`、`by_work_queue`、S3 への大型データ退避方針は近いが、item type 名、key prefix、一部 read model item に差分がある。共通属性の `schema_version`、`entity_id`、`created_at`、`updated_at` は repository writer で付与する。
 
+主要 writer は v0.4 key shape へ段階移行しているが、legacy read model、backfill、worker 分割、状態/統計 item 分離には差分ありとして残る。
+
 ## v0.4 item type 対応表
 
 | v0.4 item_type | v0.4 key | 現 repository / README | 状態 | 備考 |
@@ -12,8 +14,8 @@
 | `Channel` | `CH#{channel_id}` / `META` | `put_channel` が v0.4 key で保存し、旧 `CHANNEL#...` は `get_channel` fallback | 部分実装 | 既存データ backfill と DynamoDB 旧 item scan fallback は未対応 |
 | `ChannelRef` | `APP#CHANNELS` / `CH#{channel_id}` | `put_channel` が `ChannelRef` を保存し、`list_channels` / 管理 API が read model を優先利用 | 部分実装 | 既存データ backfill は未対応 |
 | `ChannelSyncCursor` | `CH#{channel_id}` / `CURSOR#uploads` | `put_channel_sync_cursor` が v0.4 key で保存し、`metadata_sync` が repository method 経由で更新。旧 `ChannelCursor` / `CHANNEL#...` は `get_channel_sync_cursor` fallback | 部分実装 | 既存データ backfill と page token の hash-only 化は未対応 |
-| `Video` | `VID#{video_id}` / `META` | `video_item` は `VIDEO#{video_id}` / `META` | 差分あり | `schema_version`、`created_at`、inverted public date などが未整合 |
-| `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | `put_video` が `VideoMonthIndex` を保存し、archive calendar API / static export が read model を優先利用 | 部分実装 | 既存データ backfill と v0.4 `Video` key prefix への全面移行は未対応 |
+| `Video` | `VID#{video_id}` / `META` | `video_item` が v0.4 key で保存し、public GSI は `PUB#{inverted_published_at}#{video_id}`。旧 `VIDEO#...` は `get_video` fallback | 部分実装 | 既存データ backfill、legacy `VideoTagIndex` key 移行、状態/統計 item 分離は未対応 |
+| `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | `put_video` が `VideoMonthIndex` を保存し、archive calendar API / static export が read model を優先利用 | 部分実装 | 既存データ backfill は未対応 |
 | `VideoStateEvent` | `VID#{video_id}` / `EVT#STATE#...` | なし | 未対応 | live/archive 状態遷移履歴は未分離 |
 | `VideoStatSnapshot` | `VID#{video_id}` / `STAT#{yyyyMMddHH}` | なし | 未対応 | 統計 snapshot は Video read model に寄っている |
 | `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `put_video` / `update_video_tags` が `VideoTagLink` を保存・削除し、既存 `VideoTagIndex` も互換維持 | 部分実装 | 既存データ backfill と tag search/list query の全面切替は未対応 |
@@ -39,7 +41,7 @@
 - `AppConfig` は `APP#CONFIG` / `META` に保存し、`system_name`、`target_channel_ids`、`youtube_api_key_ssm_param`、collection/export flags、`default_locale`、`public_base_path` を持つ。旧 `CONFIG#app` / `META` は読み取り fallback で扱う。
 - `Channel` は `CH#{channel_id}` / `META` に保存し、`channel_title`、`uploads_playlist_id`、`collect_enabled`、`default_tags` を持つ。旧 `CHANNEL#{channel_id}` / `META` は読み取り fallback で扱う。
 - `ChannelSyncCursor` は `CH#{channel_id}` / `CURSOR#uploads` に保存し、`uploads_playlist_id`、`next_page_token`、`next_page_token_hash`、last seen video、raw response URI、saved count を持つ。旧 `ChannelCursor` / `CHANNEL#{channel_id}` / `CURSOR#metadata` は読み取り fallback で扱う。
-- 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
+- 公開 `Video` は `VID#{video_id}` / `META` に保存し、`gsi1pk=VIDEO#PUBLIC`、`gsi1sk=PUB#{inverted_published_at}#{video_id}` を持つ。旧 `VIDEO#{video_id}` / `META` は読み取り fallback で扱う。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。
 - `ChatManifest` は `VID#{video_id}` / `CHAT#MANIFEST` に保存し、`live_collection_state`、`replay_collection_state`、`normalization_state`、`normalized_s3_uri`、`message_count` を持つ。旧 `VIDEO#{video_id}` / `CHAT#MANIFEST` は読み取り fallback で扱う。

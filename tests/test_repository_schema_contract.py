@@ -55,10 +55,12 @@ def test_video_item_current_schema_contract():
     )
 
     assert item["item_type"] == "Video"
-    assert item["pk"] == "VIDEO#vid001"
+    assert item["pk"] == "VID#vid001"
     assert item["sk"] == "META"
     assert item["gsi1pk"] == "VIDEO#PUBLIC"
-    assert item["gsi1sk"] == "2026-05-30T00:00:00Z#vid001"
+    assert item["gsi1sk"].startswith("PUB#")
+    assert item["gsi1sk"].endswith("#vid001")
+    assert item["published_at_sort"] == "2026-05-30T00:00:00Z"
     assert item["tags"] == ["歌枠", "雑談"]
     assert "updated_at" in item
 
@@ -91,7 +93,7 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     job, deduplicated = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")
     idempotency = repo.get_item("IDEMP#metadata:ch001", "META")
 
-    assert video["pk"] == "VIDEO#vid001"
+    assert video["pk"] == "VID#vid001"
     assert tag_index["item_type"] == "VideoTagIndex"
     assert tag_index["gsi2pk"] == "TAG#歌枠"
     assert tag_link["item_type"] == "VideoTagLink"

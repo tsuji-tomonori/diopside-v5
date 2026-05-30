@@ -73,6 +73,10 @@ def video_month_key(published_at: str | None) -> str | None:
     return f"{year}{month}"
 
 
+def inverted_timestamp(value: str) -> str:
+    return "".join(str(9 - int(char)) if char.isdigit() else char for char in value)
+
+
 def app_config_item(config: dict[str, Any]) -> dict[str, Any]:
     return {
         **{key: value for key, value in config.items() if key != "youtube_api_key"},
@@ -171,14 +175,15 @@ def video_item(video: dict[str, Any]) -> dict[str, Any]:
     item = {
         **video,
         "item_type": "Video",
-        "pk": f"VIDEO#{video_id}",
+        "pk": f"VID#{video_id}",
         "sk": "META",
         "updated_at": now_iso(),
         "tags": tags,
     }
     if item.get("public", True):
         item["gsi1pk"] = "VIDEO#PUBLIC"
-        item["gsi1sk"] = f"{published_at}#{video_id}"
+        item["gsi1sk"] = f"PUB#{inverted_timestamp(published_at)}#{video_id}"
+        item["published_at_sort"] = published_at
     return item
 
 
@@ -678,7 +683,7 @@ class MemoryRepository:
         return deepcopy(videos[:limit])
 
     def get_video(self, video_id: str) -> dict[str, Any] | None:
-        return self.get_item(f"VIDEO#{video_id}", "META")
+        return self.get_item(f"VID#{video_id}", "META") or self.get_item(f"VIDEO#{video_id}", "META")
 
     def list_video_month_indexes(self, year: int | None = None, month: int | None = None) -> list[dict[str, Any]]:
         indexes = [item for item in self.items.values() if item.get("item_type") == "VideoMonthIndex"]
@@ -765,7 +770,7 @@ class MemoryRepository:
         existing = self.get_video(video["video_id"])
         previous_tags = set(existing.get("tags", [])) if existing else set()
         previous_month_key = video_month_key(existing.get("published_at")) if existing else None
-        item = self.put_item(video_item(video))
+        item = self.put_item(video_item({**(existing or {}), **video}))
         current_month_index = video_month_index_item(item)
         current_month_key = current_month_index["sk"].replace("INDEX#MONTH#", "") if current_month_index else None
         if previous_month_key and previous_month_key != current_month_key:
@@ -1137,7 +1142,7 @@ class DynamoRepository(MemoryRepository):
             for item in self._query_all(
                 IndexName="by_public_date",
                 KeyConditionExpression=Key("gsi1pk").eq("VIDEO#PUBLIC"),
-                ScanIndexForward=False,
+                ScanIndexForward=True,
                 Limit=limit,
             )
             if item.get("item_type") == "Video" and item.get("public", True)
