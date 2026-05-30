@@ -47,7 +47,9 @@ const els = {
   clearTag: document.querySelector("#clearTagButton"),
   admin: document.querySelector("#adminPanel"),
   adminResult: document.querySelector("#adminResult"),
-  adminData: document.querySelector("#adminData")
+  adminData: document.querySelector("#adminData"),
+  adminChannelForm: document.querySelector("#adminChannelForm"),
+  adminChannelList: document.querySelector("#adminChannelList")
 };
 
 const json = async (path, options = {}) => {
@@ -491,6 +493,37 @@ const renderQuotaUsage = (items) => items.length
   ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
   : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" });
 
+const channelSummaryText = (item) => [
+  item.channel_id || "channel_id未設定",
+  item.display_name || "display_name未設定",
+  item.enabled === true ? "enabled" : "disabled",
+  item.uploads_playlist_id || "uploads_playlist_id未設定"
+].join(" / ");
+
+const fillChannelForm = (item) => {
+  const form = els.adminChannelForm;
+  form.elements.channelId.value = item.channel_id || "";
+  form.elements.uploadsPlaylistId.value = item.uploads_playlist_id || "";
+  form.elements.displayName.value = item.display_name || "";
+  form.elements.metadataIntervalMinutes.value = item.metadata_interval_minutes || 720;
+  form.elements.liveScanIntervalMinutes.value = item.live_scan_interval_minutes || 30;
+  form.elements.enabled.checked = item.enabled !== false;
+  form.elements.notificationEnabled.checked = item.notification_enabled === true;
+};
+
+const renderChannelList = (items) => items.length
+  ? el("div", { class: "admin-list" }, items.slice(0, 20).map((item) => {
+    const button = el("button", { type: "button", "aria-label": `${item.channel_id || "channel"} を編集` }, [
+      el("span", { class: "channel-summary" }, [
+        el("strong", { text: item.display_name || item.channel_id || "channel_id未設定" }),
+        el("span", { text: channelSummaryText(item) })
+      ])
+    ]);
+    button.addEventListener("click", () => fillChannelForm(item));
+    return button;
+  }))
+  : el("p", { class: "empty-state", text: "表示できる channel はありません。" });
+
 const renderJobDetail = (item) => {
   const events = item.events || [];
   const summaryRows = [
@@ -532,6 +565,59 @@ const loadAdminData = async (kind) => {
   }
 };
 
+const loadChannels = async () => {
+  try {
+    await ensureAdminSession();
+    const result = await json("/api/admin/channels", { credentials: "same-origin" });
+    els.adminChannelList.replaceChildren(renderChannelList(result.items || []));
+  } catch (error) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+const channelBodyFromForm = () => {
+  const form = els.adminChannelForm;
+  const metadataInterval = Number(form.elements.metadataIntervalMinutes.value);
+  const liveScanInterval = Number(form.elements.liveScanIntervalMinutes.value);
+  if (!Number.isInteger(metadataInterval) || metadataInterval < 1 || metadataInterval > 1440) {
+    throw new Error("metadata interval minutes は 1 から 1440 の整数で指定してください。");
+  }
+  if (!Number.isInteger(liveScanInterval) || liveScanInterval < 1 || liveScanInterval > 1440) {
+    throw new Error("live scan interval minutes は 1 から 1440 の整数で指定してください。");
+  }
+  return {
+    enabled: form.elements.enabled.checked,
+    uploads_playlist_id: form.elements.uploadsPlaylistId.value.trim() || null,
+    display_name: form.elements.displayName.value.trim() || null,
+    metadata_interval_minutes: metadataInterval,
+    live_scan_interval_minutes: liveScanInterval,
+    notification_enabled: form.elements.notificationEnabled.checked
+  };
+};
+
+const saveChannel = async () => {
+  const form = els.adminChannelForm;
+  const channelId = form.elements.channelId.value.trim();
+  if (!channelId) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: "channel_id を入力してください。" }));
+    return;
+  }
+  try {
+    await ensureAdminSession();
+    const result = await json(`/api/admin/channels/${encodeURIComponent(channelId)}`, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
+      body: JSON.stringify(channelBodyFromForm())
+    });
+    fillChannelForm(result.item || {});
+    els.adminResult.textContent = `${result.item?.channel_id || channelId} のチャンネル設定を保存しました。`;
+    await loadChannels();
+  } catch (error) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
 const loadJobDetail = async (jobId) => {
   if (!jobId) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: "job_id を入力してください。" }));
@@ -548,6 +634,11 @@ const loadJobDetail = async (jobId) => {
 
 document.querySelector("#loadJobsButton").addEventListener("click", () => loadAdminData("jobs"));
 document.querySelector("#loadQuotaButton").addEventListener("click", () => loadAdminData("quota"));
+document.querySelector("#loadChannelsButton").addEventListener("click", loadChannels);
+els.adminChannelForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveChannel();
+});
 document.querySelector("#loadJobDetailButton").addEventListener("click", () => {
   const data = new FormData(document.querySelector("#adminJobForm"));
   loadJobDetail(String(data.get("jobId") || ""));

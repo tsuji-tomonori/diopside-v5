@@ -135,6 +135,11 @@ select {
   width: 100%;
 }
 
+input[type="checkbox"] {
+  min-height: 0;
+  width: auto;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -464,7 +469,8 @@ select {
   background: rgb(23 33 29 / 42%);
 }
 
-.bottom-sheet form {
+.bottom-sheet form,
+.admin-panel-content {
   display: grid;
   gap: 14px;
   margin: 0 auto;
@@ -516,6 +522,17 @@ select {
   border-color: #d6dfda;
   min-height: 44px;
   text-align: left;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.channel-summary {
+  display: grid;
+  gap: 2px;
 }
 
 .admin-detail {

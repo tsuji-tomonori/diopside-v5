@@ -165,6 +165,21 @@ async function checkBrowserFlows(url) {
         await waitFor(() => text("#adminResult").includes("static_export") && document.querySelector('#adminJobId').value);
         click("#loadJobDetailButton");
         await waitFor(() => text("#adminData").includes("JobEvent") && text("#adminData").includes("queued"));
+
+        setInput('#adminChannelForm input[name="channelId"]', "ch-local-e2e");
+        setInput('#adminChannelForm input[name="uploadsPlaylistId"]', "UUlocalE2E");
+        setInput('#adminChannelForm input[name="displayName"]', "Local E2E Channel");
+        setInput('#adminChannelForm input[name="metadataIntervalMinutes"]', "720");
+        setInput('#adminChannelForm input[name="liveScanIntervalMinutes"]', "30");
+        document.querySelector('#adminChannelForm input[name="enabled"]').checked = true;
+        document.querySelector('#adminChannelForm input[name="notificationEnabled"]').checked = true;
+        document.querySelector("#adminChannelForm").requestSubmit();
+        await waitFor(() => text("#adminResult").includes("ch-local-e2e") && text("#adminChannelList").includes("Local E2E Channel"))
+          .catch(() => {
+            throw new Error("channel settings flow failed: " + text("#adminResult") + " | " + text("#adminChannelList"));
+          });
+        click("#loadChannelsButton");
+        await waitFor(() => text("#adminChannelList").includes("UUlocalE2E"));
       })()`);
     } finally {
       client.close();

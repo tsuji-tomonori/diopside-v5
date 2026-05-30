@@ -15,6 +15,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self._handle()
 
+    def do_PUT(self) -> None:
+        self._handle()
+
     def _handle(self) -> None:
         parsed = urlparse(self.path)
         length = int(self.headers.get("content-length", "0"))
