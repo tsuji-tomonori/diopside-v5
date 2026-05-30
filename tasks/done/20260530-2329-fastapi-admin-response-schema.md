@@ -1,6 +1,6 @@
 # FastAPI admin response schema
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -91,3 +91,9 @@ API-010〜023 と追加管理 route のうち、既存 handler の認証・CSRF 
 
 - response_model validation と既存 response shape にずれがある場合、runtime error になる。
 - 今回は response schema baseline であり、request schema と FastAPI dependency 化には追加作業が必要。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583119561
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583120480
