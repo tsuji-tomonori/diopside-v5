@@ -190,6 +190,7 @@ class MemoryRepository:
                 "video_count": normalized_video_count,
                 "job_id": normalized_job_id,
                 "details": {**usage_details, "channel_id": normalized_channel_id, "video_count": normalized_video_count, "job_id": normalized_job_id},
+                "record_type": "call",
                 "created_at": stamp,
                 "gsi3pk": "QUOTA#ALL",
                 "gsi3sk": f"{stamp}#{method}",
@@ -279,7 +280,7 @@ class MemoryRepository:
         return None
 
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
-        usage = [item for item in self.items.values() if item.get("item_type") == "QuotaUsage"]
+        usage = [item for item in self.items.values() if item.get("item_type") == "QuotaUsage" and not item.get("sk", "").startswith("METHOD#")]
         usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return deepcopy(usage[:limit])
 
@@ -416,7 +417,7 @@ class DynamoRepository(MemoryRepository):
                 ScanIndexForward=False,
                 Limit=limit,
             )
-            if item.get("item_type") == "QuotaUsage"
+            if item.get("item_type") == "QuotaUsage" and not item.get("sk", "").startswith("METHOD#")
         ]
         return deepcopy(usage[:limit])
 

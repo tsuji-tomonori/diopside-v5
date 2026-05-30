@@ -28,7 +28,7 @@
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` は `EVENT#{time}#{uuid}` | 差分あり | seq / event_name / state_after ではなく event_type/details |
 | `Lock` | `LOCK#{lock_key}` / `META` | `ITEM_TYPES` で許可 | 部分実装 | 取得/解放 helper と TTL contract は未実装 |
 | `Idempotency` | `IDEMP#{dedupe_key}` / `META` | Memory は `idempotency_index`、DynamoDB は Job conditional put | 差分あり | 独立 item は未保存 |
-| `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` | 差分あり | call_count / units_used 集計 item ではなく call record |
+| `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 部分実装 | call record 互換は維持。quota threshold warning event は未実装 |
 | `RandomBucket` | `RANDOM#DEFAULT` / `VID#{bucket_no}#{video_id}` | なし | 未対応 | random API は現状時刻 rotate |
 
 ## 現 repository contract
@@ -40,7 +40,7 @@
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は append-only item として保存され、現在状態は保存値ではなく末尾 event から導出する。
-- `QuotaUsage` は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。
+- `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、call record 一覧には混在させない。
 - チャット本文、raw response、大きな集計・成果物本体は DynamoDB に保存せず、S3 URI / public path / summary のみを保持する。
 
 ## 後続修正方針
@@ -49,4 +49,4 @@
 2. `schema_version`、`entity_id`、`created_at`、`updated_at` の共通属性を repository writer に追加する。
 3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`StaticExport`、`RandomBucket` を専用 writer と query path で追加する。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
-5. `QuotaUsage` は call record と daily aggregate のどちらを正本にするか決め、v0.4 の `METHOD#{method}` item との整合を取る。
+5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。

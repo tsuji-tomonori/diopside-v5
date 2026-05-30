@@ -1123,20 +1123,32 @@ def test_retry_and_cancel_job_update_target_events():
     assert repo.get_job(queued["job_id"])["derived_state"] == "cancelled"
 
 
-def test_quota_rollup_summarizes_usage_without_side_effects():
+def test_quota_rollup_summarizes_usage_and_stores_daily_method_items():
     repo = MemoryRepository()
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=2, job_id="job-video")
     repo.record_quota_usage("playlistItems.list", 1, {}, channel_id="ch", video_count=2, job_id="job-playlist")
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-live")
 
     result = quota_rollup(repo, {"requested_by": "scheduler"})
+    quota_date = repo.list_quota_usage()[0]["pk"].removeprefix("QUOTA#").replace("-", "")
+    videos_summary = repo.get_item(f"QUOTA#{quota_date}", "METHOD#videos.list")
+    playlist_summary = repo.get_item(f"QUOTA#{quota_date}", "METHOD#playlistItems.list")
 
-    assert result == {
-        "requested_by": "scheduler",
-        "item_count": 3,
-        "total_units": 3,
-        "by_method": {"videos.list": 2, "playlistItems.list": 1},
-    }
+    assert result["requested_by"] == "scheduler"
+    assert result["item_count"] == 3
+    assert result["total_units"] == 3
+    assert result["by_method"] == {"videos.list": 2, "playlistItems.list": 1}
+    assert result["summary_count"] == 2
+    assert videos_summary["record_type"] == "daily_method_summary"
+    assert videos_summary["quota_date"] == quota_date
+    assert videos_summary["call_count"] == 2
+    assert videos_summary["units_used"] == 2
+    assert videos_summary["unit_per_call"] == 1
+    assert videos_summary["video_count"] == 3
+    assert videos_summary["channel_ids"] == ["ch"]
+    assert videos_summary["job_ids"] == ["job-live", "job-video"]
+    assert playlist_summary["call_count"] == 1
+    assert playlist_summary["units_used"] == 1
     assert len(repo.list_quota_usage()) == 3
 
 

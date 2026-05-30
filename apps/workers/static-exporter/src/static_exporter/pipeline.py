@@ -492,18 +492,69 @@ def cancel_job(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     usage = repo.list_quota_usage(int(params.get("limit", 10000)))
-    by_method: dict[str, int] = {}
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
     total_units = 0
     for item in usage:
         method = item.get("method") or "unknown"
         units = int(item.get("units") or 0)
-        by_method[method] = by_method.get(method, 0) + units
+        quota_date = _quota_date(item, params.get("quota_date"))
+        key = (quota_date, method)
+        group = grouped.setdefault(
+            key,
+            {
+                "quota_date": quota_date,
+                "method": method,
+                "call_count": 0,
+                "units_used": 0,
+                "video_count": 0,
+                "channel_ids": set(),
+                "job_ids": set(),
+            },
+        )
+        group["call_count"] += 1
+        group["units_used"] += units
+        group["video_count"] += int(item.get("video_count") or 0)
+        if item.get("channel_id"):
+            group["channel_ids"].add(item["channel_id"])
+        if item.get("job_id"):
+            group["job_ids"].add(item["job_id"])
         total_units += units
+    rolled_up_at = now_iso()
+    summaries = []
+    by_method: dict[str, int] = {}
+    for _, group in sorted(grouped.items()):
+        call_count = group["call_count"]
+        units_used = group["units_used"]
+        unit_per_call = units_used // call_count if call_count and units_used % call_count == 0 else units_used / call_count
+        item = repo.put_item(
+            {
+                "item_type": "QuotaUsage",
+                "pk": f"QUOTA#{group['quota_date']}",
+                "sk": f"METHOD#{group['method']}",
+                "record_type": "daily_method_summary",
+                "quota_date": group["quota_date"],
+                "method": group["method"],
+                "call_count": call_count,
+                "units_used": units_used,
+                "unit_per_call": unit_per_call,
+                "video_count": group["video_count"],
+                "channel_ids": sorted(group["channel_ids"]),
+                "job_ids": sorted(group["job_ids"]),
+                "source_record_count": call_count,
+                "updated_at": rolled_up_at,
+                "gsi3pk": "QUOTA#ROLLUP",
+                "gsi3sk": f"{group['quota_date']}#{group['method']}",
+            }
+        )
+        summaries.append(item)
+        by_method[item["method"]] = by_method.get(item["method"], 0) + item["units_used"]
     return {
         "requested_by": params.get("requested_by", "scheduler"),
         "item_count": len(usage),
         "total_units": total_units,
         "by_method": by_method,
+        "summary_count": len(summaries),
+        "summaries": summaries,
     }
 
 
@@ -685,6 +736,16 @@ def _parse_iso(value: str) -> datetime:
 
 def _format_iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _quota_date(item: dict[str, Any], override: str | None = None) -> str:
+    if override:
+        return override.replace("-", "")
+    if item.get("quota_date"):
+        return str(item["quota_date"]).replace("-", "")
+    if item.get("pk", "").startswith("QUOTA#"):
+        return item["pk"].removeprefix("QUOTA#").replace("-", "")
+    return str(item.get("created_at") or now_iso())[:10].replace("-", "")
 
 
 def _log_worker_job(

@@ -97,6 +97,7 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert artifact["sk"] == "ARTIFACT#wordcloud"
     assert quota["pk"].startswith("QUOTA#")
     assert quota["gsi3pk"] == "QUOTA#ALL"
+    assert quota["record_type"] == "call"
     assert job["pk"] == f"JOB#{job['job_id']}"
     assert job["gsi3pk"] == "JOB#ALL"
     assert deduplicated is False
@@ -122,6 +123,30 @@ def test_repository_accepts_notification_plan_v04_item_shape():
 
     assert item["item_type"] == "NotificationPlan"
     assert repo.get_item("VID#vid001", "NOTIFY#before_30min")["gsi3pk"] == "NOTIFY#DUE"
+
+
+def test_repository_keeps_quota_daily_summary_out_of_call_record_list():
+    repo = MemoryRepository()
+    call = repo.record_quota_usage("videos.list", 1, {}, channel_id="ch001", video_count=1, job_id="job001")
+    summary = repo.put_item(
+        {
+            "item_type": "QuotaUsage",
+            "pk": "QUOTA#20260530",
+            "sk": "METHOD#videos.list",
+            "record_type": "daily_method_summary",
+            "quota_date": "20260530",
+            "method": "videos.list",
+            "call_count": 1,
+            "units_used": 1,
+            "unit_per_call": 1,
+            "updated_at": "2026-05-30T12:27:00Z",
+            "gsi3pk": "QUOTA#ROLLUP",
+            "gsi3sk": "20260530#videos.list",
+        }
+    )
+
+    assert repo.get_item("QUOTA#20260530", "METHOD#videos.list") == summary
+    assert repo.list_quota_usage() == [call]
 
 
 def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
