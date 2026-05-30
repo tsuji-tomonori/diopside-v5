@@ -28,15 +28,15 @@
 
 ## 受け入れ条件
 
-- [ ] `top_terms` がある動画で `/data/artifacts/wordcloud/{video_id}.png` と versioned PNG が生成される。
-- [ ] PNG は実 `top_terms` と score から deterministic に生成され、空データでは生成されない。
-- [ ] detail JSON の `wordcloud_url` と `artifacts.wordcloud` が PNG artifact を指す。
-- [ ] `/data/artifacts/wordcloud/{video_id}.json` は引き続き STATIC-007 JSON として生成される。
-- [ ] 既存 SVG artifact は互換 artifact として残る。
-- [ ] public contract check と static exporter tests が PNG/JSON 両方を検証する。
-- [ ] README、traceability、audit が更新される。
-- [ ] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
-- [ ] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
+- [x] `top_terms` がある動画で `/data/artifacts/wordcloud/{video_id}.png` と versioned PNG が生成される。
+- [x] PNG は実 `top_terms` と score から deterministic に生成され、空データでは生成されない。
+- [x] detail JSON の `wordcloud_url` と `artifacts.wordcloud` が PNG artifact を指す。
+- [x] `/data/artifacts/wordcloud/{video_id}.json` は引き続き STATIC-007 JSON として生成される。
+- [x] 既存 SVG artifact は互換 artifact として残る。
+- [x] public contract check と static exporter tests が PNG/JSON 両方を検証する。
+- [x] README、traceability、audit が更新される。
+- [x] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
+- [x] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
 
 ## 実装計画
 
@@ -66,6 +66,30 @@
 - 外部画像ライブラリを追加しないため、PNG は軽量 deterministic renderer に留まる。
 - 専用 wordcloud worker 分割と本格的な日本語フォント描画は後続対象。
 
+## 完了結果
+
+- 実装 commit: `4415192` (`✨ feat(static): wordcloud PNG artifactを追加`)
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/40
+- PR 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581586558
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581586556
+- 作業レポート: `reports/working/20260530-1257-static-wordcloud-png-artifact-report.md`
+
+### 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/artifacts.py apps/workers/static-exporter/src/static_exporter/handler.py apps/workers/static-exporter/src/static_exporter/pipeline.py`: pass
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_static_exporter.py`: pass（7 tests）
+- `node tools/check-public-contract.mjs data/fixtures/public`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_worker_batch_coverage_contract.py`: pass（46 tests）
+- `git diff --check`: pass
+- `npm run verify`: pass（102 tests + build/package/local e2e）
+
+### 後続対象
+
+- 専用 `wordcloud-generator` worker と wordcloud queue。
+- 画像生成ライブラリやフォント描画を使う本格的な wordcloud renderer。
+- 実 S3 upload / CloudFront 経路での PNG 配信確認。
+
 ## 状態
 
-in_progress
+done
