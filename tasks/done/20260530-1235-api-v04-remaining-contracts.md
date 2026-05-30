@@ -66,6 +66,13 @@ API route 自体は README に記載済みのため、主に `docs/design/tracea
 - FastAPI / OpenAPI の完全準拠は未対応のまま残る。
 - 実 SQS 送信は未検証で、dry-run path の contract に限定する。
 
+## 完了結果
+
+- PR #40 本文を API contract test の変更内容と検証結果で更新した。
+- 受け入れ条件確認コメント: `https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581531754`
+- セルフレビューコメント: `https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581531748`
+- 作業レポート: `reports/working/20260530-1238-api-v04-remaining-contracts-report.md`
+
 ## 状態
 
-in_progress
+done
