@@ -20,6 +20,7 @@ from diopside_core import (
     extract_replay_actions_from_initial_data,
     extract_replay_continuations_from_initial_data,
     fetch_public_replay_actions,
+    fetch_public_replay_continuation,
     normalize_live_chat_items,
     normalize_channel_resource,
     normalize_replay_actions,
@@ -357,6 +358,16 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         replay_continuations = params.get("replay_continuations", [])
         if params.get("replay_actions"):
             actions = params["replay_actions"]
+        elif params.get("replay_continuation"):
+            continuation = params["replay_continuation"]
+            continuation_token = continuation["token"] if isinstance(continuation, dict) else str(continuation)
+            if params.get("replay_continuation_response"):
+                continuation_response = params["replay_continuation_response"]
+            else:
+                replay_client = params.get("replay_client")
+                continuation_response = replay_client.replay_continuation(continuation_token) if replay_client else fetch_public_replay_continuation(continuation_token)
+            actions = extract_replay_actions_from_initial_data(continuation_response)
+            replay_continuations = extract_replay_continuations_from_initial_data(continuation_response)
         elif params.get("replay_initial_data"):
             initial_data = params["replay_initial_data"]
             actions = extract_replay_actions_from_initial_data(initial_data)

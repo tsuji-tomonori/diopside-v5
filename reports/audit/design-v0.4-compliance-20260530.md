@@ -16,7 +16,8 @@
 FR-YT-010 は `chat_normalize` が normalized JSONL を streaming 生成する際に `message_id` で重複除外するよう更新し、chunk をまたいだ同一 message の重複が summary と normalized output に入らないことを `tests/test_core_pipeline.py` で検証した。
 BATCH-002 は `YouTubeClient.channels` と `normalize_channel_resource` を追加し、`metadata_sync` が `channels.list` raw response を保存して `Channel` / `ChannelRef` を更新するよう対応した。local test では fake client で channel 情報取得、raw 保存、quota usage、cursor/video 保存を検証した。
 BATCH-007 は `chat_collect` mode=`live` が `liveChatMessages.list` を呼び、quota usage、page token requeue、rate limit/offline stop、`ChatPageManifest` 保存を `tests/test_core_pipeline.py` で検証済みのため実装済みに更新した。worker 物理分割は `WORKER-SPLIT` の差分として別管理する。
-BATCH-008 は replay initial data / HTML 解析、unknown renderer 保持、continuation 抽出、後続 `chat_collect` job 投入まで対応し、`tests/test_core_pipeline.py` で検証した。BATCH-009 の continuation token からの実ページ取得は未対応として残す。
+BATCH-008 は replay initial data / HTML 解析、unknown renderer 保持、continuation 抽出、後続 `chat_collect` job 投入まで対応し、`tests/test_core_pipeline.py` で検証した。
+BATCH-009 は replay continuation token から public continuation response を取得する helper と `chat_collect` 分岐を追加し、action 正規化、次 continuation 再投入、`ChatPageManifest` 保存を `tests/test_core_pipeline.py` で検証した。実 YouTube replay continuation response での dev rehearsal は未実施。
 
 ## 2. 正本化
 

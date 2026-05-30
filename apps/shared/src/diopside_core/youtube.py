@@ -230,6 +230,27 @@ def fetch_public_replay_actions(video_id: str) -> list[dict[str, Any]]:
     return extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(html))
 
 
+def fetch_public_replay_continuation(continuation_token: str) -> dict[str, Any]:
+    url = "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat_replay?prettyPrint=false"
+    body = json.dumps(
+        {
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20260530.00.00",
+                }
+            },
+            "continuation": continuation_token,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(url, data=body, headers={"content-type": "application/json"}, method="POST")
+    with urllib.request.urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("YouTube replay continuation returned malformed response")
+    return payload
+
+
 def _int_or_none(value: Any) -> int | None:
     if value is None or value == "":
         return None

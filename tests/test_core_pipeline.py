@@ -594,6 +594,71 @@ def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_
     assert rows[1]["raw_renderer"]["id"] == "m-unknown"
 
 
+def test_replay_continuation_page_fetches_actions_and_requeues_next(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued")
+
+    class FakeReplayClient:
+        def __init__(self):
+            self.tokens = []
+
+        def replay_continuation(self, token):
+            self.tokens.append(token)
+            return {
+                "continuationContents": {
+                    "liveChatContinuation": {
+                        "actions": [
+                            {
+                                "replayChatItemAction": {
+                                    "videoOffsetTimeMsec": "22000",
+                                    "actions": [
+                                        {
+                                            "addChatItemAction": {
+                                                "item": {
+                                                    "liveChatTextMessageRenderer": {
+                                                        "id": "m-page",
+                                                        "authorExternalChannelId": "author-page",
+                                                        "authorName": {"simpleText": "Bob"},
+                                                        "timestampUsec": "2000",
+                                                        "timestampText": {"simpleText": "0:22"},
+                                                        "message": {"runs": [{"text": "page replay"}]},
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ],
+                                }
+                            }
+                        ],
+                        "continuations": [
+                            {"timedContinuationData": {"continuation": "replay-token-2", "timeoutMs": 2500}}
+                        ],
+                    }
+                }
+            }
+
+    repo = MemoryRepository()
+    client = FakeReplayClient()
+
+    collected = chat_collect(repo, {"video_id": "vid-replay-page", "mode": "replay", "replay_continuation": {"token": "replay-token-1"}, "replay_client": client})
+
+    raw_files = list((tmp_path / "raw/youtube/chat/video_id=vid-replay-page/source=replay").glob("*.jsonl"))
+    rows = [json.loads(line) for line in raw_files[0].read_text(encoding="utf-8").splitlines()]
+    chunk = repo.list_chat_chunks("vid-replay-page")[0]
+    assert client.tokens == ["replay-token-1"]
+    assert collected["message_count"] == 1
+    assert collected["next_poll"]["action"] == "continuation_available"
+    assert collected["next_poll"]["continuations"][0]["token"] == "replay-token-2"
+    assert rows[0]["message_text"] == "page replay"
+    assert chunk["item_type"] == "ChatPageManifest"
+    assert chunk["source"] == "replay"
+    assert chunk["next_poll"]["continuation_count"] == 1
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_CHAT_QUEUE_URL"
+    assert enqueued[0]["delay_seconds"] == 2
+    assert enqueued[0]["payload"]["payload"]["replay_continuation"] == {"token": "replay-token-2", "source": "timedContinuationData", "timeout_ms": 2500}
+
+
 def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
     enqueued = []

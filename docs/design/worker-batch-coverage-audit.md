@@ -16,7 +16,7 @@
 | BATCH-006 | 配信予定通知生成 | `notification_plan` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | NotificationPlan item 作成に対応。外部通知 delivery / DLQ は未実装 |
 | BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | `liveChatMessages.list` 呼び出し、quota 記録、page token requeue、rate limit/offline stop を検証 |
 | BATCH-008 | リプレイチャット初期化 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | initial data 解析、unknown renderer 保持、continuation 抽出、後続 `chat_collect` 投入を検証 |
-| BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | continuation token の後続投入 contract は追加済み。continuation token からの実ページ取得は未実装 |
+| BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | continuation token から replay continuation response を取得し、action 正規化、次 continuation 再投入、`ChatPageManifest` 保存を検証 |
 | BATCH-010 | チャット正規化 | `chat_normalize` | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | streaming normalize と summary 更新を検証 |
 | BATCH-011 | チャット集計 | `chat_normalize` 内 aggregate | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | aggregate worker は未分離 |
 | BATCH-012 | ワードクラウド生成 | `rebuild_artifacts` / `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | PNG/JSON と互換 SVG を出力。専用 wordcloud worker 分割は未実装 |
@@ -46,6 +46,6 @@
 1. BATCH-006 の外部通知 delivery / DLQ / sent/skipped/failed 更新を実装する。
 2. `archive_finalize` の遅延 Scheduler 連携を実装し、archive_available の通知時刻を運用要件に合わせる。
 3. BATCH-011 / 012 / 013 を aggregate 統合処理から分離し、wordcloud / timestamp の job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
-4. BATCH-009 は continuation token からの実ページ取得を実装し、replay page collector contract を明確にする。
+4. replay continuation の dev rehearsal を行い、実 YouTube 応答で BATCH-008 / 009 の parser coverage を確認する。
 5. BATCH-016 は quota threshold warning event、上限接近時の通知、管理 UI での summary 表示へ接続する。
 6. GitHub Actions workflow_dispatch の実 AWS dispatch rehearsal を行い、role/queue secret と job event 証跡を確認する。
