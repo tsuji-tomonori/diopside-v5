@@ -1413,8 +1413,8 @@ def test_notification_plan_creates_due_items_idempotently():
         }
     )
 
-    first = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify"})
-    second = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify-2"})
+    first = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify", "now": "2026-05-30T11:00:00Z"})
+    second = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify-2", "now": "2026-05-30T11:00:00Z"})
 
     before = repo.get_item("VID#vid-plan", "NOTIFY#before_30min")
     at_start = repo.get_item("VID#vid-plan", "NOTIFY#at_start")

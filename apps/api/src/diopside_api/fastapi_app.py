@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 from typing import Any, Callable
 
 from .handler import lambda_handler
@@ -24,7 +25,7 @@ def create_app() -> Any:
     for route in all_route_contracts():
         app.add_api_route(
             route.path,
-            _delegate_to_lambda(route.method),
+            _delegate_to_lambda(route.method, Request),
             methods=[route.method],
             summary=route.summary,
             operation_id=f"{route.method.lower()}_{route.design_id.lower().replace('-', '_')}",
@@ -37,10 +38,19 @@ def create_app() -> Any:
     return app
 
 
-def _delegate_to_lambda(method: str) -> Callable[[Any], Any]:
+def _delegate_to_lambda(method: str, request_type: type[Any]) -> Callable[[Any], Any]:
     async def endpoint(request: Any) -> Any:
         return await _invoke_lambda(request, method)
 
+    endpoint.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        parameters=[
+            inspect.Parameter(
+                "request",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=request_type,
+            )
+        ]
+    )
     return endpoint
 
 
@@ -64,4 +74,3 @@ async def _invoke_lambda(request: Any, method: str) -> Any:
     except json.JSONDecodeError:
         return Response(content=body, status_code=status_code, headers=headers)
     return JSONResponse(content=content, status_code=status_code, headers=headers)
-

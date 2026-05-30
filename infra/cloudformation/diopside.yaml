@@ -446,7 +446,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.13
-      Handler: diopside_api.handler.lambda_handler
+      Handler: diopside_api.fastapi_lambda.lambda_handler
       Role:
         Fn::GetAtt: [ApiRole, Arn]
       Timeout: 30

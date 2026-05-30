@@ -144,7 +144,7 @@ Lambda の実行 role は職務ごとに分離します。
 ## 実装済み API と schema
 
 `apps/api/src/diopside_api/handler.py` が現在実装している API route は次の通りです。`tools/check-docs-consistency.mjs` はこの表と実装済み schema_version の対応を `npm test` で検証します。
-`apps/api/src/diopside_api/openapi_contract.py` は API-001〜023 と追加管理 route の OpenAPI 3.1 contract を依存なしで生成します。`apps/api/src/diopside_api/fastapi_app.py` は FastAPI がインストールされた環境向けの adapter で、既存 `lambda_handler` へ委譲します。現 deploy package はまだ FastAPI / Mangum 依存を同梱していないため、Lambda entrypoint は既存 handler を維持します。
+`apps/api/src/diopside_api/openapi_contract.py` は API-001〜023 と追加管理 route の OpenAPI 3.1 contract を依存なしで生成します。`apps/api/src/diopside_api/fastapi_app.py` は FastAPI adapter として既存 `lambda_handler` へ委譲します。deploy package は `requirements-api.txt` の FastAPI / Mangum 依存を `api.zip` に同梱し、Lambda entrypoint は `diopside_api.fastapi_lambda.lambda_handler` を使います。Pydantic request / response schema の全面定義は後続対象です。
 
 | API | schema_version | 内容 |
 |---|---|---|

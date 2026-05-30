@@ -19,18 +19,33 @@ def assert_no_cache_entries(names):
 def test_package_deploy_includes_shared_code_without_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(package_deploy, "OUT", tmp_path)
 
+    def fake_install_requirements(requirements, target):
+        assert requirements.name == "requirements-api.txt"
+        (target / "fastapi").mkdir(parents=True)
+        (target / "fastapi" / "__init__.py").write_text("__version__ = 'test'\n", encoding="utf-8")
+        (target / "mangum").mkdir()
+        (target / "mangum" / "__init__.py").write_text("class Mangum: pass\n", encoding="utf-8")
+
+    monkeypatch.setattr(package_deploy, "install_requirements", fake_install_requirements)
+
     package_deploy.main()
 
     api_names = zip_names(tmp_path / "api.zip")
     exporter_names = zip_names(tmp_path / "static-exporter.zip")
 
     assert "diopside_api/handler.py" in api_names
+    assert "diopside_api/fastapi_app.py" in api_names
+    assert "diopside_api/fastapi_lambda.py" in api_names
     assert "diopside_core/__init__.py" in api_names
     assert "diopside_core/repository.py" in api_names
+    assert "fastapi/__init__.py" in api_names
+    assert "mangum/__init__.py" in api_names
     assert "static_exporter/handler.py" in exporter_names
     assert "static_exporter/pipeline.py" in exporter_names
     assert "diopside_core/__init__.py" in exporter_names
     assert "diopside_core/repository.py" in exporter_names
+    assert "fastapi/__init__.py" not in exporter_names
+    assert "mangum/__init__.py" not in exporter_names
     assert (tmp_path / "diopside.yaml").exists()
     assert_no_cache_entries(api_names)
     assert_no_cache_entries(exporter_names)

@@ -139,6 +139,14 @@ def test_lambda_function_url_is_cloudfront_origin_only():
     assert outputs["ApiFunctionUrlOrigin"]["Description"].startswith("Internal Lambda Function URL origin")
 
 
+def test_api_lambda_uses_fastapi_mangum_entrypoint():
+    resources = _template()["Resources"]
+    api_function = resources["ApiFunction"]["Properties"]
+
+    assert api_function["Runtime"] == "python3.13"
+    assert api_function["Handler"] == "diopside_api.fastapi_lambda.lambda_handler"
+
+
 def test_s3_origins_are_private_and_oac_only():
     resources = _template()["Resources"]
     distribution = resources["CloudFrontDistribution"]["Properties"]["DistributionConfig"]
