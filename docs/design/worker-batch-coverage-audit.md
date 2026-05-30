@@ -14,7 +14,7 @@
 | BATCH-004 | 動画詳細取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | 状態変化 event item は v0.4 未整合 |
 | BATCH-005 | ライブ状態監視 | `live_status_scan` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | chat collect / notification_plan / archive_finalize の後続投入に対応 |
 | BATCH-006 | 配信予定通知生成 | `notification_plan` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | NotificationPlan item 作成に対応。外部通知 delivery / DLQ は未実装 |
-| BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | Live Chat page 取得と requeue はあるが専用 worker 分離なし |
+| BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | `liveChatMessages.list` 呼び出し、quota 記録、page token requeue、rate limit/offline stop を検証 |
 | BATCH-008 | リプレイチャット初期化 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | initial data 解析はあるが初期化 worker と page collector は未分離 |
 | BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | continuation 自己再投入の専用 contract は不足 |
 | BATCH-010 | チャット正規化 | `chat_normalize` | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | streaming normalize と summary 更新を検証 |

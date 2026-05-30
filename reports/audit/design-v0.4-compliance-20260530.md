@@ -15,6 +15,7 @@
 
 FR-YT-010 は `chat_normalize` が normalized JSONL を streaming 生成する際に `message_id` で重複除外するよう更新し、chunk をまたいだ同一 message の重複が summary と normalized output に入らないことを `tests/test_core_pipeline.py` で検証した。
 BATCH-002 は `YouTubeClient.channels` と `normalize_channel_resource` を追加し、`metadata_sync` が `channels.list` raw response を保存して `Channel` / `ChannelRef` を更新するよう対応した。local test では fake client で channel 情報取得、raw 保存、quota usage、cursor/video 保存を検証した。
+BATCH-007 は `chat_collect` mode=`live` が `liveChatMessages.list` を呼び、quota usage、page token requeue、rate limit/offline stop、`ChatPageManifest` 保存を `tests/test_core_pipeline.py` で検証済みのため実装済みに更新した。worker 物理分割は `WORKER-SPLIT` の差分として別管理する。
 
 ## 2. 正本化
 
