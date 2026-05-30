@@ -41,13 +41,13 @@
 
 ## 受け入れ条件
 
-- [ ] `put_chat_manifest` が `pk=VID#{video_id}` / `sk=CHAT#MANIFEST` の `ChatManifest` item を保存する。
-- [ ] `ChatManifest` item が `video_id`、`normalized_s3_uri`、`message_count`、`live_collection_state`、`replay_collection_state`、`normalization_state` を持つ。
-- [ ] `get_chat_manifest` が新 key を優先し、旧 `VIDEO#...` / `CHAT#MANIFEST` も fallback で扱える。
-- [ ] `chat_normalize` が v0.4 key の `ChatManifest` を保存し、既存 chat normalize tests が通る。
-- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
-- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
-- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+- [x] `put_chat_manifest` が `pk=VID#{video_id}` / `sk=CHAT#MANIFEST` の `ChatManifest` item を保存する。
+- [x] `ChatManifest` item が `video_id`、`normalized_s3_uri`、`message_count`、`live_collection_state`、`replay_collection_state`、`normalization_state` を持つ。
+- [x] `get_chat_manifest` が新 key を優先し、旧 `VIDEO#...` / `CHAT#MANIFEST` も fallback で扱える。
+- [x] `chat_normalize` が v0.4 key の `ChatManifest` を保存し、既存 chat normalize tests が通る。
+- [x] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [x] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [x] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
 
 ## 検証計画
 
@@ -69,6 +69,28 @@
 - 既存 DynamoDB data への backfill は未実施。
 - live/replay collection state の詳細更新は現時点では default read model 値であり、完全な state machine 接続は後続。
 
+## 実施結果
+
+- `chat_manifest_item`、`put_chat_manifest`、`get_chat_manifest` を追加し、新規保存を `VID#{video_id}` / `CHAT#MANIFEST` に変更した。
+- `chat_normalize` の manifest 保存を repository method 経由に変更した。
+- 旧 `VIDEO#{video_id}` / `CHAT#MANIFEST` は `get_chat_manifest` fallback として維持した。
+- README と `docs/design/dynamodb-schema-audit.md` を実装済み形状に同期した。
+- 作業レポートを `reports/working/20260530-1458-chat-manifest-v04-key.md` に作成した。
+
+## 検証結果
+
+- `git diff --check`: pass
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py apps/workers/static-exporter/src/static_exporter/pipeline.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: 24 passed
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_static_exporter.py`: 50 passed
+- `node tools/check-docs-consistency.mjs`: pass
+- `npm run verify`: 125 tests passed + build/package/local e2e passed
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581916852
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581916853
+
 ## 状態
 
-in_progress
+done
