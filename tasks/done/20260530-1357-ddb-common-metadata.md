@@ -29,14 +29,14 @@ repository の writer 境界で DDB item 共通属性を正規化し、既存 it
 
 ## 受け入れ条件
 
-- [ ] `put_item` で保存される item に `schema_version`、`entity_id`、`created_at`、`updated_at` が含まれる。
-- [ ] `schema_version` / `entity_id` が既に指定された item では既存値を保持する。
-- [ ] 同じ `pk` / `sk` の更新時に既存 `created_at` を保持する。
-- [ ] `DynamoRepository.put_item` と `DynamoRepository.create_job` も共通 metadata 正規化を通る。
-- [ ] 主要 writer の contract test が共通 metadata を確認する。
-- [ ] README、DDB schema audit、compliance audit が更新される。
-- [ ] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
-- [ ] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
+- [x] `put_item` で保存される item に `schema_version`、`entity_id`、`created_at`、`updated_at` が含まれる。
+- [x] `schema_version` / `entity_id` が既に指定された item では既存値を保持する。
+- [x] 同じ `pk` / `sk` の更新時に既存 `created_at` を保持する。
+- [x] `DynamoRepository.put_item` と `DynamoRepository.create_job` も共通 metadata 正規化を通る。
+- [x] 主要 writer の contract test が共通 metadata を確認する。
+- [x] README、DDB schema audit、compliance audit が更新される。
+- [x] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
+- [x] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
 
 ## 実装計画
 
@@ -72,6 +72,19 @@ repository の writer 境界で DDB item 共通属性を正規化し、既存 it
 - 既存 DynamoDB data の backfill は未実装。
 - `schema_version` は現時点では repository 互換の default 値であり、item type ごとの詳細 schema version 設計は後続対象。
 
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: pass（14 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（115 tests + build/package/local e2e）
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581739859
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581740190
+
 ## 状態
 
-in_progress
+done
