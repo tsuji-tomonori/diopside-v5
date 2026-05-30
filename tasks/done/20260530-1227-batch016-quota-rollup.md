@@ -67,6 +67,13 @@
 - quota reset timezone は現時点では call record の timestamp 日付に依存する。
 - quota threshold warning event は未実装のため、BATCH-016 は daily summary 保存までの部分実装に留まる。
 
+## 完了結果
+
+- PR #40 本文を BATCH-016 の変更内容と検証結果で更新した。
+- 受け入れ条件確認コメント: `https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581513645`
+- セルフレビューコメント: `https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581513620`
+- 作業レポート: `reports/working/20260530-1230-batch016-quota-rollup-report.md`
+
 ## 状態
 
-in_progress
+done
