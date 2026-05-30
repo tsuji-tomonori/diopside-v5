@@ -436,8 +436,14 @@ def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     chunks = repo.list_chat_chunks(video_id)
     aggregator = ChatAggregateAccumulator()
     normalized_body = bytearray()
+    seen_message_ids: set[str] = set()
     for chunk in chunks:
         for message in _iter_jsonl(chunk["s3_uri"]):
+            message_id = str(message.get("message_id") or "")
+            if message_id:
+                if message_id in seen_message_ids:
+                    continue
+                seen_message_ids.add(message_id)
             aggregator.add(message)
             normalized_body.extend(json.dumps(message, ensure_ascii=False).encode("utf-8"))
             normalized_body.extend(b"\n")

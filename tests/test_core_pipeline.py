@@ -1009,24 +1009,22 @@ def test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list(tmp_path, m
     for index, text in enumerate(["ありがとう ありがとう", "おはよう"]):
         raw_path = tmp_path / f"raw/youtube/chat/video_id=vid-stream/source=replay/part-{index:03d}.jsonl"
         raw_path.parent.mkdir(parents=True, exist_ok=True)
-        raw_path.write_text(
-            json.dumps(
-                {
-                    "message_id": f"m{index}",
-                    "video_id": "vid-stream",
-                    "source": "replay",
-                    "message_type": "paid" if index == 1 else "text",
-                    "author_external_channel_id": f"a{index}",
-                    "author_name": None,
-                    "message_runs": [{"type": "text", "text": text}],
-                    "message_text": text,
-                    "video_offset_time_msec": 60000 + index * 1000,
-                },
-                ensure_ascii=False,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        rows = [
+            {
+                "message_id": f"m{index}",
+                "video_id": "vid-stream",
+                "source": "replay",
+                "message_type": "paid" if index == 1 else "text",
+                "author_external_channel_id": f"a{index}",
+                "author_name": None,
+                "message_runs": [{"type": "text", "text": text}],
+                "message_text": text,
+                "video_offset_time_msec": 60000 + index * 1000,
+            }
+        ]
+        if index == 1:
+            rows.append({**rows[0], "message_id": "m0", "message_text": "ありがとう ありがとう", "video_offset_time_msec": 60000})
+        raw_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
         repo.put_item(
             {
                 "item_type": "ChatMessageChunkManifest",
@@ -1052,6 +1050,7 @@ def test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list(tmp_path, m
     assert normalized["message_count"] == 2
     assert normalized["top_term_count"] == 2
     assert len(normalized_rows) == 2
+    assert [row["message_id"] for row in normalized_rows] == ["m0", "m1"]
     assert summary["message_count"] == 2
     assert summary["paid_message_count"] == 1
     assert repo.get_chat_aggregate("vid-stream")["top_terms"][0]["term"] == "ありがとう"

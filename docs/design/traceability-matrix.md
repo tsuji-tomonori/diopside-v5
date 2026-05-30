@@ -53,7 +53,7 @@
 | FR-YT-007 | YouTube | replay chat の通常メッセージを正規化する。 | `apps/shared/src/diopside_core/chat_parser.py` | `tests/test_core_pipeline.py` | 実装済 |
 | FR-YT-008 | YouTube | paid/super chat 系を正規化する。 | `apps/shared/src/diopside_core/chat_parser.py` | `tests/test_core_pipeline.py` | 実装済 |
 | FR-YT-009 | YouTube | 絵文字を正規化する。 | `apps/shared/src/diopside_core/chat_parser.py` | `tests/test_core_pipeline.py` | 実装済 |
-| FR-YT-010 | YouTube | 重複メッセージを除外する。 | `apps/shared/src/diopside_core/artifacts.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 要追加監査 |
+| FR-YT-010 | YouTube | 重複メッセージを除外する。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 
 ## 非機能要求
 

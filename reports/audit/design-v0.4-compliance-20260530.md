@@ -13,6 +13,8 @@
 
 現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする AWS CDK、FastAPI on Lambda、Next.js static export、外部通知 delivery などには差分または未対応が残る。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進め、wordcloud は PNG/JSON alias と互換 SVG を出力する。API-007/API-022/API-023 は既存 Lambda handler に追加し、API-008/API-009/API-013/API-015/API-016/API-019 は route contract test を追加した。FastAPI adapter と OpenAPI 3.1 contract は追加したが、FastAPI/Mangum 依存同梱と Lambda entrypoint 切替は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。DDB schema は v0.4 item type との差分を audit 化し、現 repository contract をテストで固定した。Worker coverage は BATCH-001〜020 の対応を audit 化し、現 pipeline の job_type / queue mapping を contract test で固定した。BATCH-006 は `notification_plan` job と `NotificationPlan` item 作成まで、BATCH-017 は `archive_finalize` job として replay collect / static export 投入まで部分実装した。
 
+FR-YT-010 は `chat_normalize` が normalized JSONL を streaming 生成する際に `message_id` で重複除外するよう更新し、chunk をまたいだ同一 message の重複が summary と normalized output に入らないことを `tests/test_core_pipeline.py` で検証した。
+
 ## 2. 正本化
 
 | 項目 | 結果 |
