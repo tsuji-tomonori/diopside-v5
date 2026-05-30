@@ -31,7 +31,9 @@ const els = {
   count: document.querySelector("#resultCount"),
   detail: document.querySelector("#videoDetail"),
   filterSheet: document.querySelector("#filterSheet"),
+  quick: document.querySelector("#quickChips"),
   recent: document.querySelector("#recentSearches"),
+  clearTag: document.querySelector("#clearTagButton"),
   admin: document.querySelector("#adminPanel"),
   adminResult: document.querySelector("#adminResult"),
   adminData: document.querySelector("#adminData")
@@ -86,19 +88,53 @@ const durationMatch = (seconds, mode) => {
 
 const renderTags = () => {
   els.tags.replaceChildren();
+  if (!state.tags.length) {
+    els.tags.append(el("p", { class: "empty-state", text: "タグはまだありません。" }));
+    return;
+  }
   for (const tag of state.tags) {
-    const button = el("button", { type: "button", text: `${tag.label} ${tag.video_count}`, "aria-pressed": String(state.selectedTag === tag.label) });
+    const button = el("button", { type: "button", text: `${tag.label} ${tag.video_count}`, "aria-pressed": String(state.selectedTag === tag.label), "data-tag": tag.label });
     button.addEventListener("click", () => {
-      state.selectedTag = state.selectedTag === tag.label ? null : tag.label;
-      render();
+      selectTag(tag.label);
     });
     els.tags.append(button);
   }
 };
 
+const quickChipItems = () => {
+  const topTags = [...state.tags]
+    .sort((a, b) => Number(b.video_count || 0) - Number(a.video_count || 0))
+    .slice(0, 4)
+    .map((tag) => ({ kind: "tag", label: tag.label, count: tag.video_count }));
+  return [{ kind: "latest", label: "最新アーカイブ" }, ...topTags];
+};
+
+const renderQuick = () => {
+  els.quick.replaceChildren();
+  const items = quickChipItems();
+  for (const item of items) {
+    const isTagActive = item.kind === "tag" && state.selectedTag === item.label;
+    const text = item.kind === "tag" ? `${item.label} ${item.count}` : item.label;
+    const button = el("button", { type: "button", text, "aria-pressed": String(isTagActive) });
+    button.addEventListener("click", async () => {
+      if (item.kind === "latest") {
+        await showLatest();
+      } else {
+        selectTag(item.label);
+      }
+    });
+    els.quick.append(button);
+  }
+};
+
 const renderRecent = () => {
   els.recent.replaceChildren();
-  for (const value of state.recentSearches.slice(0, 6)) {
+  const values = state.recentSearches.slice(0, 6);
+  if (!values.length) {
+    els.recent.append(el("p", { class: "empty-state", text: "最近検索はありません。" }));
+    return;
+  }
+  for (const value of values) {
     els.recent.append(el("button", { type: "button", text: value, onclick: () => {
       state.query = value;
       els.search.value = value;
@@ -166,6 +202,20 @@ const rememberHistory = (videoId) => {
   store.set("history", state.history);
 };
 
+const selectTag = (tag) => {
+  state.selectedTag = state.selectedTag === tag ? null : tag;
+  state.query = "";
+  els.search.value = "";
+  render();
+};
+
+const showLatest = async () => {
+  Object.assign(state, { query: "", selectedTag: null, year: "", duration: "", sort: "published_desc" });
+  els.search.value = "";
+  render();
+  if (state.videos[0]) await showDetail(state.videos[0]);
+};
+
 const rememberSearch = () => {
   const value = state.query.trim();
   if (!value) return;
@@ -175,6 +225,7 @@ const rememberSearch = () => {
 };
 
 const render = () => {
+  renderQuick();
   renderTags();
   renderRecent();
   renderList();
@@ -194,6 +245,14 @@ els.search.addEventListener("input", (event) => {
   renderList();
 });
 els.search.addEventListener("change", rememberSearch);
+els.search.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") rememberSearch();
+});
+
+els.clearTag.addEventListener("click", () => {
+  state.selectedTag = null;
+  render();
+});
 
 document.querySelector(".bottom-nav").addEventListener("click", async (event) => {
   const action = event.target?.dataset?.action;
@@ -204,7 +263,7 @@ document.querySelector(".bottom-nav").addEventListener("click", async (event) =>
     els.search.value = "";
     render();
   }
-  if (action === "latest" && state.videos[0]) await showDetail(state.videos[0]);
+  if (action === "latest") await showLatest();
 });
 
 document.querySelector("#filterForm").addEventListener("change", (event) => {

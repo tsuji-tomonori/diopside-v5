@@ -16,10 +16,37 @@
       <a class="health-link" href="/api/health">API</a>
     </header>
     <main>
-      <section class="search-band" aria-label="検索">
-        <input id="searchInput" type="search" placeholder="タイトル・タグで検索" autocomplete="off">
-        <div id="recentSearches" class="chips compact" aria-label="最近の検索"></div>
-        <div id="tagFilters" class="chips" aria-label="タグ"></div>
+      <section class="search-hub" aria-labelledby="searchHubTitle">
+        <div class="search-copy">
+          <p class="eyebrow">Archive search</p>
+          <h2 id="searchHubTitle">白雪巴アーカイブを探す</h2>
+          <p>タイトル、タグ、公開時刻から公開アーカイブをすばやく絞り込めます。</p>
+        </div>
+        <div class="search-box">
+          <label for="searchInput">検索</label>
+          <input id="searchInput" type="search" placeholder="タイトル・タグで検索" autocomplete="off">
+        </div>
+        <div class="hub-actions">
+          <div>
+            <div class="chip-head">
+              <h3>quick chips</h3>
+            </div>
+            <div id="quickChips" class="chips quick-chips" aria-label="quick chips"></div>
+          </div>
+          <div>
+            <div class="chip-head">
+              <h3>最近検索</h3>
+            </div>
+            <div id="recentSearches" class="chips compact" aria-label="最近の検索"></div>
+          </div>
+        </div>
+      </section>
+      <section class="tag-nav" aria-labelledby="tagNavTitle">
+        <div class="section-title">
+          <h2 id="tagNavTitle">タグから探す</h2>
+          <button type="button" id="clearTagButton">タグ解除</button>
+        </div>
+        <div id="tagFilters" class="chips tag-chips" aria-label="タグ"></div>
       </section>
       <section class="content-grid">
         <div>
