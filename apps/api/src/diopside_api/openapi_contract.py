@@ -61,6 +61,11 @@ def operation_id(route: ApiRouteContract) -> str:
 def build_openapi_contract() -> dict[str, Any]:
     paths: dict[str, Any] = {}
     for route in all_route_contracts():
+        response_schema = {"$ref": "#/components/schemas/GenericJsonResponse"}
+        if route.design_id == "API-001":
+            response_schema = {"$ref": "#/components/schemas/HealthResponse"}
+        elif route.design_id == "API-002":
+            response_schema = {"$ref": "#/components/schemas/PublicConfigResponse"}
         operation: dict[str, Any] = {
             "operationId": operation_id(route),
             "summary": route.summary,
@@ -72,7 +77,7 @@ def build_openapi_contract() -> dict[str, Any]:
                     "description": "Successful response",
                     "content": {
                         "application/json": {
-                            "schema": {"$ref": "#/components/schemas/GenericJsonResponse"},
+                            "schema": response_schema,
                         }
                     },
                 }
@@ -105,7 +110,48 @@ def build_openapi_contract() -> dict[str, Any]:
                         "schema_version": {"type": "string"},
                         "trace_id": {"type": "string"},
                     },
-                }
+                },
+                "HealthDependency": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["status"],
+                    "properties": {
+                        "status": {"type": "string"},
+                    },
+                },
+                "HealthResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["service", "version", "status", "checked_at"],
+                    "properties": {
+                        "service": {"type": "string"},
+                        "version": {"type": "string"},
+                        "status": {"type": "string"},
+                        "checked_at": {"type": "string", "format": "date-time"},
+                        "dependencies": {
+                            "type": "object",
+                            "additionalProperties": {"$ref": "#/components/schemas/HealthDependency"},
+                        },
+                    },
+                },
+                "PublicConfigResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": [
+                        "schema_version",
+                        "system_name",
+                        "default_locale",
+                        "public_data_manifest",
+                        "admin_api_enabled",
+                    ],
+                    "properties": {
+                        "schema_version": {"const": "public-config/v1"},
+                        "system_name": {"type": "string"},
+                        "default_locale": {"type": "string"},
+                        "public_data_manifest": {"type": "string"},
+                        "admin_api_enabled": {"type": "boolean"},
+                    },
+                },
             },
         },
     }

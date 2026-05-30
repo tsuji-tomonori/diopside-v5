@@ -11,7 +11,7 @@
 
 `.workspace/plan-20260530.txt` の最初の PR 方針に沿って、v0.4 設計書を repository 内に正本化し、現在の `main` 実装との初版 traceability を作成した。
 
-現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする Next.js static export、外部通知 delivery などには差分または未対応が残る。AWS CDK は `CfnInclude` による bootstrap app と synth parity contract を追加し、現 CloudFormation template と同じ logical ID / resource type を CDK synth output で検証する段階まで進めた。FastAPI on Lambda は FastAPI adapter / OpenAPI 3.1 contract に加え、Mangum entrypoint、API deploy dependency 同梱、CloudFormation handler 切替まで進めた。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進め、wordcloud は PNG/JSON alias と互換 SVG を出力する。API-007/API-022/API-023 は既存 Lambda handler に追加し、API-008/API-009/API-013/API-015/API-016/API-019 は route contract test を追加した。Pydantic schema の全面定義と route 実装の FastAPI router への完全移植は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。DDB schema は v0.4 item type との差分を audit 化し、現 repository contract をテストで固定した。Worker coverage は BATCH-001〜020 の対応を audit 化し、現 pipeline の job_type / queue mapping を contract test で固定した。BATCH-006 は `notification_plan` job、`NotificationPlan` item 作成、due 済み通知の sent/skipped/failed 更新まで、BATCH-017 は `archive_finalize` job として replay collect / static export 投入まで部分実装した。
+現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする Next.js static export、外部通知 delivery などには差分または未対応が残る。AWS CDK は `CfnInclude` による bootstrap app と synth parity contract を追加し、現 CloudFormation template と同じ logical ID / resource type を CDK synth output で検証する段階まで進めた。FastAPI on Lambda は FastAPI adapter / OpenAPI 3.1 contract に加え、Mangum entrypoint、API deploy dependency 同梱、CloudFormation handler 切替まで進め、health/config は FastAPI native route + Pydantic response model の baseline に対応した。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進め、wordcloud は PNG/JSON alias と互換 SVG を出力する。API-007/API-022/API-023 は既存 Lambda handler に追加し、API-008/API-009/API-013/API-015/API-016/API-019 は route contract test を追加した。残 API の Pydantic schema 定義と route 実装の FastAPI router への完全移植は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。DDB schema は v0.4 item type との差分を audit 化し、現 repository contract をテストで固定した。Worker coverage は BATCH-001〜020 の対応を audit 化し、現 pipeline の job_type / queue mapping を contract test で固定した。BATCH-006 は `notification_plan` job、`NotificationPlan` item 作成、due 済み通知の sent/skipped/failed 更新まで、BATCH-017 は `archive_finalize` job として replay collect / static export 投入まで部分実装した。
 
 FR-YT-010 は `chat_normalize` が normalized JSONL を streaming 生成する際に `message_id` で重複除外するよう更新し、chunk をまたいだ同一 message の重複が summary と normalized output に入らないことを `tests/test_core_pipeline.py` で検証した。
 BATCH-002 は `YouTubeClient.channels` と `normalize_channel_resource` を追加し、`metadata_sync` が `channels.list` raw response を保存して `Channel` / `ChannelRef` を更新するよう対応した。local test では fake client で channel 情報取得、raw 保存、quota usage、cursor/video 保存を検証した。
@@ -39,9 +39,9 @@ API-020 は互換用の call record `items` に加え、daily summary 由来の 
 | P0-01 | 設計正本化 | v0.4 を `docs/design/` に配置し README 参照を更新 | 対応 | 今後の設計変更は別 PR で扱う |
 | P0-02 | Traceability | 初版 matrix を作成し、要求/API/STATIC/BATCH/Data/Infra/UI/Test を分類 | 対応 | 詳細コード証跡は後続 PR で補強 |
 | P0-03 | IaC | `infra/cdk/` の CDK app が現 `infra/cloudformation/diopside.yaml` を `CfnInclude` で synth し、resource logical id / type parity を test 化 | 部分実装 | L2 construct 分解、deploy runbook の CDK 基準化、実 deploy rehearsal は後続 |
-| P0-04 | API 基盤 | FastAPI adapter、Mangum entrypoint、OpenAPI 3.1 contract、API deploy dependency 同梱、Lambda handler 切替を追加 | 部分実装 | Pydantic schema 完全化と route 実装の FastAPI router への完全移植は後続 |
+| P0-04 | API 基盤 | FastAPI adapter、Mangum entrypoint、OpenAPI 3.1 contract、API deploy dependency 同梱、Lambda handler 切替、health/config Pydantic response model baseline を追加 | 部分実装 | 残 API の Pydantic schema 完全化と route 実装の FastAPI router への完全移植は後続 |
 | P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
-| P0-06 | API-001〜023 | API-001〜023 の handler coverage と OpenAPI contract test を追加。FastAPI adapter は既存 handler へ委譲し、runtime entrypoint は Mangum 経由 | 部分対応 | Pydantic schema 完全化は後続 |
+| P0-06 | API-001〜023 | API-001/002 は具体 response schema を追加。API-001〜023 の handler coverage と OpenAPI contract test を追加し、runtime entrypoint は Mangum 経由 | 部分対応 | 残 API の Pydantic schema 完全化は後続 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum、wordcloud PNG/JSON を static exporter と contract check に追加 | 対応 | SVG は互換 artifact として維持 |
 | P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。common metadata、`ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / 詳細 schema_version 命名 / 残未対応 item の実装は後続 |
 | P0-09 | Worker coverage | BATCH-001〜020 と現 pipeline/handler/job/queue/test の対応を `docs/design/worker-batch-coverage-audit.md` に整理し、job_type / queue mapping を test 化。BATCH-006 は `notification_plan`、BATCH-011 は `chat_normalize` 内 aggregate、BATCH-013 は timestamp JSON / Markdown、BATCH-017 は `archive_finalize` job を追加 | 監査済み・差分あり | 外部通知 delivery、worker 物理分割は後続実装 |
@@ -67,14 +67,14 @@ API-020 は互換用の call record `items` に加え、daily summary 由来の 
 | P2 | worker 分割 | 差分あり | `static_exporter.pipeline` に複数責務が統合されている |
 | P2 | packages 分割 | 差分あり | `packages/domain` や `packages/youtube-client` 分割は未実施 |
 | P2 | Next.js static export | 差分あり | 現 main は静的 SPA |
-| P2 | FastAPI 移行 | 部分実装 | FastAPI/Mangum runtime entrypoint は追加済み。route 実装は既存 handler 委譲で、Pydantic schema 完全化は後続 |
+| P2 | FastAPI 移行 | 部分実装 | FastAPI/Mangum runtime entrypoint と health/config schema baseline は追加済み。残 route 実装は既存 handler 委譲で、Pydantic schema 完全化は後続 |
 | P2 | CDK Construct 化 | 部分実装 | `CfnInclude` bootstrap は追加済み。Edge/Data/Api/Collector/Observability construct 分解は後続 |
 | P2 | Cost regression | 部分実装 | cost guard 系 tool はあるが v0.4 全観点の継続証跡は未確認 |
 
 ## 5. 後続 PR 推奨順
 
 1. `api/fastapi-v04-contract`
-   - FastAPI runtime entrypoint は追加済み。Pydantic request / response schema と route 実装の FastAPI router 移植を継続する。
+   - FastAPI runtime entrypoint と health/config schema baseline は追加済み。残 API の Pydantic request / response schema と route 実装の FastAPI router 移植を継続する。
 2. `admin/cookie-csrf-session`
    - 対応済。管理 UI の正式保護方式を v0.4 に合わせ、traceability の `NFR-SEC-005` も実装済みに更新した。
 3. `worker/batch-v04-coverage`
