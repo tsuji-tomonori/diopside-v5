@@ -80,6 +80,26 @@ def build_openapi_contract() -> dict[str, Any]:
             response_schema = {"$ref": "#/components/schemas/PublicRandomVideosResponse"}
         elif route.design_id == "API-009":
             response_schema = {"$ref": "#/components/schemas/PublicVideoArtifactsResponse"}
+        elif route.design_id == "API-010":
+            response_schema = {"$ref": "#/components/schemas/AdminJobListResponse"}
+        elif route.design_id == "API-011":
+            response_schema = {"$ref": "#/components/schemas/AdminJobDetailResponse"}
+        elif route.design_id in {"API-012", "API-013", "API-014", "API-015", "API-016", "API-017", "API-018", "API-019"}:
+            response_schema = {"$ref": "#/components/schemas/AdminStartJobResponse"}
+        elif route.design_id == "API-020":
+            response_schema = {"$ref": "#/components/schemas/AdminQuotaUsageResponse"}
+        elif route.design_id == "API-021":
+            response_schema = {"$ref": "#/components/schemas/AdminChannelListResponse"}
+        elif route.design_id == "API-022":
+            response_schema = {"$ref": "#/components/schemas/AdminChannelConfigResponse"}
+        elif route.design_id == "API-023":
+            response_schema = {"$ref": "#/components/schemas/AdminArtifactPresignedUrlResponse"}
+        elif route.design_id in {"ADMIN-SESSION", "ADMIN-ME"}:
+            response_schema = {"$ref": "#/components/schemas/AdminSessionResponse"}
+        elif route.design_id == "FR-A-005":
+            response_schema = {"$ref": "#/components/schemas/AdminVideoTagsResponse"}
+        elif route.design_id == "STATIC-EXPORT-HISTORY":
+            response_schema = {"$ref": "#/components/schemas/AdminStaticExportListResponse"}
         operation: dict[str, Any] = {
             "operationId": operation_id(route),
             "summary": route.summary,
@@ -317,6 +337,147 @@ def build_openapi_contract() -> dict[str, Any]:
                         "schema_version": {"const": "public-video-artifacts/v1"},
                         "video_id": {"type": "string"},
                         "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicVideoArtifactItem"}},
+                    },
+                },
+                "AdminSessionResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "authenticated", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-session/v1"},
+                        "authenticated": {"type": "boolean"},
+                        "auth_mode": {"type": ["string", "null"]},
+                        "csrf_token": {"type": ["string", "null"]},
+                        "expires_at": {"type": ["string", "null"], "format": "date-time"},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminJobListResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-job-list/v1"},
+                        "items": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminJobDetailResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "item", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-job-detail/v1"},
+                        "item": {"type": "object", "additionalProperties": True},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminStartJobResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": [
+                        "job_id",
+                        "job_type",
+                        "latest_state",
+                        "derived_state",
+                        "deduplicated",
+                        "accepted_at",
+                        "trace_id",
+                        "dry_run",
+                    ],
+                    "properties": {
+                        "job_id": {"type": "string"},
+                        "job_type": {"type": "string"},
+                        "latest_state": {"type": "string"},
+                        "derived_state": {"type": "string"},
+                        "deduplicated": {"type": "boolean"},
+                        "accepted_at": {"type": "string", "format": "date-time"},
+                        "trace_id": {"type": "string"},
+                        "dry_run": {"type": "boolean"},
+                    },
+                },
+                "AdminQuotaUsageResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items", "daily", "by_method", "limit_per_day", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-quota-usage/v1"},
+                        "items": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                        "daily": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                        "by_method": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                        "limit_per_day": {"type": "integer"},
+                        "warning": {"type": ["string", "null"]},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminChannelItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["channel_id", "enabled"],
+                    "properties": {
+                        "channel_id": {"type": "string"},
+                        "enabled": {"type": "boolean"},
+                        "uploads_playlist_id": {"type": ["string", "null"]},
+                        "display_name": {"type": ["string", "null"]},
+                        "metadata_interval_minutes": {"type": ["integer", "null"]},
+                        "live_scan_interval_minutes": {"type": ["integer", "null"]},
+                        "notification_enabled": {"type": ["boolean", "null"]},
+                        "updated_at": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                },
+                "AdminChannelListResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-channel-list/v1"},
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/AdminChannelItem"}},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminChannelConfigResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "item", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-channel-config/v1"},
+                        "item": {"$ref": "#/components/schemas/AdminChannelItem"},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminArtifactPresignedUrlResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "artifact_id", "purpose", "url", "expires_at", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-artifact-presigned-url/v1"},
+                        "artifact_id": {"type": "string"},
+                        "purpose": {"type": "string", "enum": ["download", "inspect"]},
+                        "url": {"type": "string"},
+                        "expires_at": {"type": "string", "format": "date-time"},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminVideoTagsResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "video_id", "tags", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-video-tags/v1"},
+                        "video_id": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "manual_tag_correction": {"type": ["object", "null"], "additionalProperties": True},
+                        "trace_id": {"type": "string"},
+                    },
+                },
+                "AdminStaticExportListResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items", "trace_id"],
+                    "properties": {
+                        "schema_version": {"const": "admin-static-export-list/v1"},
+                        "items": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                        "trace_id": {"type": "string"},
                     },
                 },
             },

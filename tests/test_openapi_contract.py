@@ -32,6 +32,17 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["paths"]["/api/archive-calendar"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicArchiveCalendarResponse"}
     assert spec["paths"]["/api/random-videos"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicRandomVideosResponse"}
     assert spec["paths"]["/api/videos/{video_id}/artifacts"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicVideoArtifactsResponse"}
+    assert spec["paths"]["/api/admin/jobs"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminJobListResponse"}
+    assert spec["paths"]["/api/admin/jobs/{job_id}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminJobDetailResponse"}
+    assert spec["paths"]["/api/admin/jobs/static-export"]["post"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminStartJobResponse"}
+    assert spec["paths"]["/api/admin/jobs/{job_id}/retry"]["post"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminStartJobResponse"}
+    assert spec["paths"]["/api/admin/quota-usage"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminQuotaUsageResponse"}
+    assert spec["paths"]["/api/admin/channels"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminChannelListResponse"}
+    assert spec["paths"]["/api/admin/channels/{channel_id}"]["put"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminChannelConfigResponse"}
+    assert spec["paths"]["/api/admin/artifacts/presigned-url"]["post"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminArtifactPresignedUrlResponse"}
+    assert spec["paths"]["/api/admin/session"]["post"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminSessionResponse"}
+    assert spec["paths"]["/api/admin/videos/{video_id}/tags"]["put"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminVideoTagsResponse"}
+    assert spec["paths"]["/api/admin/static-exports"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/AdminStaticExportListResponse"}
     assert spec["paths"]["/api/videos/{video_id}"]["get"]["x-schema-version"] == "public-video-detail/v1"
     assert spec["paths"]["/api/admin/jobs/{job_id}/cancel"]["post"]["x-design-id"] == "API-019"
     assert spec["paths"]["/api/admin/channels/{channel_id}"]["put"]["x-schema-version"] == "admin-channel-config/v1"
@@ -46,6 +57,22 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["components"]["schemas"]["PublicArchiveCalendarResponse"]["properties"]["months"]["items"] == {"$ref": "#/components/schemas/ArchiveMonthItem"}
     assert spec["components"]["schemas"]["PublicRandomVideosResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
     assert spec["components"]["schemas"]["PublicVideoArtifactsResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoArtifactItem"}
+    assert spec["components"]["schemas"]["AdminJobListResponse"]["properties"]["schema_version"]["const"] == "admin-job-list/v1"
+    assert spec["components"]["schemas"]["AdminStartJobResponse"]["required"] == [
+        "job_id",
+        "job_type",
+        "latest_state",
+        "derived_state",
+        "deduplicated",
+        "accepted_at",
+        "trace_id",
+        "dry_run",
+    ]
+    assert spec["components"]["schemas"]["AdminQuotaUsageResponse"]["properties"]["limit_per_day"]["type"] == "integer"
+    assert spec["components"]["schemas"]["AdminChannelListResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/AdminChannelItem"}
+    assert spec["components"]["schemas"]["AdminChannelConfigResponse"]["properties"]["item"] == {"$ref": "#/components/schemas/AdminChannelItem"}
+    assert spec["components"]["schemas"]["AdminSessionResponse"]["properties"]["schema_version"]["const"] == "admin-session/v1"
+    assert spec["components"]["schemas"]["AdminArtifactPresignedUrlResponse"]["properties"]["purpose"]["enum"] == ["download", "inspect"]
 
 
 def test_openapi_contract_routes_are_documented_and_present_in_lambda_handler_source():
