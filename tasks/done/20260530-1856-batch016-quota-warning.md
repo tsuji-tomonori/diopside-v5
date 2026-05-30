@@ -1,6 +1,6 @@
 # BATCH-016 quota threshold warning event
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -78,6 +78,17 @@
 - warning threshold がテスト専用値ではなく job payload で上書き可能な運用値になっていること。
 - warning event が同一 rollup の検収証跡として残り、未実施の外部通知を実施済み扱いしていないこと。
 - call record と daily summary の list 互換を壊していないこと。
+
+## Done 条件
+
+- [x] 上記受け入れ条件を満たす。
+- [x] task md を `tasks/done/` へ移動し、状態を done に更新する。
+- [x] 変更を commit / push し、PR に受け入れ条件確認とセルフレビューを日本語コメントする。
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582481893
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582483757
 
 ## リスク
 
