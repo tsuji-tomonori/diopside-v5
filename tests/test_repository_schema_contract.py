@@ -384,6 +384,15 @@ def test_repository_writes_channel_ref_and_lists_channels_from_read_model():
     ref = repo.get_item("APP#CHANNELS", "CH#ch001")
 
     assert channel["item_type"] == "Channel"
+    assert channel["pk"] == "CH#ch001"
+    assert channel["sk"] == "META"
+    assert channel["channel_id"] == "ch001"
+    assert channel["channel_title"] == "白雪巴"
+    assert channel["display_name"] == "白雪巴"
+    assert channel["collect_enabled"] is True
+    assert channel["enabled"] is True
+    assert channel["default_tags"] == []
+    assert repo.get_channel("ch001") == channel
     assert ref["item_type"] == "ChannelRef"
     assert ref["pk"] == "APP#CHANNELS"
     assert ref["sk"] == "CH#ch001"
@@ -412,6 +421,7 @@ def test_repository_list_channels_falls_back_to_channel_items_without_refs():
     )
 
     assert repo.list_channels()[0]["item_type"] == "Channel"
+    assert repo.get_channel("ch001")["pk"] == "CHANNEL#ch001"
 
 
 def test_repository_writes_random_bucket_for_public_videos_and_removes_private_entries():

@@ -114,6 +114,35 @@ def channel_ref_item(channel: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def channel_item(channel: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    channel_id = channel["channel_id"]
+    stamp = now_iso()
+    item = {
+        **(existing or {}),
+        **channel,
+        "item_type": "Channel",
+        "pk": f"CH#{channel_id}",
+        "sk": "META",
+        "channel_id": channel_id,
+        "updated_at": stamp,
+    }
+    if "collect_enabled" not in item:
+        item["collect_enabled"] = bool(item.get("enabled", True))
+    if "enabled" not in item:
+        item["enabled"] = bool(item.get("collect_enabled", True))
+    if "channel_title" not in item:
+        item["channel_title"] = item.get("display_name") or channel_id
+    if "display_name" not in item:
+        item["display_name"] = item.get("channel_title") or channel_id
+    if "priority" not in item:
+        item["priority"] = 100
+    if "default_tags" not in item:
+        item["default_tags"] = list(item.get("tags", []))
+    if not item.get("created_at"):
+        item["created_at"] = stamp
+    return item
+
+
 def channel_sync_cursor_item(channel_id: str, cursor: dict[str, Any]) -> dict[str, Any]:
     next_page_token = cursor.get("next_page_token")
     return {
@@ -588,6 +617,7 @@ class Repository(Protocol):
     def record_static_export(self, manifest: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
     def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
+    def get_channel(self, channel_id: str) -> dict[str, Any] | None: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_app_config(self) -> dict[str, Any] | None: ...
@@ -963,28 +993,12 @@ class MemoryRepository:
         channels.sort(key=lambda item: item.get("channel_id", ""))
         return deepcopy(channels)
 
+    def get_channel(self, channel_id: str) -> dict[str, Any] | None:
+        return self.get_item(f"CH#{channel_id}", "META") or self.get_item(f"CHANNEL#{channel_id}", "META")
+
     def put_channel(self, channel: dict[str, Any]) -> dict[str, Any]:
         channel_id = channel["channel_id"]
-        stamp = now_iso()
-        existing = self.get_item(f"CHANNEL#{channel_id}", "META") or {}
-        item = {
-            **existing,
-            **channel,
-            "item_type": "Channel",
-            "pk": f"CHANNEL#{channel_id}",
-            "sk": "META",
-            "channel_id": channel_id,
-            "updated_at": stamp,
-        }
-        if "collect_enabled" not in item:
-            item["collect_enabled"] = bool(item.get("enabled", True))
-        if "channel_title" not in item:
-            item["channel_title"] = item.get("display_name") or channel_id
-        if "priority" not in item:
-            item["priority"] = 100
-        if not item.get("created_at"):
-            item["created_at"] = stamp
-        saved = self.put_item(item)
+        saved = self.put_item(channel_item(channel, self.get_channel(channel_id)))
         self.put_item(channel_ref_item(saved))
         return saved
 

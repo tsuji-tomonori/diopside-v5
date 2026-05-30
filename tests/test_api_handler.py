@@ -478,7 +478,7 @@ def test_admin_channel_update_requires_csrf_and_persists(monkeypatch):
     assert body["item"]["channel_id"] == "ch-1"
     assert body["item"]["uploads_playlist_id"] == "UUuploads"
     assert body["item"]["notification_enabled"] is True
-    assert repo.get_item("CHANNEL#ch-1", "META")["item_type"] == "Channel"
+    assert repo.get_item("CH#ch-1", "META")["item_type"] == "Channel"
     assert repo.get_item("APP#CHANNELS", "CH#ch-1")["item_type"] == "ChannelRef"
 
     status, channels = call("GET", "/api/admin/channels", headers={"authorization": "Bearer secret"})
