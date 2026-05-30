@@ -13,7 +13,7 @@
 | BATCH-003 | uploads playlist差分取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | page token cursor と次 page 再投入を検証 |
 | BATCH-004 | 動画詳細取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | 状態変化 event item は v0.4 未整合 |
 | BATCH-005 | ライブ状態監視 | `live_status_scan` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | chat collect / notification_plan / archive_finalize の後続投入に対応 |
-| BATCH-006 | 配信予定通知生成 | `notification_plan` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | NotificationPlan item 作成に対応。外部通知 delivery / DLQ は未実装 |
+| BATCH-006 | 配信予定通知生成 | `notification_plan` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | NotificationPlan item 作成と due 済み通知の sent/skipped/failed 更新に対応。実 SNS/Discord/Email 疎通と物理 DLQ は未検証 |
 | BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | `liveChatMessages.list` 呼び出し、quota 記録、page token requeue、rate limit/offline stop を検証 |
 | BATCH-008 | リプレイチャット初期化 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | initial data 解析、unknown renderer 保持、continuation 抽出、後続 `chat_collect` 投入を検証 |
 | BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | continuation token から replay continuation response を取得し、action 正規化、次 continuation 再投入、`ChatPageManifest` 保存を検証 |
@@ -36,14 +36,14 @@
 - queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `file_output` / `archive_finalize` / `notification_plan` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
 - 管理 API、EventBridge Scheduler template、GitHub Actions workflow_dispatch、worker の後続投入は v0.4 `JobMessage` field として `job_id`、`job_type`、`idempotency_key`、`requested_by`、`attempt`、`trace_id`、`payload` を送る。`dispatch_job` は既存外部 producer 互換のため旧 `input` field も受け付ける。
 - `file_output` は BATCH-014 の worker job として、入力 payload 由来の body / json_body / body_base64 を public/private artifact key へ出力し、`Artifact` item に `artifact_version`、`content_hash`、`byte_size`、`generated_at` を保存する。
-- `notification_plan` は `before_30min`、`at_start`、`archive_available` の `NotificationPlan` item を v0.4 key shape で冪等作成する。
+- `notification_plan` は `before_30min`、`at_start`、`archive_available` の `NotificationPlan` item を v0.4 key shape で冪等作成する。due 済み plan は target 未設定なら `skipped`、injected client / SNS delivery 成功なら `sent`、失敗なら `failed` に更新する。
 - `quota_rollup` は `QuotaUsage` call record を日別・method別に集計し、`pk=QUOTA#{yyyyMMdd}` / `sk=METHOD#{method}` の daily summary item を upsert する。日次合計が `warning_threshold_units` 以上なら `warning_emitted=true` を保存し、同一 summary で未通知の場合は `quota_threshold_warning` JobEvent を記録する。
 - `cleanup` は削除を実行せず、常に dry-run report を返す。
 - `retry_job` は対象 job の job_type から queue env を引き、`retry_requested` event を残して再投入する。
 
 ## 後続修正方針
 
-1. BATCH-006 の外部通知 delivery / DLQ / sent/skipped/failed 更新を実装する。
+1. BATCH-006 の実 SNS/Discord/Email 疎通、物理通知 DLQ、EventBridge one-shot / SQS delay による due 再投入を実装・検証する。
 2. `archive_finalize` の遅延 Scheduler 連携を実装し、archive_available の通知時刻を運用要件に合わせる。
 3. BATCH-011 / 012 / 013 の物理 worker 分割を進め、BATCH-012 / 013 は wordcloud / timestamp 専用 job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
 4. replay continuation の dev rehearsal を行い、実 YouTube 応答で BATCH-008 / 009 の parser coverage を確認する。

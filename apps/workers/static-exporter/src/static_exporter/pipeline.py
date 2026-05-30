@@ -762,8 +762,23 @@ def notification_plan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     plans = []
     for notification_type in notification_types:
         due_at = params.get("due_at") or _notification_due_at(notification_type, scheduled_start_time)
-        plans.append(_put_notification_plan(repo, video_id, notification_type, due_at, source_job_id=params.get("job_id")))
-    return {"video_id": video_id, "planned_count": len(plans), "items": plans}
+        plan = _put_notification_plan(
+            repo,
+            video_id,
+            notification_type,
+            due_at,
+            source_job_id=params.get("job_id"),
+            target=params.get("target") or params.get("notification_target"),
+        )
+        plans.append(_deliver_notification_plan_if_due(repo, plan, video, params))
+    return {
+        "video_id": video_id,
+        "planned_count": len(plans),
+        "sent_count": sum(1 for item in plans if item.get("delivery_state") == "sent"),
+        "skipped_count": sum(1 for item in plans if item.get("delivery_state") == "skipped"),
+        "failed_count": sum(1 for item in plans if item.get("delivery_state") == "failed"),
+        "items": plans,
+    }
 
 
 def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -830,7 +845,7 @@ def file_output(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due_at: str, source_job_id: str | None = None) -> dict[str, Any]:
+def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due_at: str, source_job_id: str | None = None, target: str | None = None) -> dict[str, Any]:
     stamp = now_iso()
     existing = repo.get_item(f"VID#{video_id}", f"NOTIFY#{notification_type}") or {}
     item = {
@@ -842,7 +857,7 @@ def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due
         "notification_type": notification_type,
         "due_at": due_at,
         "delivery_state": existing.get("delivery_state", "planned"),
-        "target": existing.get("target", "none"),
+        "target": target or existing.get("target", "none"),
         "message_template_id": existing.get("message_template_id") or notification_type,
         "updated_at": stamp,
         "gsi3pk": "NOTIFY#DUE",
@@ -853,6 +868,91 @@ def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due
     if source_job_id:
         item["source_job_id"] = source_job_id
     return repo.put_item(item)
+
+
+def _deliver_notification_plan_if_due(repo: Any, plan: dict[str, Any], video: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    if plan.get("delivery_state") in {"sent", "skipped"}:
+        return plan
+    if not _notification_due(plan.get("due_at"), params):
+        return plan
+    target = plan.get("target") or "none"
+    stamp = now_iso()
+    if target == "none":
+        return repo.put_item(
+            {
+                **plan,
+                "delivery_state": "skipped",
+                "skipped_at": stamp,
+                "skip_reason": "notification_target_not_configured",
+                "updated_at": stamp,
+            }
+        )
+    payload = _notification_payload(plan, video)
+    try:
+        result = _send_notification(target, payload, params)
+    except Exception as exc:
+        return repo.put_item(
+            {
+                **plan,
+                "delivery_state": "failed",
+                "last_error_code": type(exc).__name__,
+                "last_error_message": str(exc),
+                "delivery_payload": payload,
+                "updated_at": stamp,
+            }
+        )
+    return repo.put_item(
+        {
+            **plan,
+            "delivery_state": "sent",
+            "sent_at": stamp,
+            "delivery_payload": payload,
+            "delivery_result": result,
+            "updated_at": stamp,
+        }
+    )
+
+
+def _notification_due(due_at: str | None, params: dict[str, Any]) -> bool:
+    if params.get("force_delivery"):
+        return True
+    if not due_at:
+        return True
+    return _parse_iso(due_at) <= _parse_iso(params.get("now") or now_iso())
+
+
+def _notification_payload(plan: dict[str, Any], video: dict[str, Any]) -> dict[str, Any]:
+    video_id = plan["video_id"]
+    title = video.get("title") or video_id
+    youtube_url = video.get("youtube_url") or f"https://www.youtube.com/watch?v={video_id}"
+    return {
+        "schema_version": "notification-delivery/v1",
+        "video_id": video_id,
+        "notification_type": plan["notification_type"],
+        "title": title,
+        "due_at": plan.get("due_at"),
+        "youtube_url": youtube_url,
+        "message": f"{title} / {plan['notification_type']} / {youtube_url}",
+    }
+
+
+def _send_notification(target: str, payload: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+    client = params.get("notification_client")
+    if client:
+        if callable(client):
+            result = client(target, payload)
+        elif hasattr(client, "send"):
+            result = client.send(target, payload)
+        else:
+            raise ValueError("notification_client must be callable or expose send")
+        return result if isinstance(result, dict) else {"result": result}
+    topic_arn = params.get("sns_topic_arn") or os.environ.get("DIOPSIDE_NOTIFICATION_SNS_TOPIC_ARN")
+    if target == "sns" and topic_arn:
+        import boto3
+
+        response = boto3.client("sns").publish(TopicArn=topic_arn, Message=json.dumps(payload, ensure_ascii=False), Subject="diopside notification")
+        return {"message_id": response.get("MessageId")}
+    raise ValueError(f"unsupported notification target: {target}")
 
 
 def _notification_due_at(notification_type: str, scheduled_start_time: str | None) -> str:

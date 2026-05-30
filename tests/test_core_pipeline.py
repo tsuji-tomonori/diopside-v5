@@ -1431,6 +1431,70 @@ def test_notification_plan_creates_due_items_idempotently():
     assert at_start["due_at"] == "2026-05-30T12:00:00Z"
 
 
+def test_notification_plan_delivers_due_items_and_records_states():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-notify",
+            "title": "通知対象",
+            "published_at": "2026-05-29T00:00:00Z",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+        }
+    )
+    sent_payloads = []
+
+    skipped = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["before_30min"],
+            "due_at": "2026-05-30T11:00:00Z",
+            "now": "2026-05-30T11:01:00Z",
+        },
+    )
+    sent = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["at_start"],
+            "due_at": "2026-05-30T12:00:00Z",
+            "now": "2026-05-30T12:01:00Z",
+            "target": "sns",
+            "notification_client": lambda target, payload: sent_payloads.append((target, payload)) or {"message_id": "msg-1"},
+        },
+    )
+    failed = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["archive_available"],
+            "due_at": "2026-05-30T13:00:00Z",
+            "now": "2026-05-30T13:01:00Z",
+            "target": "discord",
+            "notification_client": lambda target, payload: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+        },
+    )
+
+    before = repo.get_item("VID#vid-notify", "NOTIFY#before_30min")
+    at_start = repo.get_item("VID#vid-notify", "NOTIFY#at_start")
+    archive = repo.get_item("VID#vid-notify", "NOTIFY#archive_available")
+    assert skipped["skipped_count"] == 1
+    assert before["delivery_state"] == "skipped"
+    assert before["skip_reason"] == "notification_target_not_configured"
+    assert sent["sent_count"] == 1
+    assert at_start["delivery_state"] == "sent"
+    assert at_start["sent_at"]
+    assert at_start["delivery_result"] == {"message_id": "msg-1"}
+    assert sent_payloads[0][0] == "sns"
+    assert sent_payloads[0][1]["schema_version"] == "notification-delivery/v1"
+    assert sent_payloads[0][1]["video_id"] == "vid-notify"
+    assert "通知対象" in sent_payloads[0][1]["message"]
+    assert failed["failed_count"] == 1
+    assert archive["delivery_state"] == "failed"
+    assert archive["last_error_code"] == "RuntimeError"
+    assert archive["last_error_message"] == "delivery failed"
+
+
 def test_dispatch_job_supports_scheduled_maintenance_jobs():
     repo = MemoryRepository()
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-quota")
