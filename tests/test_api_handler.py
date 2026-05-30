@@ -72,6 +72,54 @@ def test_public_video_search_and_detail():
     assert detail["chat_summary"]["wordcloud_url"]
 
 
+def test_random_videos_returns_limited_rotated_public_items(monkeypatch):
+    monkeypatch.setattr(handler.time, "time", lambda: 1)
+
+    status, body = call("GET", "/api/random-videos", query={"limit": "1"})
+
+    assert status == 200
+    assert body["schema_version"] == "public-random-videos/v1"
+    assert [item["video_id"] for item in body["items"]] == ["fixture002"]
+    assert body["generated_at"]
+
+
+def test_video_artifacts_returns_fixture_items_and_not_found():
+    status, body = call("GET", "/api/videos/fixture001/artifacts")
+
+    assert status == 200
+    assert body["schema_version"] == "public-video-artifacts/v1"
+    assert body["video_id"] == "fixture001"
+    assert body["items"][0]["artifact_type"] == "wordcloud"
+    assert body["items"][0]["available"] is True
+    assert body["items"][1]["artifact_type"] == "timestamp"
+
+    missing_status, missing = call("GET", "/api/videos/missing/artifacts")
+    assert missing_status == 404
+    assert missing["code"] == "VIDEO_NOT_FOUND"
+
+
+def test_video_artifacts_returns_repository_items(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "repo001", "title": "repo", "published_at": "2026-05-30T00:00:00Z", "public": True})
+    repo.put_artifact("repo001", {"artifact_type": "wordcloud", "public_url_path": "/data/artifacts/wordcloud/repo001.json", "content_type": "application/json"})
+    monkeypatch.setenv("DIOPSIDE_TABLE_NAME", "unit-table")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/videos/repo001/artifacts")
+
+    assert status == 200
+    assert body["schema_version"] == "public-video-artifacts/v1"
+    assert body["items"][0]["artifact_type"] == "wordcloud"
+    assert body["items"][0]["public_url_path"] == "/data/artifacts/wordcloud/repo001.json"
+
+    missing_status, missing = call("GET", "/api/videos/missing/artifacts")
+    assert missing_status == 404
+    assert missing["code"] == "VIDEO_NOT_FOUND"
+
+    monkeypatch.delenv("DIOPSIDE_TABLE_NAME", raising=False)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
 def test_archive_calendar_filters_year_month():
     status, body = call("GET", "/api/archive-calendar", query={"year": "2026", "month": "5"})
 
@@ -237,6 +285,84 @@ def test_admin_job_body_validation(monkeypatch):
     )
     assert status == 400
     assert body["code"] == "INVALID_REQUEST"
+
+
+def test_admin_remaining_job_apis_dry_run_and_validation(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_ALLOW_DRY_RUN_JOBS", "true")
+
+    cases = [
+        ("/api/admin/jobs/live-status-scan", {"idempotency_key": "live-status-scan"}, "live_status_scan"),
+        ("/api/admin/jobs/chat-normalize", {"idempotency_key": "chat-normalize", "video_id": "vid001"}, "chat_normalize"),
+        ("/api/admin/jobs/rebuild-artifacts", {"idempotency_key": "rebuild-artifacts", "video_id": "vid001"}, "rebuild_artifacts"),
+    ]
+    for path, body, job_type in cases:
+        status, created = call(
+            "POST",
+            path,
+            body=body,
+            headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+        )
+        assert status == 200
+        assert created["job_type"] == job_type
+        assert created["dry_run"] is True
+
+    status, validation = call(
+        "POST",
+        "/api/admin/jobs/chat-normalize",
+        body={"idempotency_key": "chat-normalize-missing-video"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 400
+    assert validation["code"] == "INVALID_REQUEST"
+
+    status, csrf_error = call(
+        "POST",
+        "/api/admin/jobs/live-status-scan",
+        body={"idempotency_key": "live-status-scan-no-csrf"},
+        headers={"authorization": "Bearer secret"},
+    )
+    assert status == 403
+    assert csrf_error["code"] == "CSRF_INVALID"
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ALLOW_DRY_RUN_JOBS", None)
+
+
+def test_admin_cancel_job_api_dry_run_targets_path_job_id(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_ALLOW_DRY_RUN_JOBS", "true")
+
+    status, created = call(
+        "POST",
+        "/api/admin/jobs/source-job/cancel",
+        body={"idempotency_key": "cancel-source-job", "reason": "manual"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 200
+    assert created["job_type"] == "cancel_job"
+    assert created["dry_run"] is True
+    status, detail = call("GET", f"/api/admin/jobs/{created['job_id']}", headers={"authorization": "Bearer secret"})
+    assert status == 200
+    assert detail["item"]["payload"]["target_job_id"] == "source-job"
+    assert detail["item"]["payload"]["reason"] == "manual"
+
+    status, validation = call(
+        "POST",
+        "/api/admin/jobs/source-job/cancel",
+        body={"idempotency_key": "cancel-source-job-invalid", "unexpected": True},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 400
+    assert validation["code"] == "INVALID_REQUEST"
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ALLOW_DRY_RUN_JOBS", None)
 
 
 def test_admin_quota_usage_returns_visible_fields(monkeypatch):

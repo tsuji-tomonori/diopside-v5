@@ -90,18 +90,18 @@
 | API-005 | API | `GET /api/videos/{video_id}` 動画詳細 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-006 | API | `GET /api/tags` タグ一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-007 | API | `GET /api/archive-calendar` 年/月別アーカイブ API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
-| API-008 | API | `GET /api/random-videos` ランダム動画 API。 | `apps/api/src/diopside_api/handler.py` | なし | 部分実装 |
-| API-009 | API | `GET /api/videos/{video_id}/artifacts` 動画成果物一覧 API。 | `apps/api/src/diopside_api/handler.py` | なし | 部分実装 |
+| API-008 | API | `GET /api/random-videos` ランダム動画 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
+| API-009 | API | `GET /api/videos/{video_id}/artifacts` 動画成果物一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-010 | API | `GET /api/admin/jobs` ジョブ一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-011 | API | `GET /api/admin/jobs/{job_id}` ジョブ詳細 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-012 | API | `POST /api/admin/jobs/metadata-sync` メタデータ同期開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
-| API-013 | API | `POST /api/admin/jobs/live-status-scan` ライブ状態検知開始 API。 | `apps/api/src/diopside_api/handler.py` | なし | 部分実装 |
+| API-013 | API | `POST /api/admin/jobs/live-status-scan` ライブ状態検知開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-014 | API | `POST /api/admin/jobs/chat-collect` チャット収集開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
-| API-015 | API | `POST /api/admin/jobs/chat-normalize` チャット正規化開始 API。 | `apps/api/src/diopside_api/handler.py` | なし | 部分実装 |
-| API-016 | API | `POST /api/admin/jobs/rebuild-artifacts` 集計再生成 API。 | `apps/api/src/diopside_api/handler.py` | なし | 部分実装 |
+| API-015 | API | `POST /api/admin/jobs/chat-normalize` チャット正規化開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
+| API-016 | API | `POST /api/admin/jobs/rebuild-artifacts` 集計再生成 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-017 | API | `POST /api/admin/jobs/static-export` 静的 export 開始 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py` | 実装済 |
 | API-018 | API | `POST /api/admin/jobs/{job_id}/retry` 失敗ジョブ再実行 API。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py` | 部分実装 |
-| API-019 | API | `POST /api/admin/jobs/{job_id}/cancel` ジョブキャンセル API。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | なし | 部分実装 |
+| API-019 | API | `POST /api/admin/jobs/{job_id}/cancel` ジョブキャンセル API。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py` | 実装済 |
 | API-020 | API | `GET /api/admin/quota-usage` quota 使用量 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-021 | API | `GET /api/admin/channels` 対象チャンネル設定取得 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-022 | API | `PUT /api/admin/channels/{channel_id}` 対象チャンネル設定更新 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py` | 実装済 |
