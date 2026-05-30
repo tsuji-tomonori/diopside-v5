@@ -45,6 +45,7 @@
 | P1 | Archive calendar | 部分対応 | `/data/calendar/{year}.json` と `GET /api/archive-calendar` を追加。UI は未対応 |
 | P1 | Presigned URL | 対応 | `POST /api/admin/artifacts/presigned-url` を追加。private S3 artifact のみ署名対象 |
 | P1 | NotificationPlan | 部分対応 | 配信 30 分前・開始時刻・archive_available の `NotificationPlan` item を保存。外部通知 delivery は未対応 |
+| P1 | file output service | 部分対応 | `file_output` job を追加し、public/private artifact body 出力と `Artifact` item の `artifact_version` / `content_hash` 記録に対応。物理 worker 分割は未対応 |
 | P1 | wordcloud artifact | 部分対応 | JSON alias と既存 SVG を出力。PNG は未対応 |
 | P1 | timestamp standalone | 対応 | `/data/artifacts/timestamps/{video_id}.json` を出力 |
 | P2 | worker 分割 | 差分あり | `static_exporter.pipeline` に複数責務が統合されている |

@@ -32,6 +32,7 @@ PIPELINE_JOB_HANDLERS = {
     "chat_collect": "chat_collect",
     "chat_normalize": "chat_normalize",
     "rebuild_artifacts": "rebuild_artifacts",
+    "file_output": "file_output",
     "archive_finalize": "archive_finalize",
     "notification_plan": "notification_plan",
     "retry_job": "retry_job",
@@ -46,6 +47,7 @@ JOB_QUEUE_ENVS = {
     "chat_collect": "DIOPSIDE_CHAT_QUEUE_URL",
     "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
     "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "file_output": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "archive_finalize": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "notification_plan": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
@@ -86,6 +88,8 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
             result = chat_normalize(repo, params)
         elif job_type == "rebuild_artifacts":
             result = rebuild_artifacts(repo, params)
+        elif job_type == "file_output":
+            result = file_output(repo, params)
         elif job_type == "archive_finalize":
             result = archive_finalize(repo, params)
         elif job_type == "notification_plan":
@@ -588,6 +592,51 @@ def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
 
 
+def file_output(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    artifact_type = params["artifact_type"]
+    artifact_version = params.get("artifact_version", "v1")
+    key = _validate_artifact_key(params["key"])
+    content_type = params.get("content_type", "application/octet-stream")
+    visibility = params.get("visibility", "private")
+    if visibility not in {"public", "private"}:
+        raise ValueError("visibility must be public or private")
+
+    body = _artifact_body(params)
+    content_hash = hashlib.sha256(body).hexdigest()
+    bucket_env = params.get("bucket_env") or ("DIOPSIDE_PUBLIC_DATA_BUCKET" if visibility == "public" else "DIOPSIDE_PROCESSED_BUCKET")
+    uri = _write_blob(key, body, content_type, bucket_env=bucket_env)
+    generated_at = now_iso()
+    artifact = {
+        "artifact_type": artifact_type,
+        "artifact_version": artifact_version,
+        "content_type": content_type,
+        "content_hash": f"sha256:{content_hash}",
+        "byte_size": len(body),
+        "generated_at": generated_at,
+    }
+    if params.get("job_id"):
+        artifact["source_job_id"] = params["job_id"]
+    if visibility == "public":
+        artifact["public_url_path"] = params.get("public_url_path") or f"/{key.lstrip('/')}"
+        if uri.startswith("s3://"):
+            artifact["s3_uri"] = uri
+    else:
+        artifact["s3_uri"] = uri
+    stored = repo.put_artifact(video_id, artifact)
+    return {
+        "video_id": video_id,
+        "artifact_type": artifact_type,
+        "artifact_version": artifact_version,
+        "content_hash": artifact["content_hash"],
+        "byte_size": len(body),
+        "uri": uri,
+        "public_url_path": artifact.get("public_url_path"),
+        "artifact_id": f"{video_id}:{artifact_type}",
+        "stored": bool(stored),
+    }
+
+
 def _put_notification_plan(repo: Any, video_id: str, notification_type: str, due_at: str, source_job_id: str | None = None) -> dict[str, Any]:
     stamp = now_iso()
     existing = repo.get_item(f"VID#{video_id}", f"NOTIFY#{notification_type}") or {}
@@ -730,6 +779,28 @@ def _write_blob(key: str, body: bytes, content_type: str, bucket_env: str = "DIO
 
 def _write_json_blob(key: str, payload: dict[str, Any], bucket_env: str = "DIOPSIDE_RAW_BUCKET") -> str:
     return _write_blob(key, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env=bucket_env)
+
+
+def _artifact_body(params: dict[str, Any]) -> bytes:
+    if "body_base64" in params:
+        import base64
+
+        return base64.b64decode(params["body_base64"])
+    if "json_body" in params:
+        return json.dumps(params["json_body"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if "body" in params:
+        body = params["body"]
+        if isinstance(body, bytes):
+            return body
+        if isinstance(body, str):
+            return body.encode("utf-8")
+    raise ValueError("body, body_base64, or json_body is required")
+
+
+def _validate_artifact_key(key: str) -> str:
+    if not key or key.startswith("/") or ".." in pathlib.PurePosixPath(key).parts:
+        raise ValueError("artifact key must be a relative path without traversal")
+    return key
 
 
 def _read_jsonl(uri: str) -> list[dict[str, Any]]:

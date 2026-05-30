@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
-from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, notification_plan, quota_rollup, rebuild_artifacts, retry_job
+from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, file_output, metadata_sync, notification_plan, quota_rollup, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -695,6 +695,81 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     assert list((tmp_path / "raw/youtube").rglob("*.json"))
     assert list((tmp_path / "processed/chat-normalized").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
+
+
+def test_file_output_writes_public_artifact_and_records_hash(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+
+    result = file_output(
+        repo,
+        {
+            "video_id": "vid001",
+            "artifact_type": "wordcloud-json",
+            "artifact_version": "20260530T121700Z",
+            "key": "data/artifacts/wordcloud/vid001.json",
+            "content_type": "application/json",
+            "visibility": "public",
+            "json_body": {"schema_version": "public-wordcloud/v1", "video_id": "vid001", "terms": []},
+            "job_id": "job-file-output",
+        },
+    )
+
+    artifact = repo.get_artifact_by_id("vid001:wordcloud-json")
+    assert result["artifact_id"] == "vid001:wordcloud-json"
+    assert result["public_url_path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert result["content_hash"].startswith("sha256:")
+    assert artifact["artifact_version"] == "20260530T121700Z"
+    assert artifact["content_hash"] == result["content_hash"]
+    assert artifact["byte_size"] > 0
+    assert artifact["source_job_id"] == "job-file-output"
+    assert artifact["public_url_path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert (tmp_path / "data/artifacts/wordcloud/vid001.json").exists()
+
+
+def test_dispatch_file_output_writes_private_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+    job, _ = repo.create_job("file_output", {"video_id": "vid001"}, "file-output-job")
+
+    result = dispatch_job(
+        repo,
+        {
+            "job_type": "file_output",
+            "job_id": job["job_id"],
+            "input": {
+                "video_id": "vid001",
+                "artifact_type": "chat-summary",
+                "key": "processed/custom/vid001-summary.json",
+                "content_type": "application/json",
+                "visibility": "private",
+                "body": "{}",
+            },
+        },
+    )
+
+    artifact = repo.get_artifact_by_id("vid001:chat-summary")
+    assert result["status"] == "succeeded"
+    assert artifact["artifact_version"] == "v1"
+    assert artifact["s3_uri"] == str(tmp_path / "processed/custom/vid001-summary.json")
+    assert "public_url_path" not in artifact
+    assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
+
+
+def test_file_output_rejects_path_traversal(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+
+    with pytest.raises(ValueError, match="relative path"):
+        file_output(
+            repo,
+            {
+                "video_id": "vid001",
+                "artifact_type": "bad",
+                "key": "../bad.json",
+                "json_body": {},
+            },
+        )
 
 
 def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):

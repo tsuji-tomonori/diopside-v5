@@ -190,15 +190,16 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/chat-collect` | `chat_collect` | live/replay chat chunk 収集 |
 | `POST /api/admin/jobs/chat-normalize` | `chat_normalize` | normalized JSONL と aggregate 生成 |
 | `POST /api/admin/jobs/rebuild-artifacts` | `rebuild_artifacts` | wordcloud/timestamp 再生成 |
+| worker internal | `file_output` | public/private artifact body を S3/local に出力し `Artifact` item を記録 |
 | `POST /api/admin/jobs/static-export` | `static_export` | public JSON/artifact export |
 | `POST /api/admin/jobs/{job_id}/retry` | `retry_job` | failed/retryable job に `retry_requested` event を追加し、元 job type の queue へ再投入 |
 | `POST /api/admin/jobs/{job_id}/cancel` | `cancel_job` | 未完了 job に `cancelled` event を追加。完了済み/失敗済み job は拒否 |
 
 CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。`notification_plan` は `live_status_scan` が upcoming 動画を検知したときに `before_30min` / `at_start` の `NotificationPlan` item を作成します。`archive_finalize` は `live_status_scan` が `upcoming` / `live` から `archived` への遷移を検知したときに `AggregateQueue` へ投入し、`archive_available` の `NotificationPlan`、replay `chat_collect`、`static_export` を後続投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
 
-worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`notification_plan`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
+worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`file_output`、`archive_finalize`、`notification_plan`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`file_output` は BATCH-014 の public/private artifact 出力を担当し、`Artifact` item に `artifact_version`、`content_hash`、`generated_at` を記録します。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
-BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、外部通知 delivery、専用 file-output worker、worker 分割責務には未対応または差分があります。
+BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、外部通知 delivery、file-output の物理 worker 分割、worker 分割責務には未対応または差分があります。
 
 ## DLQ運用手順
 
@@ -209,7 +210,7 @@ CloudFormation では各 worker queue に `maxReceiveCount=3` の redrive policy
 | `MetadataQueue` | `MetadataDlq` | `metadata_sync`、`live_status_scan`、`retry_job`、`cancel_job` |
 | `ChatQueue` | `ChatDlq` | `chat_collect` |
 | `NormalizeQueue` | `NormalizeDlq` | `chat_normalize` |
-| `AggregateQueue` | `AggregateDlq` | `rebuild_artifacts`、`quota_rollup`、`cleanup` |
+| `AggregateQueue` | `AggregateDlq` | `rebuild_artifacts`、`file_output`、`archive_finalize`、`notification_plan`、`quota_rollup`、`cleanup` |
 | `StaticExportQueue` | `StaticExportDlq` | `static_export` |
 
 DLQ depth は CloudWatch metric `AWS/SQS ApproximateNumberOfMessagesVisible` で確認します。CLI で確認する場合は、対象 stack の logical resource id から queue URL を特定し、`ApproximateNumberOfMessages` と `ApproximateNumberOfMessagesNotVisible` を確認します。

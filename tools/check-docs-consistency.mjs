@@ -224,6 +224,7 @@ for (const jobType of [
   "chat_collect",
   "chat_normalize",
   "rebuild_artifacts",
+  "file_output",
   "archive_finalize",
   "notification_plan",
   "static_export",
