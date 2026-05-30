@@ -39,13 +39,13 @@
 
 ## 受け入れ条件
 
-- [ ] `put_chat_aggregate` が `pk=VID#{video_id}` / `sk=CHAT#AGG#v1` の `ChatAggregate` item を保存する。
-- [ ] `ChatAggregate` item が `video_id`、`aggregate_version`、`message_count`、`computed_at` を持つ。
-- [ ] `get_chat_aggregate` が新 key を優先し、旧 `VIDEO#...` / `CHAT#AGGREGATE` も fallback で扱える。
-- [ ] 既存 chat aggregate / static export 経路のテストが通る。
-- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
-- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
-- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+- [x] `put_chat_aggregate` が `pk=VID#{video_id}` / `sk=CHAT#AGG#v1` の `ChatAggregate` item を保存する。
+- [x] `ChatAggregate` item が `video_id`、`aggregate_version`、`message_count`、`computed_at` を持つ。
+- [x] `get_chat_aggregate` が新 key を優先し、旧 `VIDEO#...` / `CHAT#AGGREGATE` も fallback で扱える。
+- [x] 既存 chat aggregate / static export 経路のテストが通る。
+- [x] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [x] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [x] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
 
 ## 検証計画
 
@@ -55,6 +55,20 @@
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: pass（23 tests）
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_static_exporter.py`: pass（50 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（124 tests、build、package、local e2e）
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581888647
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581889628
 
 ## PR レビュー観点
 
@@ -69,4 +83,4 @@
 
 ## 状態
 
-in_progress
+done
