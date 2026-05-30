@@ -17,7 +17,7 @@
 | `Video` | `VID#{video_id}` / `META` | `video_item` が v0.4 key で保存し、public GSI は `PUB#{inverted_published_at}#{video_id}`。旧 `VIDEO#...` は `get_video` fallback | 部分実装 | 既存データ backfill、legacy `VideoTagIndex` key 移行、状態/統計 item 分離は未対応 |
 | `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | `put_video` が `VideoMonthIndex` を保存し、archive calendar API / static export が read model を優先利用 | 部分実装 | 既存データ backfill は未対応 |
 | `VideoStateEvent` | `VID#{video_id}` / `EVT#STATE#...` | `append_video_state_event` が v0.4 key で保存し、`live_status_scan` / `archive_finalize` が状態 event を append | 部分実装 | 既存状態 backfill、条件付き一意性、API/UI 表示は未対応 |
-| `VideoStatSnapshot` | `VID#{video_id}` / `STAT#{yyyyMMddHH}` | なし | 未対応 | 統計 snapshot は Video read model に寄っている |
+| `VideoStatSnapshot` | `VID#{video_id}` / `STAT#{yyyyMMddHH}` | `put_video_stat_snapshot` が v0.4 key で保存し、`put_video` が statistics 付き metadata 保存時に upsert | 部分実装 | 既存統計 backfill、API/UI 表示、高頻度抑止 scheduler は未対応 |
 | `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `put_video` / `update_video_tags` が `VideoTagLink` を保存・削除し、既存 `VideoTagIndex` も互換維持 | 部分実装 | 既存データ backfill と tag search/list query の全面切替は未対応 |
 | `TagSummary` | `TAG#{tag_id}` / `META` | `put_video` / `update_video_tags` が `TagSummary` を保存し、`list_tags` / API / static export が read model を優先利用 | 部分実装 | category/sort order の管理 UI 編集と既存データ backfill は未対応 |
 | `ChatManifest` | `VID#{video_id}` / `CHAT#MANIFEST` | `put_chat_manifest` が v0.4 key で保存し、`chat_normalize` が repository method 経由で更新。旧 `VIDEO#...` は `get_chat_manifest` fallback | 部分実装 | 既存データ backfill、live/replay state machine 完全接続、ChatPageManifest 分離は未対応 |
@@ -43,6 +43,7 @@
 - `ChannelSyncCursor` は `CH#{channel_id}` / `CURSOR#uploads` に保存し、`uploads_playlist_id`、`next_page_token`、`next_page_token_hash`、last seen video、raw response URI、saved count を持つ。旧 `ChannelCursor` / `CHANNEL#{channel_id}` / `CURSOR#metadata` は読み取り fallback で扱う。
 - 公開 `Video` は `VID#{video_id}` / `META` に保存し、`gsi1pk=VIDEO#PUBLIC`、`gsi1sk=PUB#{inverted_published_at}#{video_id}` を持つ。旧 `VIDEO#{video_id}` / `META` は読み取り fallback で扱う。
 - `VideoStateEvent` は `VID#{video_id}` / `EVT#STATE#{occurred_at}#{event_id}` に保存し、`event_name`、`from_state`、`to_state`、`source_job_id`、`payload` を持つ。
+- `VideoStatSnapshot` は `VID#{video_id}` / `STAT#{yyyyMMddHH}` に保存し、`sampled_at`、`view_count`、`like_count`、`comment_count`、`concurrent_viewers`、`raw_s3_uri` を持つ。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。
 - `ChatManifest` は `VID#{video_id}` / `CHAT#MANIFEST` に保存し、`live_collection_state`、`replay_collection_state`、`normalization_state`、`normalized_s3_uri`、`message_count` を持つ。旧 `VIDEO#{video_id}` / `CHAT#MANIFEST` は読み取り fallback で扱う。

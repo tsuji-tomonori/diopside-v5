@@ -94,6 +94,44 @@ def test_repository_writes_video_state_event_v04_key():
     assert direct["sk"].startswith("EVT#STATE#2026-05-30T01:00:00Z#")
 
 
+def test_repository_writes_video_stat_snapshot_from_video_statistics():
+    repo = MemoryRepository()
+
+    video = repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive",
+            "published_at": "2026-05-30T00:00:00Z",
+            "statistics": {"viewCount": 100, "likeCount": 20, "commentCount": 3},
+            "raw_metadata_uri": "s3://raw/videos.json",
+            "sampled_at": "2026-05-30T12:34:56Z",
+        }
+    )
+
+    snapshot = repo.get_item("VID#vid001", "STAT#2026053012")
+    assert video["pk"] == "VID#vid001"
+    assert snapshot["item_type"] == "VideoStatSnapshot"
+    assert snapshot["video_id"] == "vid001"
+    assert snapshot["sampled_at"] == "2026-05-30T12:34:56Z"
+    assert snapshot["view_count"] == 100
+    assert snapshot["like_count"] == 20
+    assert snapshot["comment_count"] == 3
+    assert snapshot["raw_s3_uri"] == "s3://raw/videos.json"
+
+    explicit = repo.put_video_stat_snapshot(
+        "vid002",
+        {
+            "sampled_at": "2026-05-30T13:00:00Z",
+            "view_count": "7",
+            "concurrent_viewers": "5",
+        },
+    )
+    assert explicit["pk"] == "VID#vid002"
+    assert explicit["sk"] == "STAT#2026053013"
+    assert explicit["view_count"] == 7
+    assert explicit["concurrent_viewers"] == 5
+
+
 def test_repository_writes_current_index_and_summary_item_shapes():
     repo = MemoryRepository()
 

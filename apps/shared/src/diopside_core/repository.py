@@ -28,6 +28,7 @@ ITEM_TYPES = {
     "Video",
     "VideoIndex",
     "VideoStateEvent",
+    "VideoStatSnapshot",
     "VideoTagIndex",
     "VideoTagLink",
     "VideoMonthIndex",
@@ -255,6 +256,45 @@ def video_state_event_item(
         "payload": payload or {},
         "updated_at": now_iso(),
     }
+
+
+def snapshot_hour_key(sampled_at: str) -> str:
+    digits = "".join(ch for ch in sampled_at if ch.isdigit())
+    return (digits[:10] if len(digits) >= 10 else digits.ljust(10, "0"))
+
+
+def _stat_value(stats: dict[str, Any], *names: str) -> int | None:
+    for name in names:
+        if stats.get(name) is not None:
+            try:
+                return int(stats[name])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def video_stat_snapshot_item(video_id: str, stats: dict[str, Any]) -> dict[str, Any]:
+    source_stats = stats.get("statistics") if isinstance(stats.get("statistics"), dict) else stats
+    sampled_at = stats.get("sampled_at") or stats.get("updated_at") or now_iso()
+    item = {
+        "item_type": "VideoStatSnapshot",
+        "pk": f"VID#{video_id}",
+        "sk": f"STAT#{snapshot_hour_key(str(sampled_at))}",
+        "video_id": video_id,
+        "sampled_at": sampled_at,
+        "view_count": _stat_value(source_stats, "view_count", "viewCount"),
+        "like_count": _stat_value(source_stats, "like_count", "likeCount"),
+        "comment_count": _stat_value(source_stats, "comment_count", "commentCount"),
+        "concurrent_viewers": _stat_value(source_stats, "concurrent_viewers", "concurrentViewers"),
+        "raw_s3_uri": stats.get("raw_s3_uri") or stats.get("raw_metadata_uri"),
+        "updated_at": now_iso(),
+    }
+    return {key: value for key, value in item.items() if value is not None}
+
+
+def has_video_stats(video: dict[str, Any]) -> bool:
+    stats = video.get("statistics") if isinstance(video.get("statistics"), dict) else video
+    return any(stats.get(name) is not None for name in ("view_count", "viewCount", "like_count", "likeCount", "comment_count", "commentCount", "concurrent_viewers", "concurrentViewers"))
 
 
 def video_tag_link_item(video: dict[str, Any], tag_label: str) -> dict[str, Any]:
@@ -660,6 +700,7 @@ class Repository(Protocol):
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
     def get_channel(self, channel_id: str) -> dict[str, Any] | None: ...
     def append_video_state_event(self, video_id: str, to_state: str, *, from_state: str | None = None, source_job_id: str | None = None, payload: dict[str, Any] | None = None, occurred_at: str | None = None, event_name: str | None = None) -> dict[str, Any]: ...
+    def put_video_stat_snapshot(self, video_id: str, stats: dict[str, Any]) -> dict[str, Any]: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_app_config(self) -> dict[str, Any] | None: ...
@@ -839,6 +880,8 @@ class MemoryRepository:
             self.put_item(random_bucket)
         else:
             self.delete_item(random_bucket["pk"], random_bucket["sk"])
+        if has_video_stats(item):
+            self.put_video_stat_snapshot(item["video_id"], item)
         self.rebuild_tag_summaries(sorted(previous_tags | current_tags))
         return item
 
@@ -854,6 +897,9 @@ class MemoryRepository:
                 event_name=event_name,
             )
         )
+
+    def put_video_stat_snapshot(self, video_id: str, stats: dict[str, Any]) -> dict[str, Any]:
+        return self.put_item(video_stat_snapshot_item(video_id, stats))
 
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
         items = [item for (pk, sk), item in self.items.items() if pk == "RANDOM#DEFAULT" and sk.startswith("VID#") and item.get("item_type") == "RandomBucket"]
