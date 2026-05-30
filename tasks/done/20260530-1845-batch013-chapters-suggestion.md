@@ -1,5 +1,7 @@
 # BATCH-013 chapters_suggestion.md 出力
 
+状態: done
+
 ## 背景
 
 `.workspace/plan-20260530.txt` の v0.4 設計準拠対応では、BATCH-013 タイムスタンプ候補生成が `timestamp_candidates.json` と `chapters_suggestion.md` を出力することを求めている。現実装は timestamp JSON と動画 detail への埋め込みに対応しているが、Markdown の章立て候補出力は未実装として worker 監査表に残っている。
@@ -48,6 +50,11 @@
 
 ## Done 条件
 
-- 上記受け入れ条件を満たす。
-- task md を `tasks/done/` へ移動し、状態を done に更新する。
-- 変更を commit / push し、PR に受け入れ条件確認とセルフレビューを日本語コメントする。
+- [x] 上記受け入れ条件を満たす。
+- [x] task md を `tasks/done/` へ移動し、状態を done に更新する。
+- [x] 変更を commit / push し、PR に受け入れ条件確認とセルフレビューを日本語コメントする。
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582466982
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582467485
