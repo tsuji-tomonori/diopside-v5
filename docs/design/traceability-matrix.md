@@ -149,7 +149,7 @@
 
 | design_id | category | requirement | implementation_files | tests | status |
 |---|---|---|---|---|---|
-| DDB-SCHEMA | DynamoDB | v0.4 item schema と key/GSI 設計。 | `apps/shared/src/diopside_core/repository.py`, `README.md`, `docs/design/dynamodb-schema-audit.md` | `tests/test_repository_schema_contract.py`, `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_cloudformation_contract.py` | 監査済み・差分あり |
+| DDB-SCHEMA | DynamoDB | v0.4 item schema と key/GSI 設計。`TagSummary` は tag list read model として部分実装済み。 | `apps/shared/src/diopside_core/repository.py`, `README.md`, `docs/design/dynamodb-schema-audit.md` | `tests/test_repository_schema_contract.py`, `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_cloudformation_contract.py` | 監査済み・差分あり |
 | S3-PATH | S3 | raw/processed/public/export artifact path。 | `apps/workers/static-exporter/src/static_exporter/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_static_exporter.py`, `tests/test_core_pipeline.py` | 部分実装 |
 | CF-PATH | CloudFront | `/api/*`, `/data/*`, assets, SPA rewrite, OAC。 | `infra/cloudformation/diopside.yaml`, `README.md` | `tests/test_cloudformation_contract.py`, `tools/run-post-deploy-smoke.mjs` | 部分実装 |
 | IAC-CDK | IaC | AWS CDK を IaC 正本にする。 | なし。現 main は `infra/cloudformation/diopside.yaml` 中心 | なし | 差分あり |

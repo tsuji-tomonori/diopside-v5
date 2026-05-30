@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from diopside_core.repository import ITEM_TYPES, MemoryRepository, random_bucket_item, video_item
+from diopside_core.repository import ITEM_TYPES, MemoryRepository, random_bucket_item, tag_id_for_label, video_item
 
 
 V04_ITEM_TYPES = {
@@ -163,6 +163,53 @@ def test_repository_updates_video_tags_and_removes_stale_tag_index():
     assert [item["label"] for item in repo.list_tags()] == ["手動", "歌枠"]
 
 
+def test_repository_writes_tag_summary_and_hides_stale_tags():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "first",
+            "published_at": "2026-05-29T00:00:00Z",
+            "tags": ["歌枠", "雑談"],
+            "public": True,
+        }
+    )
+    repo.put_video(
+        {
+            "video_id": "vid002",
+            "title": "second",
+            "published_at": "2026-05-30T00:00:00Z",
+            "tags": ["歌枠"],
+            "public": True,
+        }
+    )
+
+    tag_id = tag_id_for_label("歌枠")
+    summary = repo.get_item(f"TAG#{tag_id}", "META")
+
+    assert summary["item_type"] == "TagSummary"
+    assert summary["pk"] == f"TAG#{tag_id}"
+    assert summary["sk"] == "META"
+    assert summary["tag_id"] == tag_id
+    assert summary["label"] == "歌枠"
+    assert summary["category"] == "auto"
+    assert summary["aliases"] == []
+    assert summary["video_count"] == 2
+    assert summary["latest_video_id"] == "vid002"
+    assert summary["latest_video_at"] == "2026-05-30T00:00:00Z"
+    assert summary["sort_order"] == 0
+    assert summary["public_visible"] is True
+    assert summary["gsi2pk"] == "TAG#SUMMARY"
+    assert [item["label"] for item in repo.list_tags()] == ["歌枠", "雑談"]
+
+    repo.update_video_tags("vid001", remove_tags=["雑談"])
+
+    stale = repo.get_item(f"TAG#{tag_id_for_label('雑談')}", "META")
+    assert stale["video_count"] == 0
+    assert stale["public_visible"] is False
+    assert [item["label"] for item in repo.list_tags()] == ["歌枠"]
+
+
 def test_repository_accepts_notification_plan_v04_item_shape():
     repo = MemoryRepository()
 
@@ -253,10 +300,11 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"ChannelRef", "VideoMonthIndex", "TagSummary"} <= unsupported_v04_types
+    assert {"ChannelRef", "VideoMonthIndex", "VideoTagLink"} <= unsupported_v04_types
     assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
     assert "StaticExport" not in unsupported_v04_types
+    assert "TagSummary" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

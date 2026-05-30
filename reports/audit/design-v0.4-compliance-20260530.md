@@ -32,7 +32,7 @@
 | P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
 | P0-06 | API-001〜023 | API-007/API-022/API-023 を追加し、API-008/API-009/API-013/API-015/API-016/API-019 の handler contract test を追加。FastAPI/OpenAPI は後続 | 部分対応 | `api/fastapi-v04-contract` で framework と OpenAPI 証跡を追加 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum、wordcloud PNG/JSON を static exporter と contract check に追加 | 対応 | SVG は互換 artifact として維持 |
-| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。`RandomBucket` と `StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / schema_version / 残未対応 item の実装は後続 |
+| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / schema_version / 残未対応 item の実装は後続 |
 | P0-09 | Worker coverage | BATCH-001〜020 と現 pipeline/handler/job/queue/test の対応を `docs/design/worker-batch-coverage-audit.md` に整理し、job_type / queue mapping を test 化。BATCH-006 は `notification_plan`、BATCH-017 は `archive_finalize` job を追加 | 監査済み・差分あり | 外部通知 delivery、専用 file-output、worker 分割は後続実装 |
 | P0-10 | Dev deploy rehearsal | 実 dev 環境で YouTube 実データ 1 件の end-to-end 確認はこの PR では未実施 | 未検証 | credentials と dev stack がある環境で別途実施 |
 
@@ -48,6 +48,7 @@
 | P1 | file output service | 部分対応 | `file_output` job を追加し、public/private artifact body 出力と `Artifact` item の `artifact_version` / `content_hash` 記録に対応。物理 worker 分割は未対応 |
 | P1 | quota rollup | 部分対応 | `quota_rollup` が call record から v0.4 key shape の daily method summary `QuotaUsage` item を保存。threshold warning event は未対応 |
 | P1 | wordcloud artifact | 対応 | PNG/JSON alias と versioned path を出力。既存 SVG は互換 artifact として維持 |
+| P1 | TagSummary | 部分対応 | `put_video` / tag 補正が `TagSummary` item を保存し、API/static export の tag list が read model を優先利用。管理 UI 編集と既存 data backfill は未対応 |
 | P1 | RandomBucket | 部分対応 | `put_video` が v0.4 key shape の `RandomBucket` を保存し、`GET /api/random-videos` が seed/count/tag/year で安定抽出。rebuild job と backfill は未対応 |
 | P1 | StaticExport history | 部分対応 | `static_export` job が `StaticExport` history item を保存。管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
 | P1 | timestamp standalone | 対応 | `/data/artifacts/timestamps/{video_id}.json` を出力 |

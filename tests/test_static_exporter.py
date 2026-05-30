@@ -124,6 +124,7 @@ def test_export_public_data_reflects_manual_tag_correction(tmp_path):
     detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
     labels = {item["label"] for item in tags["items"]}
     assert labels == {"手動", "自動"}
+    assert all(item["public_visible"] is True for item in tags["items"])
     assert detail["video"]["tags"] == ["自動", "手動"]
 
 

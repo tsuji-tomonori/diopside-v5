@@ -25,6 +25,7 @@ ITEM_TYPES = {
     "Video",
     "VideoIndex",
     "VideoTagIndex",
+    "TagSummary",
     "ChatManifest",
     "ChatMessageChunkManifest",
     "ChatAggregate",
@@ -49,6 +50,10 @@ def stable_id(prefix: str, value: str) -> str:
 
 def _unique_tags(tags: list[str]) -> list[str]:
     return list(dict.fromkeys(tag.strip() for tag in tags if isinstance(tag, str) and tag.strip()))
+
+
+def tag_id_for_label(label: str) -> str:
+    return stable_id("tag", label)
 
 
 def video_item(video: dict[str, Any]) -> dict[str, Any]:
@@ -160,6 +165,7 @@ class Repository(Protocol):
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]: ...
     def get_video(self, video_id: str) -> dict[str, Any] | None: ...
     def list_tags(self) -> list[dict[str, Any]]: ...
+    def rebuild_tag_summaries(self, tags: list[str] | None = None) -> list[dict[str, Any]]: ...
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]: ...
     def record_static_export(self, manifest: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
     def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]: ...
@@ -217,11 +223,74 @@ class MemoryRepository:
         return self.get_item(f"VIDEO#{video_id}", "META")
 
     def list_tags(self) -> list[dict[str, Any]]:
+        summaries = [item for item in self.items.values() if item.get("item_type") == "TagSummary"]
+        if summaries:
+            summaries = [item for item in summaries if item.get("public_visible", True)]
+            summaries.sort(key=lambda item: (int(item.get("sort_order", 0)), item.get("label", "")))
+            return [
+                {
+                    "tag_id": item["tag_id"],
+                    "label": item["label"],
+                    "video_count": int(item.get("video_count", 0)),
+                    "category": item.get("category", "auto"),
+                    "aliases": item.get("aliases", []),
+                    "latest_video_id": item.get("latest_video_id"),
+                    "latest_video_at": item.get("latest_video_at"),
+                    "sort_order": int(item.get("sort_order", 0)),
+                    "public_visible": bool(item.get("public_visible", True)),
+                }
+                for item in summaries
+            ]
+        return self._dynamic_tag_summaries()
+
+    def _dynamic_tag_summaries(self) -> list[dict[str, Any]]:
         counts: dict[str, int] = {}
         for video in self.list_videos(10000):
             for tag in video.get("tags", []):
                 counts[tag] = counts.get(tag, 0) + 1
-        return [{"tag_id": stable_id("tag", tag), "label": tag, "video_count": count, "category": "auto"} for tag, count in sorted(counts.items())]
+        return [
+            {
+                "tag_id": tag_id_for_label(tag),
+                "label": tag,
+                "video_count": count,
+                "category": "auto",
+                "aliases": [],
+                "public_visible": True,
+                "sort_order": 0,
+            }
+            for tag, count in sorted(counts.items())
+        ]
+
+    def rebuild_tag_summaries(self, tags: list[str] | None = None) -> list[dict[str, Any]]:
+        target_tags = set(_unique_tags(tags or []))
+        if not target_tags:
+            target_tags = {tag for video in self.list_videos(10000) for tag in video.get("tags", [])}
+        summaries = []
+        for tag in sorted(target_tags):
+            videos = [video for video in self.list_videos(10000) if tag in video.get("tags", [])]
+            videos.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+            existing = self.get_item(f"TAG#{tag_id_for_label(tag)}", "META") or {}
+            latest = videos[0] if videos else {}
+            item = {
+                **existing,
+                "item_type": "TagSummary",
+                "pk": f"TAG#{tag_id_for_label(tag)}",
+                "sk": "META",
+                "tag_id": tag_id_for_label(tag),
+                "label": existing.get("label", tag),
+                "category": existing.get("category", "auto"),
+                "aliases": existing.get("aliases", []),
+                "video_count": len(videos),
+                "latest_video_id": latest.get("video_id"),
+                "latest_video_at": latest.get("published_at"),
+                "sort_order": int(existing.get("sort_order", 0)),
+                "public_visible": len(videos) > 0 and bool(existing.get("public_visible", True)),
+                "gsi2pk": "TAG#SUMMARY",
+                "gsi2sk": f"{int(existing.get('sort_order', 0)):08d}#{tag}",
+                "updated_at": now_iso(),
+            }
+            summaries.append(self.put_item(item))
+        return summaries
 
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]:
         existing = self.get_video(video["video_id"])
@@ -248,6 +317,7 @@ class MemoryRepository:
             self.put_item(random_bucket)
         else:
             self.delete_item(random_bucket["pk"], random_bucket["sk"])
+        self.rebuild_tag_summaries(sorted(previous_tags | current_tags))
         return item
 
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
@@ -514,6 +584,21 @@ class DynamoRepository(MemoryRepository):
         items = [item for item in items if item.get("item_type") == "RandomBucket"]
         items.sort(key=lambda item: item.get("sk", ""))
         return deepcopy(items[:limit])
+
+    def list_tags(self) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        summaries = self._query_all(
+            IndexName="by_tag",
+            KeyConditionExpression=Key("gsi2pk").eq("TAG#SUMMARY"),
+            Limit=10000,
+        )
+        summaries = [item for item in summaries if item.get("item_type") == "TagSummary"]
+        if summaries:
+            summaries = [item for item in summaries if item.get("public_visible", True)]
+            summaries.sort(key=lambda item: (int(item.get("sort_order", 0)), item.get("label", "")))
+            return deepcopy(summaries)
+        return super().list_tags()
 
     def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]:
         if Key is None:
