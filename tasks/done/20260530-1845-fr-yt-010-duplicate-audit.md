@@ -1,6 +1,6 @@
 # FR-YT-010 duplicate message audit
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -34,3 +34,10 @@
 - 対象 pytest（必要に応じて）
 - `git diff --check`
 - `npm run verify`
+
+## 完了結果
+
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py::test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（135 tests、build、package:deploy、local e2e）
