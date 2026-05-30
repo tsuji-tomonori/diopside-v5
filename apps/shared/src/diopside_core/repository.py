@@ -25,6 +25,7 @@ ITEM_TYPES = {
     "Video",
     "VideoIndex",
     "VideoTagIndex",
+    "VideoMonthIndex",
     "TagSummary",
     "ChatManifest",
     "ChatMessageChunkManifest",
@@ -56,6 +57,16 @@ def tag_id_for_label(label: str) -> str:
     return stable_id("tag", label)
 
 
+def video_month_key(published_at: str | None) -> str | None:
+    if not published_at or len(published_at) < 7:
+        return None
+    year = published_at[:4]
+    month = published_at[5:7]
+    if not (year.isdigit() and month.isdigit() and 1 <= int(month) <= 12):
+        return None
+    return f"{year}{month}"
+
+
 def video_item(video: dict[str, Any]) -> dict[str, Any]:
     video_id = video["video_id"]
     published_at = video.get("published_at") or video.get("scheduled_start_time") or "1970-01-01T00:00:00Z"
@@ -72,6 +83,31 @@ def video_item(video: dict[str, Any]) -> dict[str, Any]:
         item["gsi1pk"] = "VIDEO#PUBLIC"
         item["gsi1sk"] = f"{published_at}#{video_id}"
     return item
+
+
+def video_month_index_item(video: dict[str, Any]) -> dict[str, Any] | None:
+    published_at = video.get("published_at")
+    yyyy_mm_key = video_month_key(published_at)
+    if yyyy_mm_key is None:
+        return None
+    video_id = video["video_id"]
+    return {
+        "item_type": "VideoMonthIndex",
+        "pk": f"VID#{video_id}",
+        "sk": f"INDEX#MONTH#{yyyy_mm_key}",
+        "video_id": video_id,
+        "yyyy_mm": f"{yyyy_mm_key[:4]}-{yyyy_mm_key[4:]}",
+        "published_at": published_at,
+        "title": video.get("title", ""),
+        "thumbnail_url": video.get("thumbnail_url"),
+        "duration_sec": video.get("duration_sec"),
+        "archive_state": video.get("archive_state") or video.get("live_state") or "archived",
+        "detail_path": video.get("detail_path") or f"/api/videos/{video_id}",
+        "tags": video.get("tags", []),
+        "gsi1pk": f"VIDEO#MONTH#{yyyy_mm_key}",
+        "gsi1sk": f"PUB#{published_at}#{video_id}",
+        "updated_at": now_iso(),
+    }
 
 
 def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
@@ -164,6 +200,7 @@ class Repository(Protocol):
     def delete_item(self, pk: str, sk: str) -> None: ...
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]: ...
     def get_video(self, video_id: str) -> dict[str, Any] | None: ...
+    def list_video_month_indexes(self, year: int | None = None, month: int | None = None) -> list[dict[str, Any]]: ...
     def list_tags(self) -> list[dict[str, Any]]: ...
     def rebuild_tag_summaries(self, tags: list[str] | None = None) -> list[dict[str, Any]]: ...
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]: ...
@@ -221,6 +258,17 @@ class MemoryRepository:
 
     def get_video(self, video_id: str) -> dict[str, Any] | None:
         return self.get_item(f"VIDEO#{video_id}", "META")
+
+    def list_video_month_indexes(self, year: int | None = None, month: int | None = None) -> list[dict[str, Any]]:
+        indexes = [item for item in self.items.values() if item.get("item_type") == "VideoMonthIndex"]
+        if not indexes:
+            indexes = [item for video in self.list_videos(10000) if (item := video_month_index_item(video))]
+        if year is not None:
+            indexes = [item for item in indexes if item.get("yyyy_mm", "").startswith(f"{year:04d}-")]
+        if month is not None:
+            indexes = [item for item in indexes if item.get("yyyy_mm", "").endswith(f"-{month:02d}")]
+        indexes.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+        return deepcopy(indexes)
 
     def list_tags(self) -> list[dict[str, Any]]:
         summaries = [item for item in self.items.values() if item.get("item_type") == "TagSummary"]
@@ -295,7 +343,16 @@ class MemoryRepository:
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]:
         existing = self.get_video(video["video_id"])
         previous_tags = set(existing.get("tags", [])) if existing else set()
+        previous_month_key = video_month_key(existing.get("published_at")) if existing else None
         item = self.put_item(video_item(video))
+        current_month_index = video_month_index_item(item)
+        current_month_key = current_month_index["sk"].replace("INDEX#MONTH#", "") if current_month_index else None
+        if previous_month_key and previous_month_key != current_month_key:
+            self.delete_item(f"VID#{item['video_id']}", f"INDEX#MONTH#{previous_month_key}")
+        if item.get("public", True) and current_month_index:
+            self.put_item(current_month_index)
+        elif current_month_key:
+            self.delete_item(f"VID#{item['video_id']}", f"INDEX#MONTH#{current_month_key}")
         current_tags = set(item.get("tags", []))
         for tag in previous_tags - current_tags:
             self.delete_item(f"TAG#{tag}", f"VIDEO#{item['video_id']}")
@@ -573,6 +630,29 @@ class DynamoRepository(MemoryRepository):
             if item.get("item_type") == "Video" and item.get("public", True)
         ]
         return deepcopy(videos[:limit])
+
+    def list_video_month_indexes(self, year: int | None = None, month: int | None = None) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        if year is None:
+            return super().list_video_month_indexes(year=year, month=month)
+        months = [month] if month is not None else list(range(1, 13))
+        items: list[dict[str, Any]] = []
+        for month_value in months:
+            yyyy_mm_key = f"{year:04d}{month_value:02d}"
+            items.extend(
+                self._query_all(
+                    IndexName="by_public_date",
+                    KeyConditionExpression=Key("gsi1pk").eq(f"VIDEO#MONTH#{yyyy_mm_key}"),
+                    ScanIndexForward=False,
+                    Limit=10000,
+                )
+            )
+        items = [item for item in items if item.get("item_type") == "VideoMonthIndex"]
+        if not items:
+            return super().list_video_month_indexes(year=year, month=month)
+        items.sort(key=lambda item: item.get("published_at", ""), reverse=True)
+        return deepcopy(items)
 
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
         if Key is None:

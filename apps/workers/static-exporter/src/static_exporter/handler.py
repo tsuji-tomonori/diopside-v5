@@ -41,6 +41,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
     alias_list_items = []
     search_by_year: dict[str, list[dict[str, Any]]] = {}
     calendar_by_year_month: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    alias_detail_paths: dict[str, str] = {}
     static_detail_entries: dict[str, dict[str, str]] = {}
     static_calendar_entries: dict[str, dict[str, str]] = {}
     static_wordcloud_entries: dict[str, dict[str, str]] = {}
@@ -152,6 +153,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
         alias_item = {**item, "detail_path": alias_detail_path, "timestamp_path": alias_timestamp_path, **({"wordcloud_path": wordcloud_url, "wordcloud_json_path": wordcloud_json_url} if wordcloud_json_url else {})}
         list_items.append(item)
         alias_list_items.append(alias_item)
+        alias_detail_paths[video_id] = alias_detail_path
         year = (video.get("published_at") or "unknown")[:4]
         month = (video.get("published_at") or "unknown-00")[5:7] if year != "unknown" else "unknown"
         search_by_year.setdefault(year, []).append({"video_id": video_id, "title": item["title"], "tags": item["tags"], "published_at": item["published_at"]})
@@ -189,6 +191,25 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
         path = search_dir / f"videos-{year}.json"
         _write_json(path, {"schema_version": "public-video-search/v1", "generated_at": generated_at, "items": items})
         indexes[f"search_{year}"] = f"/data/v/{version}/public/search/videos-{year}.json"
+    calendar_indexes = repository.list_video_month_indexes() if hasattr(repository, "list_video_month_indexes") else []
+    if calendar_indexes:
+        calendar_by_year_month = {}
+        for item in calendar_indexes:
+            published_at = str(item.get("published_at") or "")
+            video_id = item.get("video_id")
+            if len(published_at) < 7 or not video_id or video_id not in alias_detail_paths:
+                continue
+            year = published_at[:4]
+            month = published_at[5:7]
+            calendar_by_year_month.setdefault(year, {}).setdefault(month, []).append(
+                {
+                    "video_id": video_id,
+                    "title": item.get("title", ""),
+                    "published_at": item.get("published_at"),
+                    "detail_path": alias_detail_paths[video_id],
+                    "tags": item.get("tags", []),
+                }
+            )
     for year, months in sorted(calendar_by_year_month.items()):
         items = [
             {"month": month, "video_count": len(month_items), "items": month_items}

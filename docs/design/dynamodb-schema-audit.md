@@ -13,7 +13,7 @@
 | `ChannelRef` | `APP#CHANNELS` / `CH#{channel_id}` | なし | 未対応 | channel list は現状 `Channel` scan 相当 |
 | `ChannelSyncCursor` | `CH#{channel_id}` / `CURSOR#uploads` | `ChannelCursor`、`CHANNEL#{channel_id}` / `CURSOR#{name}` | 差分あり | item_type 名と key prefix が異なる |
 | `Video` | `VID#{video_id}` / `META` | `video_item` は `VIDEO#{video_id}` / `META` | 差分あり | `schema_version`、`created_at`、inverted public date などが未整合 |
-| `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | なし | 未対応 | archive calendar は現状 Video 走査または static data 由来 |
+| `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | `put_video` が `VideoMonthIndex` を保存し、archive calendar API / static export が read model を優先利用 | 部分実装 | 既存データ backfill と v0.4 `Video` key prefix への全面移行は未対応 |
 | `VideoStateEvent` | `VID#{video_id}` / `EVT#STATE#...` | なし | 未対応 | live/archive 状態遷移履歴は未分離 |
 | `VideoStatSnapshot` | `VID#{video_id}` / `STAT#{yyyyMMddHH}` | なし | 未対応 | 統計 snapshot は Video read model に寄っている |
 | `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `VideoTagIndex`、`TAG#{tag}` / `VIDEO#{video_id}` | 差分あり | tag link と tag index の向き・属性が異なる |
@@ -47,6 +47,6 @@
 
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
 2. `schema_version`、`entity_id`、`created_at`、`updated_at` の共通属性を repository writer に追加する。
-3. `ChannelRef`、`VideoMonthIndex` を専用 writer と query path で追加する。`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済みだが、rebuild/backfill/API表示は後続で扱う。
+3. `ChannelRef` を専用 writer と query path で追加する。`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済みだが、rebuild/backfill/API表示は後続で扱う。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
 5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。

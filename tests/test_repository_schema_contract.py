@@ -140,6 +140,63 @@ def test_repository_writes_random_bucket_for_public_videos_and_removes_private_e
     assert repo.list_random_videos() == []
 
 
+def test_repository_writes_video_month_index_and_removes_stale_entries():
+    repo = MemoryRepository()
+
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive",
+            "published_at": "2026-05-30T00:00:00Z",
+            "duration_sec": 1200,
+            "thumbnail_url": "/thumb.jpg",
+            "tags": ["歌枠"],
+            "public": True,
+        }
+    )
+    index = repo.get_item("VID#vid001", "INDEX#MONTH#202605")
+
+    assert index["item_type"] == "VideoMonthIndex"
+    assert index["pk"] == "VID#vid001"
+    assert index["sk"] == "INDEX#MONTH#202605"
+    assert index["video_id"] == "vid001"
+    assert index["yyyy_mm"] == "2026-05"
+    assert index["published_at"] == "2026-05-30T00:00:00Z"
+    assert index["title"] == "archive"
+    assert index["thumbnail_url"] == "/thumb.jpg"
+    assert index["duration_sec"] == 1200
+    assert index["archive_state"] == "archived"
+    assert index["gsi1pk"] == "VIDEO#MONTH#202605"
+    assert index["gsi1sk"] == "PUB#2026-05-30T00:00:00Z#vid001"
+    assert repo.list_video_month_indexes(year=2026, month=5) == [index]
+
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive moved",
+            "published_at": "2026-06-01T00:00:00Z",
+            "tags": ["歌枠"],
+            "public": True,
+        }
+    )
+
+    assert repo.get_item("VID#vid001", "INDEX#MONTH#202605") is None
+    assert repo.get_item("VID#vid001", "INDEX#MONTH#202606")["title"] == "archive moved"
+
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive private",
+            "published_at": "2026-06-01T00:00:00Z",
+            "tags": ["歌枠"],
+            "public": False,
+        }
+    )
+
+    assert repo.get_item("VID#vid001", "INDEX#MONTH#202606") is None
+    assert repo.list_video_month_indexes(year=2026, month=6) == []
+
+
 def test_repository_updates_video_tags_and_removes_stale_tag_index():
     repo = MemoryRepository()
     repo.put_video(
@@ -300,11 +357,12 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"ChannelRef", "VideoMonthIndex", "VideoTagLink"} <= unsupported_v04_types
+    assert {"ChannelRef", "VideoTagLink"} <= unsupported_v04_types
     assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
     assert "StaticExport" not in unsupported_v04_types
     assert "TagSummary" not in unsupported_v04_types
+    assert "VideoMonthIndex" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

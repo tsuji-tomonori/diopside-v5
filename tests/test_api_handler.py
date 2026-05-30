@@ -162,6 +162,42 @@ def test_archive_calendar_rejects_invalid_query():
     assert body["code"] == "INVALID_REQUEST"
 
 
+def test_archive_calendar_uses_repository_video_month_index(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "repo001",
+            "title": "repository video",
+            "published_at": "2026-05-29T00:00:00Z",
+            "public": True,
+        }
+    )
+    index = repo.get_item("VID#repo001", "INDEX#MONTH#202605")
+    repo.put_item(
+        {
+            **index,
+            "sk": "INDEX#MONTH#202401",
+            "yyyy_mm": "2024-01",
+            "published_at": "2024-01-02T00:00:00Z",
+            "gsi1pk": "VIDEO#MONTH#202401",
+            "gsi1sk": "PUB#2024-01-02T00:00:00Z#repo001",
+        }
+    )
+    repo.delete_item("VID#repo001", "INDEX#MONTH#202605")
+    monkeypatch.setenv("DIOPSIDE_TABLE_NAME", "unit-table")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/archive-calendar", query={"year": "2024", "month": "1"})
+
+    assert status == 200
+    assert body["years"] == [{"year": 2024, "video_count": 1}]
+    assert body["months"] == [{"year": 2024, "month": 1, "video_count": 1}]
+    assert body["days"] == [{"date": "2024-01-02", "video_count": 1, "video_ids": ["repo001"]}]
+
+    monkeypatch.delenv("DIOPSIDE_TABLE_NAME", raising=False)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
 def test_home_uses_repository_when_table_name_is_configured(monkeypatch):
     repo = MemoryRepository()
     repo.put_video(

@@ -64,6 +64,8 @@ def test_export_public_data_from_repository(tmp_path):
             "top_terms": [],
         },
     )
+    index = repo.get_item("VID#vid001", "INDEX#MONTH#202605")
+    repo.put_item({**index, "title": "月別indexタイトル", "tags": ["月別index"]})
     manifest = export_public_data(repo, tmp_path, "unit")
     assert manifest["indexes"]["videos_latest"] == "/data/v/unit/public/index/videos-latest.json"
     assert manifest["static_paths"]["STATIC-001"]["path"] == "/data/home.json"
@@ -91,6 +93,8 @@ def test_export_public_data_from_repository(tmp_path):
     assert home["schema_version"] == "public-home/v1"
     assert home["latest_videos"][0]["detail_path"] == "/data/videos/vid001.json"
     assert calendar["months"][0]["items"][0]["detail_path"] == "/data/videos/vid001.json"
+    assert calendar["months"][0]["items"][0]["title"] == "月別indexタイトル"
+    assert calendar["months"][0]["items"][0]["tags"] == ["月別index"]
     assert wordcloud_json["top_terms"][0]["term"] == "ありがとう"
     assert wordcloud_json["source_png_path"] == "/data/artifacts/wordcloud/vid001.png"
     assert timestamps_json["items"][0]["offset_sec"] == 30

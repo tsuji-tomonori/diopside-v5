@@ -349,6 +349,12 @@ def _archive_calendar(query: dict[str, str]) -> dict[str, Any]:
 
 def _calendar_video_items() -> list[dict[str, Any]]:
     if os.environ.get("DIOPSIDE_TABLE_NAME"):
+        if hasattr(_repository(), "list_video_month_indexes"):
+            return [
+                {"video_id": item["video_id"], "published_at": item.get("published_at")}
+                for item in _repository().list_video_month_indexes()
+                if item.get("video_id")
+            ]
         return [
             {"video_id": video["video_id"], "published_at": video.get("published_at")}
             for video in _repository().list_videos(limit=10000)
