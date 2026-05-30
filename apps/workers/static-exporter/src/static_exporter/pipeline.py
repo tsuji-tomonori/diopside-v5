@@ -378,6 +378,18 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             "unknown_count": parser_stats["unknown_count"],
             "stop_reason": None if replay_continuations else "no_continuation",
         }
+        for continuation in replay_continuations[:5]:
+            _enqueue_job(
+                "DIOPSIDE_CHAT_QUEUE_URL",
+                build_job_message(
+                    "chat_collect",
+                    f"manual-replay-{video_id}-{continuation['token']}",
+                    {"video_id": video_id, "mode": "replay", "replay_continuation": continuation},
+                    requested_by="worker",
+                    trace_id=params.get("trace_id"),
+                ),
+                delay_seconds=max(0, int(continuation.get("timeout_ms") or 0) // 1000),
+            )
     else:
         response = params.get("live_chat_response")
         if response is None:

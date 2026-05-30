@@ -486,6 +486,8 @@ def test_public_replay_initial_data_extractor():
 
 def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued")
     html = """
     <script>
     ytInitialData = {
@@ -558,6 +560,25 @@ def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_
     assert collected["parser_stats"]["unknown_count"] == 1
     assert collected["next_poll"]["action"] == "continuation_available"
     assert collected["next_poll"]["continuation_count"] == 1
+    assert enqueued == [
+        {
+            "queue_env": "DIOPSIDE_CHAT_QUEUE_URL",
+            "delay_seconds": 1,
+            "payload": {
+                "job_id": enqueued[0]["payload"]["job_id"],
+                "job_type": "chat_collect",
+                "idempotency_key": "chat_collect:manual-replay-vid-replay-replay-token-1",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {
+                    "video_id": "vid-replay",
+                    "mode": "replay",
+                    "replay_continuation": {"token": "replay-token-1", "source": "reloadContinuationData", "timeout_ms": 1500},
+                },
+            },
+        }
+    ]
     assert chunk["item_type"] == "ChatPageManifest"
     assert chunk["pk"] == "VID#vid-replay"
     assert chunk["sk"] == "CHAT#PAGE#replay#1"
