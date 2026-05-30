@@ -38,6 +38,8 @@ const els = {
   clearFilter: document.querySelector("#clearFilterButton"),
   quick: document.querySelector("#quickChips"),
   recent: document.querySelector("#recentSearches"),
+  favorites: document.querySelector("#favoriteVideos"),
+  history: document.querySelector("#historyVideos"),
   clearTag: document.querySelector("#clearTagButton"),
   admin: document.querySelector("#adminPanel"),
   adminResult: document.querySelector("#adminResult"),
@@ -211,6 +213,26 @@ const renderList = () => {
   }
 };
 
+const videosByIds = (ids) => ids.map((id) => state.videos.find((video) => video.video_id === id)).filter(Boolean);
+
+const savedButton = (video, mode) => el("button", { type: "button", class: "saved-item", onclick: () => showDetail(video) }, [
+  el("span", { class: "saved-title", text: video.title }),
+  el("span", { class: "detail-meta", text: `${fmtDate(video.published_at)} / ${fmtDuration(video.duration_sec)}` }),
+  el("span", { class: "tag-row" }, (video.tags || []).slice(0, 3).map((tag) => el("span", { class: "tag-pill", text: tag }))),
+  mode === "favorite" ? el("span", { class: "saved-marker", text: "お気に入り" }) : el("span", { class: "saved-marker", text: "履歴" })
+]);
+
+const renderSaved = () => {
+  const favorites = videosByIds(state.favorites);
+  const history = videosByIds(state.history);
+  els.favorites.replaceChildren(
+    ...(favorites.length ? favorites.map((video) => savedButton(video, "favorite")) : [el("p", { class: "empty-state", text: "お気に入りはありません。" })])
+  );
+  els.history.replaceChildren(
+    ...(history.length ? history.map((video) => savedButton(video, "history")) : [el("p", { class: "empty-state", text: "閲覧履歴はありません。" })])
+  );
+};
+
 const showDetail = async (video) => {
   els.detail.replaceChildren(el("p", { text: "読み込み中" }));
   const detail = await json(video.detail_path);
@@ -271,11 +293,13 @@ const toggleFavorite = (videoId) => {
   state.favorites = state.favorites.includes(videoId) ? state.favorites.filter((id) => id !== videoId) : [videoId, ...state.favorites];
   store.set("favorites", state.favorites);
   renderList();
+  renderSaved();
 };
 
 const rememberHistory = (videoId) => {
   state.history = [videoId, ...state.history.filter((id) => id !== videoId)].slice(0, 20);
   store.set("history", state.history);
+  renderSaved();
 };
 
 const selectTag = (tag) => {
@@ -313,6 +337,7 @@ const render = () => {
   renderQuick();
   renderTags();
   renderRecent();
+  renderSaved();
   renderList();
 };
 
