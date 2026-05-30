@@ -185,6 +185,28 @@ def chat_aggregate_item(video_id: str, aggregate: dict[str, Any]) -> dict[str, A
     }
 
 
+def chat_manifest_item(video_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    normalized_s3_uri = manifest.get("normalized_s3_uri") or manifest.get("normalized_uri")
+    item = {
+        **manifest,
+        "item_type": "ChatManifest",
+        "pk": f"VID#{video_id}",
+        "sk": "CHAT#MANIFEST",
+        "video_id": video_id,
+        "live_collection_state": manifest.get("live_collection_state", "not_started"),
+        "replay_collection_state": manifest.get("replay_collection_state", "not_started"),
+        "normalization_state": manifest.get("normalization_state", "succeeded" if normalized_s3_uri else "not_started"),
+        "message_count": int(manifest.get("message_count", 0)),
+        "updated_at": now_iso(),
+    }
+    if normalized_s3_uri:
+        item["normalized_s3_uri"] = normalized_s3_uri
+    if item.get("normalized_schema_version") is None:
+        item["normalized_schema_version"] = "chat-message/v1"
+    item.pop("normalized_uri", None)
+    return item
+
+
 def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
     video_id = video["video_id"]
     bucket_no = int(hashlib.sha256(video_id.encode("utf-8")).hexdigest()[:8], 16) % 10000
@@ -498,6 +520,8 @@ class Repository(Protocol):
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
+    def put_chat_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]: ...
+    def get_chat_manifest(self, video_id: str) -> dict[str, Any] | None: ...
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]: ...
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]: ...
     def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None: ...
@@ -709,6 +733,12 @@ class MemoryRepository:
 
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None:
         return self.get_item(f"VID#{video_id}", "CHAT#AGG#v1") or self.get_item(f"VIDEO#{video_id}", "CHAT#AGGREGATE")
+
+    def put_chat_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+        return self.put_item(chat_manifest_item(video_id, manifest))
+
+    def get_chat_manifest(self, video_id: str) -> dict[str, Any] | None:
+        return self.get_item(f"VID#{video_id}", "CHAT#MANIFEST") or self.get_item(f"VIDEO#{video_id}", "CHAT#MANIFEST")
 
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
         return self.put_item(artifact_item(video_id, artifact))

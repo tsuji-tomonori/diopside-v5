@@ -942,6 +942,10 @@ def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, 
     normalized = chat_normalize(repo, {"video_id": "vid001"})
     assert normalized["message_count"] == 1
     assert repo.get_chat_aggregate("vid001")["top_terms"][0]["term"] == "ありがとう"
+    manifest = repo.get_chat_manifest("vid001")
+    assert manifest["pk"] == "VID#vid001"
+    assert manifest["normalized_s3_uri"].endswith("processed/chat-normalized/video_id=vid001/part-000.jsonl")
+    assert manifest["message_count"] == 1
 
 
 def test_summarize_chat_messages_accepts_single_pass_iterable():

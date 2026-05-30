@@ -416,7 +416,13 @@ def chat_normalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     aggregate_key = f"processed/chat-aggregate/video_id={video_id}/summary.json"
     _write_blob(normalized_key, bytes(normalized_body), "application/x-ndjson", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
     _write_blob(aggregate_key, json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8"), "application/json", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
-    repo.put_item({"item_type": "ChatManifest", "pk": f"VIDEO#{video_id}", "sk": "CHAT#MANIFEST", "video_id": video_id, "normalized_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}", "message_count": summary["message_count"], "updated_at": now_iso()})
+    repo.put_chat_manifest(
+        video_id,
+        {
+            "normalized_s3_uri": f"s3://{os.environ.get('DIOPSIDE_PROCESSED_BUCKET', 'processed')}/{normalized_key}",
+            "message_count": summary["message_count"],
+        },
+    )
     return {"video_id": video_id, "message_count": summary["message_count"], "top_term_count": len(summary["top_terms"])}
 
 

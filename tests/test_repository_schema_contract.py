@@ -516,6 +516,44 @@ def test_repository_writes_chat_aggregate_v04_key_and_reads_legacy_fallback():
     assert repo.get_chat_aggregate("legacy") == legacy
 
 
+def test_repository_writes_chat_manifest_v04_key_and_reads_legacy_fallback():
+    repo = MemoryRepository()
+
+    manifest = repo.put_chat_manifest(
+        "vid001",
+        {
+            "normalized_s3_uri": "s3://processed/chat-normalized/video_id=vid001/part-000.jsonl",
+            "message_count": 10,
+            "last_offset_ms": 60000,
+        },
+    )
+
+    assert manifest["item_type"] == "ChatManifest"
+    assert manifest["pk"] == "VID#vid001"
+    assert manifest["sk"] == "CHAT#MANIFEST"
+    assert manifest["video_id"] == "vid001"
+    assert manifest["normalized_s3_uri"] == "s3://processed/chat-normalized/video_id=vid001/part-000.jsonl"
+    assert manifest["message_count"] == 10
+    assert manifest["live_collection_state"] == "not_started"
+    assert manifest["replay_collection_state"] == "not_started"
+    assert manifest["normalization_state"] == "succeeded"
+    assert manifest["normalized_schema_version"] == "chat-message/v1"
+    assert repo.get_chat_manifest("vid001") == manifest
+
+    legacy = repo.put_item(
+        {
+            "item_type": "ChatManifest",
+            "pk": "VIDEO#legacy",
+            "sk": "CHAT#MANIFEST",
+            "video_id": "legacy",
+            "normalized_uri": "s3://processed/legacy.jsonl",
+            "message_count": 1,
+        }
+    )
+
+    assert repo.get_chat_manifest("legacy") == legacy
+
+
 def test_repository_writes_tag_summary_and_hides_stale_tags():
     repo = MemoryRepository()
     repo.put_video(
