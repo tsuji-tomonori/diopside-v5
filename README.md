@@ -7,7 +7,7 @@
 - Public UI: `apps/web/public` を S3 + CloudFront で静的配信する。
 - Public data: `apps/workers/static-exporter` が DynamoDB/S3 read model から `/data/latest-manifest.json` と `/data/v/{export_version}/public/...` を生成する。
 - API: `apps/api` の Python Lambda handler が CloudFront `/api/*` 経由で public API と Bearer token + CSRF 付き管理 API を提供する。
-- Worker: `static_exporter.pipeline` が metadata sync、live status scan、chat collect、chat normalize、artifact rebuild を SQS 経由で実行する。
+- Worker: `static_exporter.pipeline` が metadata sync、live status scan、chat collect、chat normalize、artifact rebuild、retry/cancel、quota rollup、cleanup を SQS 経由で実行する。`static_exporter.handler` は static export job を実行する。
 - Storage: DynamoDB single-table を小さな正本、S3 を raw/processed/public artifact の正本にする。
 - 採用しないもの: SQL 系 DB、OpenSearch、ECS、EC2、常時起動サーバー。
 
@@ -112,6 +112,48 @@ Lambda の実行 role は職務ごとに分離します。
 
 `StaticExporterRole` は Raw/Processed bucket へアクセスせず、`WorkerRole` は PublicDataBucket へ書き込みません。どの role も `s3:*`、`sqs:*`、`dynamodb:*` は使わず、必要な action を列挙します。将来の分離方針として、worker の job type が増えた場合は metadata/chat/normalize/aggregate を別 Lambda + 別 role に分け、queue consume と S3 prefix をさらに狭めます。
 
+## 実装済み API と schema
+
+`apps/api/src/diopside_api/handler.py` が現在実装している API route は次の通りです。`tools/check-docs-consistency.mjs` はこの表と実装済み schema_version の対応を `npm test` で検証します。
+
+| API | schema_version | 内容 |
+|---|---|---|
+| `GET /api/health` | なし | service status と任意の dependency status |
+| `GET /api/config` | `public-config/v1` | public client 設定 |
+| `GET /api/home` | `public-home/v1` | latest videos と popular tags |
+| `GET /api/videos` | `public-video-list/v1` | public video list。`q` / `tag` / `limit` で絞り込み |
+| `GET /api/tags` | `public-tag-list/v1` | tag list |
+| `GET /api/random-videos` | `public-random-videos/v1` | rotate した random video list |
+| `GET /api/videos/{video_id}` | `public-video-detail/v1` | video detail と chat summary |
+| `GET /api/videos/{video_id}/artifacts` | `public-video-artifacts/v1` | video artifact list |
+| `GET /api/admin/jobs` | `admin-job-list/v1` | 管理 job list |
+| `GET /api/admin/jobs/{job_id}` | `admin-job-detail/v1` | 管理 job detail と events |
+| `GET /api/admin/channels` | `admin-channel-list/v1` | channel list |
+| `GET /api/admin/quota-usage` | `admin-quota-usage/v1` | quota usage list |
+| `POST /api/admin/jobs/metadata-sync` | job accepted response | `metadata_sync` を enqueue |
+| `POST /api/admin/jobs/live-status-scan` | job accepted response | `live_status_scan` を enqueue |
+| `POST /api/admin/jobs/chat-collect` | job accepted response | `chat_collect` を enqueue |
+| `POST /api/admin/jobs/chat-normalize` | job accepted response | `chat_normalize` を enqueue |
+| `POST /api/admin/jobs/rebuild-artifacts` | job accepted response | `rebuild_artifacts` を enqueue |
+| `POST /api/admin/jobs/static-export` | job accepted response | `static_export` を enqueue |
+| `POST /api/admin/jobs/{job_id}/retry` | job accepted response | `retry_job` を enqueue |
+| `POST /api/admin/jobs/{job_id}/cancel` | job accepted response | `cancel_job` を enqueue |
+
+管理 API は `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を要求します。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。
+
+## public data schema
+
+`apps/workers/static-exporter/src/static_exporter/handler.py` が生成する tracked public data path と schema_version は次の通りです。
+
+| Path | schema_version | 内容 |
+|---|---|---|
+| `/data/latest-manifest.json` | `public-manifest/v1` | 最新 export_version と index path |
+| `/data/v/{export_version}/public/index/videos-latest.json` | `public-video-list/v1` | 最新 video list |
+| `/data/v/{export_version}/public/index/tags.json` | `public-tag-list/v1` | tag list |
+| `/data/v/{export_version}/public/search/videos-{year}.json` | `public-video-search/v1` | 年別 search index |
+| `/data/v/{export_version}/public/videos/{video_id}.json` | `public-video-detail/v1` | video detail、chat summary、artifact、timestamp |
+| `/data/v/{export_version}/public/artifacts/wordcloud/{video_id}.svg` | SVG | deterministic wordcloud artifact |
+
 ## 運用 job
 
 | API | job_type | 内容 |
@@ -126,6 +168,8 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/cancel` | `cancel_job` | 未完了 job に `cancelled` event を追加。完了済み/失敗済み job は拒否 |
 
 CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
+
+worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
 ## DLQ運用手順
 
@@ -224,9 +268,9 @@ Function URL origin では API Gateway の 5xx metric を使わないため、`A
 
 ## normalized chat schema
 
-`processed/chat-normalized/video_id={video_id}/part-000.jsonl` と raw chat JSONL 内の正規化 message は `schema_version=chat-message/v1` として扱います。live/replay の入力差分を吸収し、`message_type` は `text`、`paid`、`sticker`、`unknown` のいずれかに正規化します。
+`processed/chat-normalized/video_id={video_id}/part-000.jsonl` と raw chat JSONL 内の正規化 message は `schema_version` が `chat-message/v1` の message として扱います。live/replay の入力差分を吸収し、`message_type` は `text`、`paid`、`sticker`、`unknown` のいずれかに正規化します。
 
-必須 key は `message_id`、`video_id`、`source`、`message_type`、`author`、`timestamp_usec`、`timestamp_text`、`offset_msec`、`video_offset_time_msec`、`message_runs`、`plain_text`、`message_text`、`paid`、`sticker`、`raw_ref`、`raw_renderer_type`、`raw_renderer`、`parse_warning`、`collected_at` です。既存集計互換のため `author_external_channel_id`、`author_name`、`author_badges`、`purchase_amount_text` も同時に出力します。
+必須 key は `schema_version`、`message_id`、`video_id`、`source`、`message_type`、`author`、`author_external_channel_id`、`author_name`、`author_badges`、`timestamp_usec`、`timestamp_text`、`offset_msec`、`video_offset_time_msec`、`message_runs`、`plain_text`、`message_text`、`paid`、`purchase_amount_text`、`sticker`、`raw_ref`、`raw_renderer_type`、`raw_renderer`、`parse_warning`、`collected_at` です。
 
 unknown renderer は raw chat JSONL には `raw_renderer` として保存しますが、DynamoDB の `ChatMessageChunkManifest` には本文や renderer body を保存せず、`s3_uri`、件数、hash、offset、`parser_stats` などの要約だけを残します。
 
