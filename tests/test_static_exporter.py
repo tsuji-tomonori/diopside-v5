@@ -64,23 +64,83 @@ def test_export_public_data_from_repository(tmp_path):
             "top_terms": [],
         },
     )
+    index = repo.get_item("VID#vid001", "INDEX#MONTH#202605")
+    repo.put_item({**index, "title": "月別indexタイトル", "tags": ["月別index"]})
     manifest = export_public_data(repo, tmp_path, "unit")
     assert manifest["indexes"]["videos_latest"] == "/data/v/unit/public/index/videos-latest.json"
+    assert manifest["static_paths"]["STATIC-001"]["path"] == "/data/home.json"
+    assert manifest["static_paths"]["STATIC-002"]["path"] == "/data/videos/index.json"
+    assert manifest["static_paths"]["STATIC-003"]["items"]["vid001"]["path"] == "/data/videos/vid001.json"
+    assert manifest["static_paths"]["STATIC-005"]["items"]["2026"]["path"] == "/data/calendar/2026.json"
+    assert manifest["static_paths"]["STATIC-007"]["items"]["vid001"]["path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert manifest["static_paths"]["STATIC-007"]["image_items"]["vid001"]["path"] == "/data/artifacts/wordcloud/vid001.png"
+    assert manifest["static_paths"]["STATIC-008"]["items"]["vid001"]["path"] == "/data/artifacts/timestamps/vid001.json"
+    assert manifest["static_paths"]["STATIC-008"]["chapter_path_pattern"] == "/data/artifacts/timestamps/{video_id}.md"
+    assert manifest["static_paths"]["STATIC-008"]["chapter_items"]["vid001"]["path"] == "/data/artifacts/timestamps/vid001.md"
     detail = json.loads((tmp_path / "data/v/unit/public/videos/vid001.json").read_text(encoding="utf-8"))
+    alias_detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
+    home = json.loads((tmp_path / "data/home.json").read_text(encoding="utf-8"))
+    calendar = json.loads((tmp_path / "data/calendar/2026.json").read_text(encoding="utf-8"))
+    wordcloud_json = json.loads((tmp_path / "data/artifacts/wordcloud/vid001.json").read_text(encoding="utf-8"))
+    timestamps_json = json.loads((tmp_path / "data/artifacts/timestamps/vid001.json").read_text(encoding="utf-8"))
+    chapters_md = (tmp_path / "data/artifacts/timestamps/vid001.md").read_text(encoding="utf-8")
+    versioned_chapters_md = (tmp_path / "data/v/unit/public/artifacts/timestamps/vid001.md").read_text(encoding="utf-8")
     empty_detail = json.loads((tmp_path / "data/v/unit/public/videos/vid002.json").read_text(encoding="utf-8"))
+    png_path = tmp_path / "data/artifacts/wordcloud/vid001.png"
+    versioned_png_path = tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.png"
     svg_path = tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg"
-    assert detail["chat_summary"]["wordcloud_url"] == "/data/v/unit/public/artifacts/wordcloud/vid001.svg"
-    assert detail["artifacts"]["wordcloud"] == {"path": "/data/v/unit/public/artifacts/wordcloud/vid001.svg", "content_type": "image/svg+xml"}
+    assert detail["chat_summary"]["wordcloud_url"] == "/data/artifacts/wordcloud/vid001.png"
+    assert detail["artifacts"]["wordcloud"] == {"path": "/data/artifacts/wordcloud/vid001.png", "versioned_path": "/data/v/unit/public/artifacts/wordcloud/vid001.png", "content_type": "image/png"}
+    assert detail["artifacts"]["wordcloud_svg"] == {"path": "/data/v/unit/public/artifacts/wordcloud/vid001.svg", "content_type": "image/svg+xml"}
     assert detail["timestamps"][0]["offset_sec"] == 30
+    assert detail["artifacts"]["timestamp_chapters"] == {"path": "/data/artifacts/timestamps/vid001.md", "versioned_path": "/data/v/unit/public/artifacts/timestamps/vid001.md", "content_type": "text/markdown; charset=utf-8"}
+    assert alias_detail["video"]["video_id"] == "vid001"
+    assert home["schema_version"] == "public-home/v1"
+    assert home["latest_videos"][0]["detail_path"] == "/data/videos/vid001.json"
+    assert calendar["months"][0]["items"][0]["detail_path"] == "/data/videos/vid001.json"
+    assert calendar["months"][0]["items"][0]["title"] == "月別indexタイトル"
+    assert calendar["months"][0]["items"][0]["tags"] == ["月別index"]
+    assert wordcloud_json["top_terms"][0]["term"] == "ありがとう"
+    assert wordcloud_json["source_png_path"] == "/data/artifacts/wordcloud/vid001.png"
+    assert timestamps_json["items"][0]["offset_sec"] == 30
+    assert chapters_md.startswith("# chapters_suggestion for vid001\n")
+    assert "0:30 見どころ" in chapters_md
+    assert versioned_chapters_md == chapters_md
+    assert png_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert versioned_png_path.read_bytes() == png_path.read_bytes()
     assert svg_path.exists()
     assert "ありがとう" in svg_path.read_text(encoding="utf-8")
     assert empty_detail["chat_summary"]["wordcloud_url"] is None
     assert empty_detail["artifacts"]["wordcloud"] is None
+    assert empty_detail["artifacts"]["wordcloud_svg"] is None
+    assert not (tmp_path / "data/artifacts/wordcloud/vid002.png").exists()
     assert not (tmp_path / "data/v/unit/public/artifacts/wordcloud/vid002.svg").exists()
     subprocess.run(["node", "tools/check-public-contract.mjs", str(tmp_path)], check=True)
 
 
-def test_export_public_wordcloud_svg_is_deterministic(tmp_path):
+def test_export_public_data_reflects_manual_tag_correction(tmp_path):
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "公開アーカイブ",
+            "published_at": "2026-05-28T00:00:00Z",
+            "tags": ["自動", "雑談"],
+        }
+    )
+    repo.update_video_tags("vid001", add_tags=["手動"], remove_tags=["雑談"])
+
+    export_public_data(repo, tmp_path, "unit")
+
+    tags = json.loads((tmp_path / "data/tags.json").read_text(encoding="utf-8"))
+    detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
+    labels = {item["label"] for item in tags["items"]}
+    assert labels == {"手動", "自動"}
+    assert all(item["public_visible"] is True for item in tags["items"])
+    assert detail["video"]["tags"] == ["自動", "手動"]
+
+
+def test_export_public_wordcloud_artifacts_are_deterministic(tmp_path):
     repo = MemoryRepository()
     repo.put_video({"video_id": "vid001", "title": "公開アーカイブ", "published_at": "2026-05-28T00:00:00Z", "tags": []})
     repo.put_chat_aggregate(
@@ -102,7 +162,11 @@ def test_export_public_wordcloud_svg_is_deterministic(tmp_path):
 
     first_svg = (first / "data/v/unit/public/artifacts/wordcloud/vid001.svg").read_text(encoding="utf-8")
     second_svg = (second / "data/v/unit/public/artifacts/wordcloud/vid001.svg").read_text(encoding="utf-8")
+    first_png = (first / "data/artifacts/wordcloud/vid001.png").read_bytes()
+    second_png = (second / "data/artifacts/wordcloud/vid001.png").read_bytes()
     assert first_svg == second_svg
+    assert first_png == second_png
+    assert first_png.startswith(b"\x89PNG\r\n\x1a\n")
     assert first_svg.startswith("<svg ")
     assert "巴さん" in first_svg
 
@@ -125,6 +189,17 @@ def test_static_export_job_records_completion(monkeypatch, tmp_path):
     assert result["status"] == "succeeded"
     assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
     assert (tmp_path / "latest-manifest.json").exists()
+    export = repo.list_static_exports()[0]
+    assert export["item_type"] == "StaticExport"
+    assert export["pk"] == "EXPORT#public"
+    assert export["sk"].startswith("VERSION#")
+    assert export["export_version"] == "job-unit"
+    assert export["generated_job_id"] == job["job_id"]
+    assert export["uploaded_object_count"] == 0
+    assert export["publish_state"] == "published"
+    assert export["manifest_s3_uri"] == "local://latest-manifest.json"
+    assert export["video_count"] == 1
+    assert export["schema_versions"]["manifest"] == "public-manifest/v1"
 
 
 def test_upload_directory_publishes_manifest_last(monkeypatch, tmp_path):
@@ -140,14 +215,17 @@ def test_upload_directory_publishes_manifest_last(monkeypatch, tmp_path):
     (tmp_path / "data/v/unit/public/index/videos-latest.json").write_text("{}", encoding="utf-8")
     (tmp_path / "data/v/unit/public/artifacts/wordcloud").mkdir(parents=True)
     (tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg").write_text("<svg></svg>", encoding="utf-8")
+    (tmp_path / "data/artifacts/wordcloud").mkdir(parents=True)
+    (tmp_path / "data/artifacts/wordcloud/vid001.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (tmp_path / "latest-manifest.json").write_text("{}", encoding="utf-8")
 
     count = exporter_handler._upload_directory(tmp_path)
 
-    assert count == 3
+    assert count == 4
     assert [item["key"] for item in uploads][-1] == "data/latest-manifest.json"
     assert uploads[-1]["content_type"] == "application/json; charset=utf-8"
     assert any(item["key"].endswith("vid001.svg") and item["content_type"] == "image/svg+xml" for item in uploads)
+    assert any(item["key"].endswith("vid001.png") and item["content_type"] == "image/png" for item in uploads)
 
 
 def test_upload_directory_does_not_publish_manifest_after_versioned_failure(monkeypatch, tmp_path):

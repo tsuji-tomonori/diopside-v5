@@ -5,6 +5,8 @@ const root = process.cwd();
 
 const files = {
   readme: "README.md",
+  ddbAudit: "docs/design/dynamodb-schema-audit.md",
+  batchAudit: "docs/design/worker-batch-coverage-audit.md",
   api: "apps/api/src/diopside_api/handler.py",
   worker: "apps/workers/static-exporter/src/static_exporter/pipeline.py",
   staticExporter: "apps/workers/static-exporter/src/static_exporter/handler.py",
@@ -18,13 +20,20 @@ const expected = {
     ["GET", "/api/home"],
     ["GET", "/api/videos"],
     ["GET", "/api/tags"],
+    ["GET", "/api/archive-calendar"],
     ["GET", "/api/random-videos"],
     ["GET", "/api/videos/{video_id}"],
     ["GET", "/api/videos/{video_id}/artifacts"],
+    ["POST", "/api/admin/session"],
+    ["GET", "/api/admin/me"],
     ["GET", "/api/admin/jobs"],
     ["GET", "/api/admin/jobs/{job_id}"],
     ["GET", "/api/admin/channels"],
     ["GET", "/api/admin/quota-usage"],
+    ["GET", "/api/admin/static-exports"],
+    ["PUT", "/api/admin/channels/{channel_id}"],
+    ["PUT", "/api/admin/videos/{video_id}/tags"],
+    ["POST", "/api/admin/artifacts/presigned-url"],
     ["POST", "/api/admin/jobs/metadata-sync"],
     ["POST", "/api/admin/jobs/live-status-scan"],
     ["POST", "/api/admin/jobs/chat-collect"],
@@ -39,13 +48,19 @@ const expected = {
     "public-home/v1",
     "public-video-list/v1",
     "public-tag-list/v1",
+    "public-archive-calendar/v1",
     "public-random-videos/v1",
     "public-video-detail/v1",
     "public-video-artifacts/v1",
+    "admin-session/v1",
     "admin-job-list/v1",
     "admin-job-detail/v1",
     "admin-channel-list/v1",
     "admin-quota-usage/v1",
+    "admin-static-export-list/v1",
+    "admin-channel-config/v1",
+    "admin-video-tags/v1",
+    "admin-artifact-presigned-url/v1",
   ],
   publicDataPaths: [
     "/data/latest-manifest.json",
@@ -53,6 +68,7 @@ const expected = {
     "/data/v/{export_version}/public/index/tags.json",
     "/data/v/{export_version}/public/search/videos-{year}.json",
     "/data/v/{export_version}/public/videos/{video_id}.json",
+    "/data/v/{export_version}/public/artifacts/wordcloud/{video_id}.png",
     "/data/v/{export_version}/public/artifacts/wordcloud/{video_id}.svg",
   ],
   publicDataSchemas: [
@@ -78,6 +94,8 @@ const expected = {
     "chat_collect",
     "chat_normalize",
     "rebuild_artifacts",
+    "archive_finalize",
+    "notification_plan",
     "static_export",
     "retry_job",
     "cancel_job",
@@ -120,6 +138,8 @@ const read = async (path) => readFile(join(root, path), "utf8");
 const exists = async (path) => access(path).then(() => true, () => false);
 
 const readme = await read(files.readme);
+const ddbAudit = await read(files.ddbAudit);
+const batchAudit = await read(files.batchAudit);
 const api = await read(files.api);
 const worker = await read(files.worker);
 const staticExporter = await read(files.staticExporter);
@@ -160,6 +180,65 @@ assert(chat.includes('CHAT_MESSAGE_SCHEMA_VERSION = "chat-message/v1"'), "chat i
 for (const key of expected.chatRequiredKeys) {
   assert(readme.includes(`\`${key}\``), `README missing normalized chat key: ${key}`);
   assert(chat.includes(`"${key}"`), `chat implementation missing normalized chat key: ${key}`);
+}
+
+for (const itemType of [
+  "AppConfig",
+  "Channel",
+  "ChannelRef",
+  "ChannelSyncCursor",
+  "Video",
+  "VideoMonthIndex",
+  "VideoStateEvent",
+  "VideoStatSnapshot",
+  "VideoTagLink",
+  "TagSummary",
+  "ChatManifest",
+  "ChatPageManifest",
+  "ChatAggregate",
+  "Artifact",
+  "NotificationPlan",
+  "StaticExport",
+  "Job",
+  "JobEvent",
+  "Lock",
+  "Idempotency",
+  "QuotaUsage",
+  "RandomBucket",
+]) {
+  assert(ddbAudit.includes(`\`${itemType}\``), `DDB audit missing v0.4 item type: ${itemType}`);
+}
+
+for (const itemType of [
+  "ChannelCursor",
+  "VideoIndex",
+  "VideoTagIndex",
+  "ChatMessageChunkManifest",
+]) {
+  assert(ddbAudit.includes(`\`${itemType}\``), `DDB audit missing current item type: ${itemType}`);
+}
+
+for (let index = 1; index <= 20; index += 1) {
+  const batchId = `BATCH-${String(index).padStart(3, "0")}`;
+  assert(batchAudit.includes(batchId), `worker batch audit missing ${batchId}`);
+}
+
+for (const jobType of [
+  "metadata_sync",
+  "live_status_scan",
+  "chat_collect",
+  "chat_normalize",
+  "rebuild_artifacts",
+  "file_output",
+  "archive_finalize",
+  "notification_plan",
+  "static_export",
+  "retry_job",
+  "cancel_job",
+  "quota_rollup",
+  "cleanup",
+]) {
+  assert(batchAudit.includes(`\`${jobType}\``), `worker batch audit missing job type: ${jobType}`);
 }
 
 assert(staticExporter.includes("latest-manifest.json"), "static exporter missing latest-manifest.json");

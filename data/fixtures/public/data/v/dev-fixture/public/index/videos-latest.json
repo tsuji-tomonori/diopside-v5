@@ -1,15 +1,18 @@
 {
   "schema_version": "public-video-list/v1",
-  "generated_at": "2026-05-28T00:00:00Z",
+  "generated_at": "2026-05-30T03:56:34Z",
   "items": [
     {
       "video_id": "fixture001",
       "title": "ローカル検証用アーカイブ",
       "published_at": "2026-05-27T12:00:00Z",
       "scheduled_start_time": "2026-05-27T11:00:00Z",
-      "duration_sec": 5400,
-      "thumbnail_url": "/assets/placeholder-thumbnail.svg",
-      "tags": ["雑談", "アーカイブ"],
+      "duration_sec": null,
+      "thumbnail_url": null,
+      "tags": [
+        "雑談",
+        "アーカイブ"
+      ],
       "detail_path": "/data/v/dev-fixture/public/videos/fixture001.json",
       "wordcloud_available": true,
       "timestamp_available": true
@@ -18,9 +21,12 @@
       "video_id": "fixture002",
       "title": "検索とタグ確認用アーカイブ",
       "published_at": "2026-05-20T12:00:00Z",
-      "duration_sec": 3600,
-      "thumbnail_url": "/assets/placeholder-thumbnail.svg",
-      "tags": ["歌枠"],
+      "scheduled_start_time": null,
+      "duration_sec": null,
+      "thumbnail_url": null,
+      "tags": [
+        "歌枠"
+      ],
       "detail_path": "/data/v/dev-fixture/public/videos/fixture002.json",
       "wordcloud_available": false,
       "timestamp_available": true

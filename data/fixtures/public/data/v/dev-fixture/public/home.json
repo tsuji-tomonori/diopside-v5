@@ -1,0 +1,61 @@
+{
+  "schema_version": "public-home/v1",
+  "generated_at": "2026-05-30T03:56:34Z",
+  "latest_videos": [
+    {
+      "video_id": "fixture001",
+      "title": "ローカル検証用アーカイブ",
+      "published_at": "2026-05-27T12:00:00Z",
+      "scheduled_start_time": "2026-05-27T11:00:00Z",
+      "duration_sec": null,
+      "thumbnail_url": null,
+      "tags": [
+        "雑談",
+        "アーカイブ"
+      ],
+      "detail_path": "/data/videos/fixture001.json",
+      "wordcloud_available": true,
+      "timestamp_available": true,
+      "timestamp_path": "/data/artifacts/timestamps/fixture001.json",
+      "wordcloud_path": "/data/artifacts/wordcloud/fixture001.png",
+      "wordcloud_json_path": "/data/artifacts/wordcloud/fixture001.json"
+    },
+    {
+      "video_id": "fixture002",
+      "title": "検索とタグ確認用アーカイブ",
+      "published_at": "2026-05-20T12:00:00Z",
+      "scheduled_start_time": null,
+      "duration_sec": null,
+      "thumbnail_url": null,
+      "tags": [
+        "歌枠"
+      ],
+      "detail_path": "/data/videos/fixture002.json",
+      "wordcloud_available": false,
+      "timestamp_available": true,
+      "timestamp_path": "/data/artifacts/timestamps/fixture002.json"
+    }
+  ],
+  "popular_tags": [
+    {
+      "tag_id": "tag_f0cd2f173cb9288cad922c43",
+      "label": "アーカイブ",
+      "video_count": 1,
+      "category": "auto"
+    },
+    {
+      "tag_id": "tag_1e8e6712d541987dc590627f",
+      "label": "歌枠",
+      "video_count": 1,
+      "category": "auto"
+    },
+    {
+      "tag_id": "tag_e7e59be0b59a01fcc20a7412",
+      "label": "雑談",
+      "video_count": 1,
+      "category": "auto"
+    }
+  ],
+  "live_videos": [],
+  "upcoming_videos": []
+}

@@ -8,9 +8,9 @@ import pytest
 
 from botocore.exceptions import ClientError
 
-from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, generate_chapters_suggestion_markdown, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
-from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
+from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, file_output, metadata_sync, notification_plan, quota_rollup, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -123,8 +123,22 @@ def test_youtube_client_rejects_malformed_response(monkeypatch, body):
 
 class FakeYouTubeMetadataClient:
     def __init__(self):
+        self.channel_calls = []
         self.playlist_calls = []
         self.video_calls = []
+
+    def channels(self, channel_ids):
+        self.channel_calls.append(list(channel_ids))
+        return {
+            "items": [
+                {
+                    "id": channel_id,
+                    "snippet": {"title": "白雪巴", "description": "channel description", "publishedAt": "2019-11-01T00:00:00Z"},
+                    "contentDetails": {"relatedPlaylists": {"uploads": "uploads"}},
+                }
+                for channel_id in channel_ids
+            ]
+        }
 
     def playlist_items(self, playlist_id, page_token=None, max_results=50):
         self.playlist_calls.append({"playlist_id": playlist_id, "page_token": page_token, "max_results": max_results})
@@ -171,24 +185,39 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
         },
     )
 
-    cursor = repo.get_item("CHANNEL#ch", "CURSOR#metadata")
+    cursor = repo.get_channel_sync_cursor("ch")
+    channel = repo.get_channel("ch")
     video = repo.get_video("vid001")
     assert result["next_page_token"] == "next-token"
+    assert result["raw_channel_uri"]
     assert result["raw_playlist_uri"]
     assert result["raw_videos_uri"]
+    assert channel["channel_title"] == "白雪巴"
+    assert channel["display_name"] == "白雪巴"
+    assert channel["uploads_playlist_id"] == "uploads"
+    assert channel["raw_metadata_uri"] == result["raw_channel_uri"]
+    assert cursor["item_type"] == "ChannelSyncCursor"
+    assert cursor["pk"] == "CH#ch"
+    assert cursor["sk"] == "CURSOR#uploads"
+    assert cursor["uploads_playlist_id"] == "uploads"
     assert cursor["next_page_token"] == "next-token"
+    assert cursor["next_page_token_hash"].startswith("page_")
+    assert cursor["last_seen_video_id"] == "vid001"
     assert cursor["last_video_ids"] == ["vid001", "vid002"]
     assert "items" not in cursor
     assert video["raw_metadata_uri"] == result["raw_videos_uri"]
     assert "items" not in video
+    assert client.channel_calls == [["ch"]]
     assert client.playlist_calls[0]["page_token"] is None
     usage = repo.list_quota_usage()
-    assert {item["method"] for item in usage} == {"playlistItems.list", "videos.list"}
+    assert {item["method"] for item in usage} == {"channels.list", "playlistItems.list", "videos.list"}
     assert all(item["channel_id"] == "ch" for item in usage)
-    assert all(item["video_count"] == 2 for item in usage)
+    assert {item["video_count"] for item in usage} == {0, 2}
     assert all(item["job_id"] == "job-meta" for item in usage)
     assert enqueued[0]["queue_env"] == "DIOPSIDE_METADATA_QUEUE_URL"
-    assert enqueued[0]["payload"]["input"]["page_token"] == "next-token"
+    assert enqueued[0]["payload"]["requested_by"] == "worker"
+    assert enqueued[0]["payload"]["payload"]["page_token"] == "next-token"
+    assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/channels").glob("*.json"))
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/playlistItems").glob("*.json"))
     assert list((tmp_path / "raw/youtube/metadata/channel_id=ch/videos").glob("*.json"))
 
@@ -240,7 +269,56 @@ def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
     assert usage["job_id"] == "job-live"
     assert client.video_calls == [["vid-live"]]
     assert repo.get_video("vid-live")["live_state"] == "archived"
+    events = [item for item in repo.items.values() if item.get("item_type") == "VideoStateEvent"]
+    assert len(events) == 1
+    assert events[0]["pk"] == "VID#vid-live"
+    assert events[0]["event_name"] == "video.archived"
+    assert events[0]["from_state"] == "upcoming"
+    assert events[0]["to_state"] == "archived"
+    assert events[0]["source_job_id"] == "job-live"
     assert result["updated"] == [{"video_id": "vid-live", "from": "upcoming", "to": "archived"}]
+    assert result["enqueue_archive_finalize"] == ["vid-live"]
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_AGGREGATE_QUEUE_URL"
+    assert enqueued[0]["payload"]["job_type"] == "archive_finalize"
+    assert enqueued[0]["payload"]["payload"]["video_id"] == "vid-live"
+
+
+def test_live_status_scan_enqueues_notification_plan_for_upcoming_video(monkeypatch):
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload}) or "queued")
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-upcoming",
+            "title": "upcoming",
+            "published_at": "2026-05-29T00:00:00Z",
+            "channel_id": "ch",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+            "live_state": "upcoming",
+        }
+    )
+
+    result = pipeline.live_status_scan(repo, {"skip_youtube_refresh": True, "job_id": "job-live"})
+
+    assert result["enqueue_notification_plan"] == ["vid-upcoming"]
+    assert enqueued == [
+        {
+            "queue_env": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+            "payload": {
+                "job_type": "notification_plan",
+                "job_id": "manual-notification-plan-vid-upcoming",
+                "idempotency_key": "notification_plan:manual-notification-plan-vid-upcoming",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {
+                    "video_id": "vid-upcoming",
+                    "scheduled_start_time": "2026-05-30T12:00:00Z",
+                    "requested_by": "live_status_scan",
+                },
+            },
+        }
+    ]
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
@@ -408,6 +486,8 @@ def test_public_replay_initial_data_extractor():
 
 def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued")
     html = """
     <script>
     ytInitialData = {
@@ -480,12 +560,103 @@ def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_
     assert collected["parser_stats"]["unknown_count"] == 1
     assert collected["next_poll"]["action"] == "continuation_available"
     assert collected["next_poll"]["continuation_count"] == 1
+    assert enqueued == [
+        {
+            "queue_env": "DIOPSIDE_CHAT_QUEUE_URL",
+            "delay_seconds": 1,
+            "payload": {
+                "job_id": enqueued[0]["payload"]["job_id"],
+                "job_type": "chat_collect",
+                "idempotency_key": "chat_collect:manual-replay-vid-replay-replay-token-1",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {
+                    "video_id": "vid-replay",
+                    "mode": "replay",
+                    "replay_continuation": {"token": "replay-token-1", "source": "reloadContinuationData", "timeout_ms": 1500},
+                },
+            },
+        }
+    ]
+    assert chunk["item_type"] == "ChatPageManifest"
+    assert chunk["pk"] == "VID#vid-replay"
+    assert chunk["sk"] == "CHAT#PAGE#replay#1"
+    assert chunk["raw_s3_uri"] == chunk["s3_uri"]
+    assert chunk["item_count"] == 2
+    assert chunk["checksum"] == chunk["sha256"]
+    assert chunk["job_id"] == "chat_collect#vid-replay"
     assert chunk["parser_stats"]["unknown_count"] == 1
     assert chunk["next_poll"]["continuations"][0]["token"] == "replay-token-1"
     assert rows[0]["message_text"] == "hello replay"
     assert rows[1]["parse_warning"] == "unknown_renderer"
     assert rows[1]["raw_renderer_type"] == "liveChatMembershipItemRenderer"
     assert rows[1]["raw_renderer"]["id"] == "m-unknown"
+
+
+def test_replay_continuation_page_fetches_actions_and_requeues_next(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    enqueued = []
+    monkeypatch.setattr(pipeline, "_enqueue_job", lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued")
+
+    class FakeReplayClient:
+        def __init__(self):
+            self.tokens = []
+
+        def replay_continuation(self, token):
+            self.tokens.append(token)
+            return {
+                "continuationContents": {
+                    "liveChatContinuation": {
+                        "actions": [
+                            {
+                                "replayChatItemAction": {
+                                    "videoOffsetTimeMsec": "22000",
+                                    "actions": [
+                                        {
+                                            "addChatItemAction": {
+                                                "item": {
+                                                    "liveChatTextMessageRenderer": {
+                                                        "id": "m-page",
+                                                        "authorExternalChannelId": "author-page",
+                                                        "authorName": {"simpleText": "Bob"},
+                                                        "timestampUsec": "2000",
+                                                        "timestampText": {"simpleText": "0:22"},
+                                                        "message": {"runs": [{"text": "page replay"}]},
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ],
+                                }
+                            }
+                        ],
+                        "continuations": [
+                            {"timedContinuationData": {"continuation": "replay-token-2", "timeoutMs": 2500}}
+                        ],
+                    }
+                }
+            }
+
+    repo = MemoryRepository()
+    client = FakeReplayClient()
+
+    collected = chat_collect(repo, {"video_id": "vid-replay-page", "mode": "replay", "replay_continuation": {"token": "replay-token-1"}, "replay_client": client})
+
+    raw_files = list((tmp_path / "raw/youtube/chat/video_id=vid-replay-page/source=replay").glob("*.jsonl"))
+    rows = [json.loads(line) for line in raw_files[0].read_text(encoding="utf-8").splitlines()]
+    chunk = repo.list_chat_chunks("vid-replay-page")[0]
+    assert client.tokens == ["replay-token-1"]
+    assert collected["message_count"] == 1
+    assert collected["next_poll"]["action"] == "continuation_available"
+    assert collected["next_poll"]["continuations"][0]["token"] == "replay-token-2"
+    assert rows[0]["message_text"] == "page replay"
+    assert chunk["item_type"] == "ChatPageManifest"
+    assert chunk["source"] == "replay"
+    assert chunk["next_poll"]["continuation_count"] == 1
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_CHAT_QUEUE_URL"
+    assert enqueued[0]["delay_seconds"] == 2
+    assert enqueued[0]["payload"]["payload"]["replay_continuation"] == {"token": "replay-token-2", "source": "timedContinuationData", "timeout_ms": 2500}
 
 
 def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
@@ -514,8 +685,14 @@ def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
     assert result["next_poll"]["requeue_delay_seconds"] == 900
     assert enqueued[0]["queue_env"] == "DIOPSIDE_CHAT_QUEUE_URL"
     assert enqueued[0]["delay_seconds"] == 900
-    assert enqueued[0]["payload"]["input"]["page_token"] == "next-live-token"
+    assert enqueued[0]["payload"]["payload"]["page_token"] == "next-live-token"
     assert chunks[0]["next_poll"]["action"] == "requeue"
+    assert chunks[0]["item_type"] == "ChatPageManifest"
+    assert chunks[0]["pk"] == "VID#live001"
+    assert chunks[0]["sk"] == "CHAT#PAGE#live#1"
+    assert chunks[0]["raw_s3_uri"] == chunks[0]["s3_uri"]
+    assert chunks[0]["item_count"] == 1
+    assert chunks[0]["checksum"] == chunks[0]["sha256"]
     assert chunks[0]["message_count"] == 1
     assert chunks[0]["s3_uri"]
 
@@ -659,6 +836,81 @@ def test_pipeline_collect_normalize_and_artifacts(tmp_path, monkeypatch):
     assert list((tmp_path / "processed/chat-aggregate").rglob("summary.json"))
 
 
+def test_file_output_writes_public_artifact_and_records_hash(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+
+    result = file_output(
+        repo,
+        {
+            "video_id": "vid001",
+            "artifact_type": "wordcloud-json",
+            "artifact_version": "20260530T121700Z",
+            "key": "data/artifacts/wordcloud/vid001.json",
+            "content_type": "application/json",
+            "visibility": "public",
+            "json_body": {"schema_version": "public-wordcloud/v1", "video_id": "vid001", "terms": []},
+            "job_id": "job-file-output",
+        },
+    )
+
+    artifact = repo.get_artifact_by_id("vid001:wordcloud-json")
+    assert result["artifact_id"] == "vid001:wordcloud-json"
+    assert result["public_url_path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert result["content_hash"].startswith("sha256:")
+    assert artifact["artifact_version"] == "20260530T121700Z"
+    assert artifact["content_hash"] == result["content_hash"]
+    assert artifact["byte_size"] > 0
+    assert artifact["source_job_id"] == "job-file-output"
+    assert artifact["public_url_path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert (tmp_path / "data/artifacts/wordcloud/vid001.json").exists()
+
+
+def test_dispatch_file_output_writes_private_artifact(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+    job, _ = repo.create_job("file_output", {"video_id": "vid001"}, "file-output-job")
+
+    result = dispatch_job(
+        repo,
+        {
+            "job_type": "file_output",
+            "job_id": job["job_id"],
+            "input": {
+                "video_id": "vid001",
+                "artifact_type": "chat-summary",
+                "key": "processed/custom/vid001-summary.json",
+                "content_type": "application/json",
+                "visibility": "private",
+                "body": "{}",
+            },
+        },
+    )
+
+    artifact = repo.get_artifact_by_id("vid001:chat-summary")
+    assert result["status"] == "succeeded"
+    assert artifact["artifact_version"] == "v1"
+    assert artifact["s3_uri"] == str(tmp_path / "processed/custom/vid001-summary.json")
+    assert "public_url_path" not in artifact
+    assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
+
+
+def test_file_output_rejects_path_traversal(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+
+    with pytest.raises(ValueError, match="relative path"):
+        file_output(
+            repo,
+            {
+                "video_id": "vid001",
+                "artifact_type": "bad",
+                "key": "../bad.json",
+                "json_body": {},
+            },
+        )
+
+
 def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
     monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
     enqueued = []
@@ -730,7 +982,11 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
             "payload": {
                 "job_type": "chat_collect",
                 "job_id": "manual-live-live-int",
-                "input": {"video_id": "live-int", "mode": "live", "live_chat_id": "chat-int"},
+                "idempotency_key": "chat_collect:manual-live-live-int",
+                "requested_by": "worker",
+                "attempt": 0,
+                "trace_id": enqueued[0]["payload"]["trace_id"],
+                "payload": {"video_id": "live-int", "mode": "live", "live_chat_id": "chat-int"},
             },
             "delay_seconds": 0,
         }
@@ -778,6 +1034,7 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
     assert collect["message_count"] == 1
     assert normalized["message_count"] == 1
     assert rebuilt["timestamp_count"] >= 1
+    assert rebuilt["chapters_suggestion_uri"].endswith("processed/timestamps/video_id=vid-int/chapters_suggestion.md")
     assert rebuilt["wordcloud_available"] is True
     assert {item["term"] for item in repo.get_chat_aggregate("vid-int")["top_terms"]} >= {"統合テスト", "ありがとう"}
     assert repo.get_job(collect_job["job_id"])["derived_state"] == "succeeded"
@@ -787,6 +1044,9 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
     assert list((tmp_path / "raw/youtube/chat/video_id=vid-int").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-normalized/video_id=vid-int").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-aggregate/video_id=vid-int").rglob("summary.json"))
+    chapters = tmp_path / "processed/timestamps/video_id=vid-int/chapters_suggestion.md"
+    assert "0:00 チャット盛り上がり候補" in chapters.read_text(encoding="utf-8")
+    assert any(item["artifact_type"] == "timestamp_chapters" for item in repo.list_artifacts("vid-int"))
 
 
 def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, monkeypatch):
@@ -829,6 +1089,10 @@ def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, 
     normalized = chat_normalize(repo, {"video_id": "vid001"})
     assert normalized["message_count"] == 1
     assert repo.get_chat_aggregate("vid001")["top_terms"][0]["term"] == "ありがとう"
+    manifest = repo.get_chat_manifest("vid001")
+    assert manifest["pk"] == "VID#vid001"
+    assert manifest["normalized_s3_uri"].endswith("processed/chat-normalized/video_id=vid001/part-000.jsonl")
+    assert manifest["message_count"] == 1
 
 
 def test_summarize_chat_messages_accepts_single_pass_iterable():
@@ -857,24 +1121,22 @@ def test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list(tmp_path, m
     for index, text in enumerate(["ありがとう ありがとう", "おはよう"]):
         raw_path = tmp_path / f"raw/youtube/chat/video_id=vid-stream/source=replay/part-{index:03d}.jsonl"
         raw_path.parent.mkdir(parents=True, exist_ok=True)
-        raw_path.write_text(
-            json.dumps(
-                {
-                    "message_id": f"m{index}",
-                    "video_id": "vid-stream",
-                    "source": "replay",
-                    "message_type": "paid" if index == 1 else "text",
-                    "author_external_channel_id": f"a{index}",
-                    "author_name": None,
-                    "message_runs": [{"type": "text", "text": text}],
-                    "message_text": text,
-                    "video_offset_time_msec": 60000 + index * 1000,
-                },
-                ensure_ascii=False,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
+        rows = [
+            {
+                "message_id": f"m{index}",
+                "video_id": "vid-stream",
+                "source": "replay",
+                "message_type": "paid" if index == 1 else "text",
+                "author_external_channel_id": f"a{index}",
+                "author_name": None,
+                "message_runs": [{"type": "text", "text": text}],
+                "message_text": text,
+                "video_offset_time_msec": 60000 + index * 1000,
+            }
+        ]
+        if index == 1:
+            rows.append({**rows[0], "message_id": "m0", "message_text": "ありがとう ありがとう", "video_offset_time_msec": 60000})
+        raw_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
         repo.put_item(
             {
                 "item_type": "ChatMessageChunkManifest",
@@ -900,6 +1162,7 @@ def test_chat_normalize_streams_jsonl_chunks_without_read_jsonl_list(tmp_path, m
     assert normalized["message_count"] == 2
     assert normalized["top_term_count"] == 2
     assert len(normalized_rows) == 2
+    assert [row["message_id"] for row in normalized_rows] == ["m0", "m1"]
     assert summary["message_count"] == 2
     assert summary["paid_message_count"] == 1
     assert repo.get_chat_aggregate("vid-stream")["top_terms"][0]["term"] == "ありがとう"
@@ -944,6 +1207,26 @@ def test_timestamp_candidates_merge_sources_and_sort_by_score():
     assert merged["message_count"] == 10
     assert [candidate["offset_sec"] for candidate in candidates].count(125) == 1
     assert any(candidate["source"] == "description" and candidate["offset_sec"] == 300 for candidate in candidates)
+
+
+def test_generate_chapters_suggestion_markdown_orders_by_offset():
+    markdown = generate_chapters_suggestion_markdown(
+        "vid001",
+        [
+            {"offset_sec": 125, "label": "二つ目\n候補", "score": 0.5},
+            {"offset_sec": 30, "label": "最初の候補", "score": 0.9},
+            {"offset_sec": 3723, "label": "長時間候補", "score": 0.4},
+        ],
+    )
+    assert markdown.splitlines() == [
+        "# chapters_suggestion for vid001",
+        "",
+        "```text",
+        "0:30 最初の候補",
+        "2:05 二つ目 候補",
+        "1:02:03 長時間候補",
+        "```",
+    ]
 
 
 def test_repository_job_idempotency_and_lists():
@@ -1010,21 +1293,64 @@ def test_retry_and_cancel_job_update_target_events():
     assert repo.get_job(queued["job_id"])["derived_state"] == "cancelled"
 
 
-def test_quota_rollup_summarizes_usage_without_side_effects():
+def test_quota_rollup_summarizes_usage_and_stores_daily_method_items():
     repo = MemoryRepository()
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=2, job_id="job-video")
     repo.record_quota_usage("playlistItems.list", 1, {}, channel_id="ch", video_count=2, job_id="job-playlist")
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-live")
 
     result = quota_rollup(repo, {"requested_by": "scheduler"})
+    quota_date = repo.list_quota_usage()[0]["pk"].removeprefix("QUOTA#").replace("-", "")
+    videos_summary = repo.get_item(f"QUOTA#{quota_date}", "METHOD#videos.list")
+    playlist_summary = repo.get_item(f"QUOTA#{quota_date}", "METHOD#playlistItems.list")
 
-    assert result == {
-        "requested_by": "scheduler",
-        "item_count": 3,
-        "total_units": 3,
-        "by_method": {"videos.list": 2, "playlistItems.list": 1},
-    }
+    assert result["requested_by"] == "scheduler"
+    assert result["item_count"] == 3
+    assert result["total_units"] == 3
+    assert result["by_method"] == {"videos.list": 2, "playlistItems.list": 1}
+    assert result["summary_count"] == 2
+    assert result["warning_emitted"] is False
+    assert result["warning_threshold_units"] == 9000
+    assert videos_summary["record_type"] == "daily_method_summary"
+    assert videos_summary["quota_date"] == quota_date
+    assert videos_summary["call_count"] == 2
+    assert videos_summary["units_used"] == 2
+    assert videos_summary["unit_per_call"] == 1
+    assert videos_summary["video_count"] == 3
+    assert videos_summary["channel_ids"] == ["ch"]
+    assert videos_summary["job_ids"] == ["job-live", "job-video"]
+    assert videos_summary["warning_emitted"] is False
+    assert videos_summary["warning_threshold_units"] == 9000
+    assert videos_summary["warning_total_units"] == 3
+    assert playlist_summary["call_count"] == 1
+    assert playlist_summary["units_used"] == 1
     assert len(repo.list_quota_usage()) == 3
+
+
+def test_quota_rollup_emits_threshold_warning_event_once():
+    repo = MemoryRepository()
+    job, _ = repo.create_job("quota_rollup", {"quota_date": "20260530"}, "quota-warning")
+    repo.record_quota_usage("videos.list", 3, {}, channel_id="ch", video_count=1, job_id="job-video")
+    repo.record_quota_usage("liveChatMessages.list", 2, {}, channel_id="ch", video_count=0, job_id="job-chat")
+
+    result = quota_rollup(repo, {"job_id": job["job_id"], "quota_date": "20260530", "warning_threshold_units": 5})
+    rerun = quota_rollup(repo, {"job_id": job["job_id"], "quota_date": "20260530", "warning_threshold_units": 5})
+    videos_summary = repo.get_item("QUOTA#20260530", "METHOD#videos.list")
+    chat_summary = repo.get_item("QUOTA#20260530", "METHOD#liveChatMessages.list")
+    events = [event for event in repo.get_job(job["job_id"])["events"] if event["event_type"] == "quota_threshold_warning"]
+
+    assert result["warning_emitted"] is True
+    assert result["warning_event_id"]
+    assert rerun["warning_emitted"] is True
+    assert rerun["warning_event_id"] is None
+    assert videos_summary["warning_emitted"] is True
+    assert videos_summary["warning_threshold_units"] == 5
+    assert videos_summary["warning_total_units"] == 5
+    assert chat_summary["warning_emitted"] is True
+    assert len(events) == 1
+    assert events[0]["payload"]["total_units"] == 5
+    assert events[0]["payload"]["threshold_units"] == 5
+    assert events[0]["payload"]["by_method"] == {"liveChatMessages.list": 2, "videos.list": 3}
 
 
 def test_cleanup_returns_safe_dry_run_report_without_deleting():
@@ -1037,6 +1363,138 @@ def test_cleanup_returns_safe_dry_run_report_without_deleting():
     assert repo.get_video("vid001")["title"] == "keep"
 
 
+def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monkeypatch):
+    enqueued = []
+    monkeypatch.setattr(
+        pipeline,
+        "_enqueue_job",
+        lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued",
+    )
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "vid-final", "title": "old", "published_at": "2026-05-29T00:00:00Z", "channel_id": "ch", "live_state": "live"})
+    client = FakeYouTubeMetadataClient()
+
+    result = archive_finalize(repo, {"video_id": "vid-final", "youtube_client": client, "job_id": "job-finalize"})
+
+    video = repo.get_video("vid-final")
+    quota = repo.list_quota_usage()[0]
+    assert result["video_id"] == "vid-final"
+    assert result["refreshed"] is True
+    assert result["replay_enqueued"] is True
+    assert result["static_export_enqueued"] is True
+    assert video["title"] == "vid-final"
+    assert video["live_state"] == "archived"
+    assert video["archive_finalized_at"]
+    events = [item for item in repo.items.values() if item.get("item_type") == "VideoStateEvent"]
+    assert len(events) == 1
+    assert events[0]["event_name"] == "video.archive_finalized"
+    assert events[0]["from_state"] == "live"
+    assert events[0]["to_state"] == "archived"
+    assert events[0]["source_job_id"] == "job-finalize"
+    assert events[0]["payload"]["refreshed"] is True
+    assert repo.get_item("VID#vid-final", "NOTIFY#archive_available")["delivery_state"] == "planned"
+    assert quota["method"] == "videos.list"
+    assert quota["job_id"] == "job-finalize"
+    assert [item["queue_env"] for item in enqueued] == ["DIOPSIDE_CHAT_QUEUE_URL", "DIOPSIDE_STATIC_EXPORT_QUEUE_URL"]
+    assert enqueued[0]["payload"]["job_type"] == "chat_collect"
+    assert enqueued[0]["payload"]["payload"]["mode"] == "replay"
+    assert enqueued[1]["payload"]["job_type"] == "static_export"
+    assert enqueued[1]["payload"]["payload"]["scope"] == "video"
+
+
+def test_notification_plan_creates_due_items_idempotently():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-plan",
+            "title": "upcoming",
+            "published_at": "2026-05-29T00:00:00Z",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+        }
+    )
+
+    first = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify", "now": "2026-05-30T11:00:00Z"})
+    second = notification_plan(repo, {"video_id": "vid-plan", "job_id": "job-notify-2", "now": "2026-05-30T11:00:00Z"})
+
+    before = repo.get_item("VID#vid-plan", "NOTIFY#before_30min")
+    at_start = repo.get_item("VID#vid-plan", "NOTIFY#at_start")
+    assert first["planned_count"] == 2
+    assert second["planned_count"] == 2
+    assert before["due_at"] == "2026-05-30T11:30:00Z"
+    assert before["gsi3pk"] == "NOTIFY#DUE"
+    assert before["gsi3sk"] == "DUE#2026-05-30T11:30:00Z#vid-plan#before_30min"
+    assert before["delivery_state"] == "planned"
+    assert before["message_template_id"] == "before_30min"
+    assert before["created_at"]
+    assert before["updated_at"]
+    assert before["source_job_id"] == "job-notify-2"
+    assert at_start["due_at"] == "2026-05-30T12:00:00Z"
+
+
+def test_notification_plan_delivers_due_items_and_records_states():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid-notify",
+            "title": "通知対象",
+            "published_at": "2026-05-29T00:00:00Z",
+            "scheduled_start_time": "2026-05-30T12:00:00Z",
+        }
+    )
+    sent_payloads = []
+
+    skipped = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["before_30min"],
+            "due_at": "2026-05-30T11:00:00Z",
+            "now": "2026-05-30T11:01:00Z",
+        },
+    )
+    sent = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["at_start"],
+            "due_at": "2026-05-30T12:00:00Z",
+            "now": "2026-05-30T12:01:00Z",
+            "target": "sns",
+            "notification_client": lambda target, payload: sent_payloads.append((target, payload)) or {"message_id": "msg-1"},
+        },
+    )
+    failed = notification_plan(
+        repo,
+        {
+            "video_id": "vid-notify",
+            "notification_types": ["archive_available"],
+            "due_at": "2026-05-30T13:00:00Z",
+            "now": "2026-05-30T13:01:00Z",
+            "target": "discord",
+            "notification_client": lambda target, payload: (_ for _ in ()).throw(RuntimeError("delivery failed")),
+        },
+    )
+
+    before = repo.get_item("VID#vid-notify", "NOTIFY#before_30min")
+    at_start = repo.get_item("VID#vid-notify", "NOTIFY#at_start")
+    archive = repo.get_item("VID#vid-notify", "NOTIFY#archive_available")
+    assert skipped["skipped_count"] == 1
+    assert before["delivery_state"] == "skipped"
+    assert before["skip_reason"] == "notification_target_not_configured"
+    assert sent["sent_count"] == 1
+    assert at_start["delivery_state"] == "sent"
+    assert at_start["sent_at"]
+    assert at_start["delivery_result"] == {"message_id": "msg-1"}
+    assert sent_payloads[0][0] == "sns"
+    assert sent_payloads[0][1]["schema_version"] == "notification-delivery/v1"
+    assert sent_payloads[0][1]["video_id"] == "vid-notify"
+    assert "通知対象" in sent_payloads[0][1]["message"]
+    assert failed["failed_count"] == 1
+    assert archive["delivery_state"] == "failed"
+    assert archive["last_error_code"] == "RuntimeError"
+    assert archive["last_error_message"] == "delivery failed"
+
+
 def test_dispatch_job_supports_scheduled_maintenance_jobs():
     repo = MemoryRepository()
     repo.record_quota_usage("videos.list", 1, {}, channel_id="ch", video_count=1, job_id="job-quota")
@@ -1046,8 +1504,31 @@ def test_dispatch_job_supports_scheduled_maintenance_jobs():
 
     assert quota["status"] == "succeeded"
     assert quota["total_units"] == 1
+    assert quota["warning_emitted"] is False
     assert cleanup_result["status"] == "succeeded"
     assert cleanup_result["deleted_count"] == 0
+
+
+def test_dispatch_job_accepts_v04_payload_job_message():
+    repo = MemoryRepository()
+
+    result = dispatch_job(
+        repo,
+        {
+            "job_id": "scheduler-cleanup-v04",
+            "job_type": "cleanup",
+            "idempotency_key": "cleanup:scheduler",
+            "requested_by": "scheduler",
+            "attempt": 0,
+            "trace_id": "trace-v04-message",
+            "payload": {"requested_by": "scheduler", "retention_days": 30},
+        },
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["deleted_count"] == 0
+    events = [item for item in repo.items.values() if item.get("pk") == "JOB#scheduler-cleanup-v04"]
+    assert [event["event_name"] for event in events] == ["job.started", "job.succeeded"]
 
 
 def test_worker_emits_json_success_log(capsys):
@@ -1092,6 +1573,10 @@ class FakeDynamoTable:
         item = self.items.get((Key["pk"], Key["sk"]))
         return {"Item": dict(item)} if item else {}
 
+    def delete_item(self, Key):
+        self.items.pop((Key["pk"], Key["sk"]), None)
+        return {}
+
     def query(self, **kwargs):
         self.query_calls.append(kwargs)
         index_name = kwargs.get("IndexName")
@@ -1099,7 +1584,11 @@ class FakeDynamoTable:
             items = [item for item in self.items.values() if item.get("gsi1pk") == "VIDEO#PUBLIC"]
             items.sort(key=lambda item: item.get("gsi1sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
         elif index_name == "by_work_queue":
-            items = [item for item in self.items.values() if item.get("gsi3pk") in {"JOB#ALL", "QUOTA#ALL"}]
+            items = [
+                item
+                for item in self.items.values()
+                if item.get("gsi3pk") in {"JOB#ALL", "QUOTA#ALL"} or str(item.get("gsi3pk", "")).startswith("JOB#STATE#")
+            ]
             items.sort(key=lambda item: item.get("gsi3sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
         else:
             items = [item for item in self.items.values() if item["pk"].startswith("JOB#")]

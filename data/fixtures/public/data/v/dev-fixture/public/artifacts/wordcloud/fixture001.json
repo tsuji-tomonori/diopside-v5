@@ -1,0 +1,18 @@
+{
+  "schema_version": "public-wordcloud/v1",
+  "video_id": "fixture001",
+  "generated_at": "2026-05-30T03:56:34Z",
+  "top_terms": [
+    {
+      "term": "ありがとう",
+      "score": 120.5
+    },
+    {
+      "term": "かわいい",
+      "score": 98.0
+    }
+  ],
+  "message_count": 1000,
+  "source_png_path": "/data/artifacts/wordcloud/fixture001.png",
+  "source_svg_path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.svg"
+}

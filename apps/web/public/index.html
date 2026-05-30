@@ -48,6 +48,12 @@
         </div>
         <div id="tagFilters" class="chips tag-chips" aria-label="タグ"></div>
       </section>
+      <section class="archive-nav" aria-labelledby="archiveNavTitle">
+        <div class="section-title">
+          <h2 id="archiveNavTitle">月別アーカイブ</h2>
+        </div>
+        <div id="archiveCalendar" class="chips archive-chips" aria-label="月別アーカイブ"></div>
+      </section>
       <section class="saved-nav" aria-labelledby="savedNavTitle">
         <div class="section-title">
           <h2 id="savedNavTitle">保存したアーカイブ</h2>
@@ -95,6 +101,11 @@
           </select>
         </label>
         <label>年 <input name="year" inputmode="numeric" placeholder="2026"></label>
+        <label>月
+          <select name="month" id="filterMonthSelect">
+            <option value="">すべて</option>
+          </select>
+        </label>
         <label>長さ
           <select name="duration">
             <option value="">すべて</option>
@@ -130,34 +141,67 @@
       </form>
     </dialog>
     <dialog id="adminPanel" class="bottom-sheet" aria-labelledby="adminPanelTitle">
-      <form id="adminJobForm">
+      <div class="admin-panel-content">
         <div class="sheet-head">
-          <h2 id="adminPanelTitle">管理 job</h2>
+          <h2 id="adminPanelTitle">管理</h2>
           <button type="button" onclick="document.querySelector('#adminPanel').close()" aria-label="閉じる">閉じる</button>
         </div>
-        <label>Token <input name="token" type="password" autocomplete="off"></label>
-        <label>CSRF <input name="csrf" type="password" autocomplete="off"></label>
-        <label>Job
-          <select name="jobType">
-            <option value="metadata-sync">metadata-sync</option>
-            <option value="live-status-scan">live-status-scan</option>
-            <option value="chat-collect">chat-collect</option>
-            <option value="chat-normalize">chat-normalize</option>
-            <option value="rebuild-artifacts">rebuild-artifacts</option>
-            <option value="static-export">static-export</option>
-          </select>
-        </label>
-        <label>video_id <input name="videoId" autocomplete="off"></label>
-        <button type="submit" aria-label="管理 job を起動">起動</button>
-        <div class="admin-actions">
-          <button type="button" id="loadJobsButton" aria-label="job 一覧を読み込む">job一覧</button>
-          <button type="button" id="loadQuotaButton" aria-label="quota usage を読み込む">quota</button>
-        </div>
-        <label>job_id <input name="jobId" id="adminJobId" autocomplete="off"></label>
-        <button type="button" id="loadJobDetailButton" aria-label="job 詳細を読み込む">job詳細</button>
-        <p id="adminResult" class="admin-result" aria-live="polite"></p>
+        <form id="adminJobForm">
+          <h3>job</h3>
+          <label>Passphrase <input name="passphrase" type="password" autocomplete="current-password"></label>
+          <label>Job
+            <select name="jobType">
+              <option value="metadata-sync">metadata-sync</option>
+              <option value="live-status-scan">live-status-scan</option>
+              <option value="chat-collect">chat-collect</option>
+              <option value="chat-normalize">chat-normalize</option>
+              <option value="rebuild-artifacts">rebuild-artifacts</option>
+              <option value="static-export">static-export</option>
+            </select>
+          </label>
+          <label>video_id <input name="videoId" autocomplete="off"></label>
+          <button type="submit" id="startJobButton" aria-label="管理 job を起動">起動</button>
+          <div class="admin-actions">
+            <button type="button" id="loadJobsButton" aria-label="job 一覧を読み込む">job一覧</button>
+            <button type="button" id="loadQuotaButton" aria-label="quota usage を読み込む">quota</button>
+            <button type="button" id="loadStaticExportsButton" aria-label="static export 履歴を読み込む">export履歴</button>
+          </div>
+          <label>job_id <input name="jobId" id="adminJobId" autocomplete="off"></label>
+          <button type="button" id="loadJobDetailButton" aria-label="job 詳細を読み込む">job詳細</button>
+          <p id="adminResult" class="admin-result" aria-live="polite"></p>
+        </form>
+        <form id="adminChannelForm">
+          <h3>チャンネル設定</h3>
+          <div class="admin-actions">
+            <button type="button" id="loadChannelsButton" aria-label="チャンネル一覧を読み込む">チャンネル一覧</button>
+          </div>
+          <label>channel_id <input name="channelId" autocomplete="off" required></label>
+          <label>uploads_playlist_id <input name="uploadsPlaylistId" autocomplete="off"></label>
+          <label>display_name <input name="displayName" autocomplete="off"></label>
+          <label>metadata interval minutes <input name="metadataIntervalMinutes" type="number" min="1" max="1440" step="1" value="720"></label>
+          <label>live scan interval minutes <input name="liveScanIntervalMinutes" type="number" min="1" max="1440" step="1" value="30"></label>
+          <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 取得有効</label>
+          <label class="checkbox-row"><input name="notificationEnabled" type="checkbox"> 通知候補生成</label>
+          <button type="submit" aria-label="チャンネル設定を保存">チャンネル保存</button>
+          <div id="adminChannelList" class="admin-data" aria-live="polite"></div>
+        </form>
+        <form id="adminTagForm">
+          <h3>タグ補正</h3>
+          <label>video_id <input name="tagVideoId" autocomplete="off" required></label>
+          <label>mode
+            <select name="tagMode">
+              <option value="add-remove">追加・削除</option>
+              <option value="replace">置換</option>
+            </select>
+          </label>
+          <label>add_tags <input name="addTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <label>remove_tags <input name="removeTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <label>replace_tags <input name="replaceTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <button type="submit" aria-label="動画タグを保存">タグ保存</button>
+          <div id="adminTagResult" class="admin-data" aria-live="polite"></div>
+        </form>
         <div id="adminData" class="admin-data" aria-live="polite"></div>
-      </form>
+      </div>
     </dialog>
     <script type="module" src="/app.js"></script>
   </body>

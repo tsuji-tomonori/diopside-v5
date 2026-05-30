@@ -139,6 +139,14 @@ def test_lambda_function_url_is_cloudfront_origin_only():
     assert outputs["ApiFunctionUrlOrigin"]["Description"].startswith("Internal Lambda Function URL origin")
 
 
+def test_api_lambda_uses_fastapi_mangum_entrypoint():
+    resources = _template()["Resources"]
+    api_function = resources["ApiFunction"]["Properties"]
+
+    assert api_function["Runtime"] == "python3.13"
+    assert api_function["Handler"] == "diopside_api.fastapi_lambda.lambda_handler"
+
+
 def test_s3_origins_are_private_and_oac_only():
     resources = _template()["Resources"]
     distribution = resources["CloudFrontDistribution"]["Properties"]["DistributionConfig"]
@@ -378,13 +386,19 @@ def test_eventbridge_scheduler_dispatches_low_frequency_maintenance_jobs():
         assert payload["job_type"] == job_type
         assert payload["job_id"].startswith(f"scheduler-{job_type.replace('_', '-')}-")
         assert "<aws.scheduler.execution-id>" in payload["job_id"]
-        assert payload["input"]["requested_by"] == "scheduler"
-        assert "<aws.scheduler.scheduled-time>" in payload["input"]["idempotency_key"]
+        assert payload["idempotency_key"].startswith(f"{job_type.replace('_', '-')}-")
+        assert "<aws.scheduler.scheduled-time>" in payload["idempotency_key"]
+        assert payload["requested_by"] == "scheduler"
+        assert payload["attempt"] == 0
+        assert payload["trace_id"].startswith(f"scheduler-{job_type.replace('_', '-')}-")
+        assert "<aws.scheduler.execution-id>" in payload["trace_id"]
+        assert payload["payload"]["requested_by"] == "scheduler"
+        assert "input" not in payload
 
     metadata_payload = _schedule_input(resources["MetadataSyncSchedule"])
     cleanup_payload = _schedule_input(resources["CleanupSchedule"])
-    assert metadata_payload["input"]["max_results"] == 25
-    assert cleanup_payload["input"]["dry_run"] is True
+    assert metadata_payload["payload"]["max_results"] == 25
+    assert cleanup_payload["payload"]["dry_run"] is True
 
 
 def test_cloudwatch_log_groups_and_api_5xx_metric_filter_are_defined():

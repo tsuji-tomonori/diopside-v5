@@ -31,6 +31,9 @@ class YouTubeClient:
     def videos(self, video_ids: list[str]) -> dict[str, Any]:
         return self._get("videos", {"part": "snippet,contentDetails,liveStreamingDetails,statistics,status", "id": ",".join(video_ids), "maxResults": "50"})
 
+    def channels(self, channel_ids: list[str]) -> dict[str, Any]:
+        return self._get("channels", {"part": "snippet,contentDetails", "id": ",".join(channel_ids), "maxResults": "50"})
+
     def live_chat_messages(self, live_chat_id: str, page_token: str | None = None) -> dict[str, Any]:
         params = {"part": "snippet,authorDetails", "liveChatId": live_chat_id, "maxResults": "2000"}
         if page_token:
@@ -105,6 +108,23 @@ def normalize_video_resource(resource: dict[str, Any]) -> dict[str, Any]:
         "live_state": _live_state(snippet.get("liveBroadcastContent"), live),
         "tags": tags,
         "public": status.get("privacyStatus", "public") == "public",
+    }
+
+
+def normalize_channel_resource(resource: dict[str, Any]) -> dict[str, Any]:
+    snippet = resource.get("snippet", {})
+    content = resource.get("contentDetails", {})
+    related = content.get("relatedPlaylists", {})
+    return {
+        "channel_id": resource["id"],
+        "channel_title": snippet.get("title") or resource["id"],
+        "display_name": snippet.get("title") or resource["id"],
+        "description": snippet.get("description", ""),
+        "published_at": snippet.get("publishedAt"),
+        "custom_url": snippet.get("customUrl"),
+        "uploads_playlist_id": related.get("uploads"),
+        "collect_enabled": True,
+        "enabled": True,
     }
 
 
@@ -208,6 +228,27 @@ def fetch_public_replay_actions(video_id: str) -> list[dict[str, Any]]:
     with urllib.request.urlopen(url, timeout=20) as response:
         html = response.read().decode("utf-8", errors="replace")
     return extract_replay_actions_from_initial_data(extract_initial_data_from_watch_html(html))
+
+
+def fetch_public_replay_continuation(continuation_token: str) -> dict[str, Any]:
+    url = "https://www.youtube.com/youtubei/v1/live_chat/get_live_chat_replay?prettyPrint=false"
+    body = json.dumps(
+        {
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20260530.00.00",
+                }
+            },
+            "continuation": continuation_token,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(url, data=body, headers={"content-type": "application/json"}, method="POST")
+    with urllib.request.urlopen(request, timeout=20) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("YouTube replay continuation returned malformed response")
+    return payload
 
 
 def _int_or_none(value: Any) -> int | None:

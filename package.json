@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node tools/build-web.mjs",
+    "cdk:synth": "node infra/cdk/bin/diopside-cdk.mjs",
     "test": "node --check tools/run-post-deploy-smoke.mjs && node tools/check-web-dom-safety.mjs && node tools/check-public-contract.mjs && node tools/check-docs-consistency.mjs && PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests",
     "package:deploy": "python3 tools/package_deploy.py",
     "e2e:local": "node tools/run-local-e2e.mjs",
@@ -14,5 +15,9 @@
   "engines": {
     "node": ">=22",
     "python": ">=3.13"
+  },
+  "devDependencies": {
+    "aws-cdk-lib": "^2.257.0",
+    "constructs": "^10.6.0"
   }
 }

@@ -82,6 +82,10 @@ async function checkAdminDryRun(url) {
   if (!detail.item?.events?.length) throw new Error("admin job detail missing events");
   const quota = await json(`${url}/api/admin/quota-usage`, { headers: { Authorization: "Bearer local-secret" } });
   if (!Array.isArray(quota.items)) throw new Error("admin quota usage response must include items array");
+  if (!Array.isArray(quota.daily)) throw new Error("admin quota usage response must include daily array");
+  if (!Array.isArray(quota.by_method)) throw new Error("admin quota usage response must include by_method array");
+  if (typeof quota.limit_per_day !== "number") throw new Error("admin quota usage response must include limit_per_day");
+  if (!quota.warning) throw new Error("admin quota usage response must include warning when threshold is emitted");
   for (const item of quota.items) {
     for (const key of ["method", "units", "video_count", "channel_id", "job_id"]) {
       if (!(key in item)) throw new Error(`admin quota usage item missing ${key}`);
@@ -149,6 +153,10 @@ async function checkBrowserFlows(url) {
         if (!document.querySelector('#videoDetail .timestamp-list a[href*="t=120s"]')) throw new Error("timestamp link missing");
         if (!document.querySelector('#videoDetail .wordcloud')) throw new Error("wordcloud missing");
 
+        await waitFor(() => text("#archiveCalendar").includes("2026/05 2件"));
+        click('#archiveCalendar button[data-year="2026"][data-month="05"]');
+        await waitFor(() => text("#resultCount").includes("2件") && document.querySelector('#archiveCalendar button[data-year="2026"][data-month="05"]')?.getAttribute("aria-pressed") === "true");
+
         setInput("#searchInput", "検索");
         await waitFor(() => text("#resultCount").includes("1件") && text("#videoList").includes("検索とタグ確認用アーカイブ"));
 
@@ -159,13 +167,41 @@ async function checkBrowserFlows(url) {
 
         click('[data-action="admin"]');
         await waitFor(() => document.querySelector("#adminPanel").open);
-        setInput('#adminJobForm input[name="token"]', "local-secret");
-        setInput('#adminJobForm input[name="csrf"]', "local-csrf");
+        setInput('#adminJobForm input[name="passphrase"]', "local-secret");
         setSelect('#adminJobForm select[name="jobType"]', "static-export");
         document.querySelector("#adminJobForm").requestSubmit();
         await waitFor(() => text("#adminResult").includes("static_export") && document.querySelector('#adminJobId').value);
         click("#loadJobDetailButton");
         await waitFor(() => text("#adminData").includes("JobEvent") && text("#adminData").includes("queued"));
+        click("#loadQuotaButton");
+        await waitFor(() => text("#adminData").includes("daily summary") && text("#adminData").includes("method summary") && text("#adminData").includes("20260530") && text("#adminData").includes("warning"));
+
+        setInput('#adminChannelForm input[name="channelId"]', "ch-local-e2e");
+        setInput('#adminChannelForm input[name="uploadsPlaylistId"]', "UUlocalE2E");
+        setInput('#adminChannelForm input[name="displayName"]', "Local E2E Channel");
+        setInput('#adminChannelForm input[name="metadataIntervalMinutes"]', "720");
+        setInput('#adminChannelForm input[name="liveScanIntervalMinutes"]', "30");
+        document.querySelector('#adminChannelForm input[name="enabled"]').checked = true;
+        document.querySelector('#adminChannelForm input[name="notificationEnabled"]').checked = true;
+        document.querySelector("#adminChannelForm").requestSubmit();
+        await waitFor(() => text("#adminResult").includes("ch-local-e2e") && text("#adminChannelList").includes("Local E2E Channel"))
+          .catch(() => {
+            throw new Error("channel settings flow failed: " + text("#adminResult") + " | " + text("#adminChannelList"));
+          });
+        click("#loadChannelsButton");
+        await waitFor(() => text("#adminChannelList").includes("UUlocalE2E"));
+
+        setInput('#adminTagForm input[name="tagVideoId"]', "fixture001");
+        setSelect('#adminTagForm select[name="tagMode"]', "add-remove");
+        setInput('#adminTagForm input[name="addTags"]', "手動E2E");
+        setInput('#adminTagForm input[name="removeTags"]', "雑談");
+        document.querySelector("#adminTagForm").requestSubmit();
+        await waitFor(() => text("#adminTagResult").includes("fixture001") && text("#adminTagResult").includes("手動E2E") && !text("#adminTagResult").includes("雑談"))
+          .catch(() => {
+            throw new Error("video tag flow failed: " + text("#adminTagResult"));
+          });
+        click("#loadStaticExportsButton");
+        await waitFor(() => text("#adminData").includes("static export履歴") && text("#adminData").includes("dev-fixture") && text("#adminData").includes("local://latest-manifest.json"));
       })()`);
     } finally {
       client.close();

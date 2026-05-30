@@ -14,9 +14,11 @@ const store = {
 const state = {
   videos: [],
   tags: [],
+  calendarMonths: [],
   selectedTag: null,
   query: "",
   year: "",
+  month: "",
   duration: "",
   sort: "published_desc",
   wordcloud: "",
@@ -24,6 +26,10 @@ const state = {
   favorites: store.get("favorites", []),
   history: store.get("history", []),
   recentSearches: store.get("recent-searches", [])
+};
+
+const adminSession = {
+  csrfToken: ""
 };
 
 const els = {
@@ -35,19 +41,25 @@ const els = {
   filterSheet: document.querySelector("#filterSheet"),
   filterForm: document.querySelector("#filterForm"),
   filterTag: document.querySelector("#filterTagSelect"),
+  filterMonth: document.querySelector("#filterMonthSelect"),
   clearFilter: document.querySelector("#clearFilterButton"),
   quick: document.querySelector("#quickChips"),
   recent: document.querySelector("#recentSearches"),
+  archiveCalendar: document.querySelector("#archiveCalendar"),
   favorites: document.querySelector("#favoriteVideos"),
   history: document.querySelector("#historyVideos"),
   clearTag: document.querySelector("#clearTagButton"),
   admin: document.querySelector("#adminPanel"),
   adminResult: document.querySelector("#adminResult"),
-  adminData: document.querySelector("#adminData")
+  adminData: document.querySelector("#adminData"),
+  adminChannelForm: document.querySelector("#adminChannelForm"),
+  adminChannelList: document.querySelector("#adminChannelList"),
+  adminTagForm: document.querySelector("#adminTagForm"),
+  adminTagResult: document.querySelector("#adminTagResult")
 };
 
 const json = async (path, options = {}) => {
-  const response = await fetch(path, { headers: { Accept: "application/json", ...(options.headers || {}) }, ...options });
+  const response = await fetch(path, { ...options, headers: { Accept: "application/json", ...(options.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.message || `failed to load ${path}: ${response.status}`);
   return body;
@@ -80,11 +92,13 @@ const filtered = () => {
   const list = state.videos.filter((video) => {
     const tagOk = !state.selectedTag || video.tags.includes(state.selectedTag);
     const text = `${video.title} ${video.tags.join(" ")}`.toLowerCase();
-    const yearOk = !state.year || String(video.published_at || "").startsWith(state.year);
+    const publishedAt = String(video.published_at || "");
+    const yearOk = !state.year || publishedAt.startsWith(state.year);
+    const monthOk = !state.month || publishedAt.slice(5, 7) === state.month.padStart(2, "0");
     const durationOk = !state.duration || durationMatch(video.duration_sec, state.duration);
     const wordcloudOk = availabilityMatch(video.wordcloud_available, state.wordcloud);
     const timestampOk = availabilityMatch(video.timestamp_available, state.timestamp);
-    return tagOk && yearOk && durationOk && wordcloudOk && timestampOk && (!q || text.includes(q));
+    return tagOk && yearOk && monthOk && durationOk && wordcloudOk && timestampOk && (!q || text.includes(q));
   });
   return list.sort((a, b) => state.sort === "duration_desc" ? Number(b.duration_sec || 0) - Number(a.duration_sec || 0) : String(b.published_at || "").localeCompare(String(a.published_at || "")));
 };
@@ -167,11 +181,18 @@ const renderFilterOptions = () => {
     els.filterTag.append(el("option", { value: tag.label, text: `${tag.label} ${tag.video_count}` }));
   }
   els.filterTag.value = current;
+  els.filterMonth.replaceChildren(el("option", { value: "", text: "すべて" }));
+  const monthOptions = new Set(state.calendarMonths.map((item) => item.month));
+  for (const month of [...monthOptions].sort()) {
+    els.filterMonth.append(el("option", { value: month, text: `${Number(month)}月` }));
+  }
+  els.filterMonth.value = state.month;
 };
 
 const syncFilterForm = () => {
   els.filterForm.elements.tag.value = state.selectedTag || "";
   els.filterForm.elements.year.value = state.year;
+  els.filterForm.elements.month.value = state.month;
   els.filterForm.elements.duration.value = state.duration;
   els.filterForm.elements.sort.value = state.sort;
   els.filterForm.elements.wordcloud.value = state.wordcloud;
@@ -182,6 +203,7 @@ const applyFilterForm = () => {
   const data = new FormData(els.filterForm);
   state.selectedTag = String(data.get("tag") || "") || null;
   state.year = String(data.get("year") || "");
+  state.month = String(data.get("month") || "");
   state.duration = String(data.get("duration") || "");
   state.sort = String(data.get("sort") || "published_desc");
   state.wordcloud = String(data.get("wordcloud") || "");
@@ -211,6 +233,27 @@ const renderList = () => {
       el("button", { type: "button", class: "icon-button", "aria-pressed": String(favorite), "aria-label": favorite ? "お気に入り解除" : "お気に入り追加", text: favorite ? "★" : "☆", onclick: () => toggleFavorite(video.video_id) })
     ]);
     els.list.append(card);
+  }
+};
+
+const renderArchiveCalendar = () => {
+  els.archiveCalendar.replaceChildren();
+  if (!state.calendarMonths.length) {
+    els.archiveCalendar.append(el("p", { class: "empty-state", text: "月別アーカイブはまだありません。" }));
+    return;
+  }
+  for (const item of state.calendarMonths) {
+    const active = state.year === item.year && state.month === item.month;
+    const button = el("button", {
+      type: "button",
+      text: `${item.year}/${item.month} ${item.video_count}件`,
+      "aria-label": `${item.year}年${Number(item.month)}月のアーカイブを表示`,
+      "aria-pressed": String(active),
+      "data-year": item.year,
+      "data-month": item.month
+    });
+    button.addEventListener("click", () => selectArchiveMonth(item.year, item.month));
+    els.archiveCalendar.append(button);
   }
 };
 
@@ -311,11 +354,20 @@ const selectTag = (tag) => {
 };
 
 const clearFilters = ({ includeQuery = false } = {}) => {
-  Object.assign(state, { selectedTag: null, year: "", duration: "", sort: "published_desc", wordcloud: "", timestamp: "" });
+  Object.assign(state, { selectedTag: null, year: "", month: "", duration: "", sort: "published_desc", wordcloud: "", timestamp: "" });
   if (includeQuery) {
     state.query = "";
     els.search.value = "";
   }
+  render();
+};
+
+const selectArchiveMonth = (year, month) => {
+  state.year = year;
+  state.month = month;
+  state.query = "";
+  state.selectedTag = null;
+  els.search.value = "";
   render();
 };
 
@@ -337,6 +389,7 @@ const render = () => {
   syncFilterForm();
   renderQuick();
   renderTags();
+  renderArchiveCalendar();
   renderRecent();
   renderSaved();
   renderList();
@@ -344,11 +397,26 @@ const render = () => {
 
 const init = async () => {
   const manifest = await json("/data/latest-manifest.json");
-  const [videos, tags] = await Promise.all([json(manifest.indexes.videos_latest), json(manifest.indexes.tags)]);
+  const [videos, tags, calendarMonths] = await Promise.all([json(manifest.indexes.videos_latest), json(manifest.indexes.tags), loadArchiveCalendarMonths(manifest)]);
   state.videos = videos.items;
   state.tags = tags.items;
+  state.calendarMonths = calendarMonths;
   render();
   if (state.videos[0]) await showDetail(state.videos[0]);
+};
+
+const loadArchiveCalendarMonths = async (manifest) => {
+  const calendarItems = Object.values(manifest.static_paths?.["STATIC-005"]?.items || {});
+  const calendars = await Promise.all(calendarItems.map((item) => json(item.path).catch(() => null)));
+  return calendars
+    .filter(Boolean)
+    .flatMap((calendar) => (calendar.months || []).map((month) => ({
+      year: String(calendar.year || month.year || ""),
+      month: String(month.month || "").padStart(2, "0"),
+      video_count: Number(month.video_count || 0)
+    })))
+    .filter((item) => item.year && item.month)
+    .sort((a, b) => `${b.year}${b.month}`.localeCompare(`${a.year}${a.month}`));
 };
 
 els.search.addEventListener("input", (event) => {
@@ -390,16 +458,16 @@ els.filterForm.addEventListener("input", (event) => {
 document.querySelector("#adminJobForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
-  const token = String(data.get("token") || "");
-  const csrf = String(data.get("csrf") || "");
   const jobType = String(data.get("jobType") || "static-export");
   const videoId = String(data.get("videoId") || "");
   const body = { idempotency_key: `${jobType}:${videoId || "all"}:${Date.now()}` };
   if (videoId && ["chat-collect", "chat-normalize", "rebuild-artifacts"].includes(jobType)) body.video_id = videoId;
   try {
+    await ensureAdminSession();
     const result = await json(`/api/admin/jobs/${jobType}`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-csrf-token": csrf },
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
       body: JSON.stringify(body)
     });
     document.querySelector("#adminJobId").value = result.job_id || "";
@@ -410,9 +478,40 @@ document.querySelector("#adminJobForm").addEventListener("submit", async (event)
   }
 });
 
-const adminHeaders = () => {
+const adminHeaders = ({ csrf = false } = {}) => {
+  const headers = {};
+  if (csrf) {
+    headers["content-type"] = "application/json";
+    headers["x-csrf-token"] = adminSession.csrfToken;
+  }
+  return headers;
+};
+
+const ensureAdminSession = async () => {
+  if (adminSession.csrfToken) return adminSession;
+  try {
+    const current = await json("/api/admin/me", { credentials: "same-origin" });
+    adminSession.csrfToken = current.csrf_token || "";
+    if (adminSession.csrfToken) return adminSession;
+  } catch {
+    adminSession.csrfToken = "";
+  }
+  const form = document.querySelector("#adminJobForm");
   const data = new FormData(document.querySelector("#adminJobForm"));
-  return { authorization: `Bearer ${String(data.get("token") || "")}` };
+  const passphrase = String(data.get("passphrase") || "");
+  if (!passphrase) {
+    throw new Error("管理 passphrase を入力してください。");
+  }
+  const session = await json("/api/admin/session", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passphrase })
+  });
+  adminSession.csrfToken = session.csrf_token || "";
+  form.elements.passphrase.value = "";
+  if (!adminSession.csrfToken) throw new Error("CSRF token を取得できませんでした。");
+  return adminSession;
 };
 
 const renderAdminJobResult = (result) => {
@@ -434,6 +533,20 @@ const quotaUsageText = (item) => {
   return parts.join(" / ");
 };
 
+const quotaDailyText = (item, limitPerDay) => [
+  item.quota_date || "date未設定",
+  `${item.units_used ?? 0} / ${limitPerDay ?? "-"} units`,
+  `calls ${item.call_count ?? 0}`,
+  item.warning_emitted ? "warning" : "normal"
+].join(" / ");
+
+const quotaMethodText = (item) => [
+  item.method || "method未設定",
+  `${item.units_used ?? 0} units`,
+  `calls ${item.call_count ?? 0}`,
+  item.warning_emitted ? "warning" : "normal"
+].join(" / ");
+
 const jobSummaryText = (item) => [
   item.job_id || "job_id未設定",
   item.job_type || "job_type未設定",
@@ -452,9 +565,72 @@ const renderJobList = (items) => items.length
   }))
   : el("p", { class: "empty-state", text: "表示できる job はありません。" });
 
-const renderQuotaUsage = (items) => items.length
-  ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
-  : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" });
+const renderQuotaUsage = (payload) => {
+  const items = payload.items || [];
+  const daily = payload.daily || [];
+  const byMethod = payload.by_method || [];
+  return el("div", { class: "admin-quota" }, [
+    payload.warning ? el("p", { class: "admin-warning", text: payload.warning }) : el("p", { class: "detail-meta", text: `quota daily limit ${payload.limit_per_day ?? "-"} units` }),
+    el("h4", { text: "daily summary" }),
+    daily.length
+      ? el("ul", {}, daily.slice(0, 7).map((item) => el("li", { text: quotaDailyText(item, payload.limit_per_day) })))
+      : el("p", { class: "empty-state", text: "表示できる daily summary はありません。" }),
+    el("h4", { text: "method summary" }),
+    byMethod.length
+      ? el("ul", {}, byMethod.slice(0, 12).map((item) => el("li", { text: quotaMethodText(item) })))
+      : el("p", { class: "empty-state", text: "表示できる method summary はありません。" }),
+    el("h4", { text: "call records" }),
+    items.length
+      ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
+      : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" })
+  ]);
+};
+
+const staticExportText = (item) => [
+  item.export_version || "export_version未設定",
+  item.publish_state || "state未設定",
+  `videos ${item.video_count ?? "-"}`,
+  `tags ${item.tag_count ?? "-"}`,
+  item.manifest_s3_uri || "manifest未設定"
+].join(" / ");
+
+const renderStaticExports = (items) => items.length
+  ? el("ul", {}, items.slice(0, 12).map((item) => el("li", {}, [
+    el("strong", { text: staticExportText(item) }),
+    el("p", { class: "detail-meta", text: `${fmtDate(item.exported_at)} / ${item.content_hash || "hash未設定"}` })
+  ])))
+  : el("p", { class: "empty-state", text: "表示できる static export 履歴はありません。" });
+
+const channelSummaryText = (item) => [
+  item.channel_id || "channel_id未設定",
+  item.display_name || "display_name未設定",
+  item.enabled === true ? "enabled" : "disabled",
+  item.uploads_playlist_id || "uploads_playlist_id未設定"
+].join(" / ");
+
+const fillChannelForm = (item) => {
+  const form = els.adminChannelForm;
+  form.elements.channelId.value = item.channel_id || "";
+  form.elements.uploadsPlaylistId.value = item.uploads_playlist_id || "";
+  form.elements.displayName.value = item.display_name || "";
+  form.elements.metadataIntervalMinutes.value = item.metadata_interval_minutes || 720;
+  form.elements.liveScanIntervalMinutes.value = item.live_scan_interval_minutes || 30;
+  form.elements.enabled.checked = item.enabled !== false;
+  form.elements.notificationEnabled.checked = item.notification_enabled === true;
+};
+
+const renderChannelList = (items) => items.length
+  ? el("div", { class: "admin-list" }, items.slice(0, 20).map((item) => {
+    const button = el("button", { type: "button", "aria-label": `${item.channel_id || "channel"} を編集` }, [
+      el("span", { class: "channel-summary" }, [
+        el("strong", { text: item.display_name || item.channel_id || "channel_id未設定" }),
+        el("span", { text: channelSummaryText(item) })
+      ])
+    ]);
+    button.addEventListener("click", () => fillChannelForm(item));
+    return button;
+  }))
+  : el("p", { class: "empty-state", text: "表示できる channel はありません。" });
 
 const renderJobDetail = (item) => {
   const events = item.events || [];
@@ -485,14 +661,111 @@ const renderJobDetail = (item) => {
 
 const loadAdminData = async (kind) => {
   try {
-    const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { headers: adminHeaders() });
+    await ensureAdminSession();
+    const path = kind === "quota" ? "/api/admin/quota-usage" : kind === "static-exports" ? "/api/admin/static-exports" : "/api/admin/jobs";
+    const result = await json(path, { credentials: "same-origin" });
     const items = result.items || [];
     els.adminData.replaceChildren(
-      el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
-      kind === "quota" ? renderQuotaUsage(items) : renderJobList(items)
+      el("h3", { text: kind === "quota" ? "quota usage" : kind === "static-exports" ? "static export履歴" : "jobs" }),
+      kind === "quota" ? renderQuotaUsage(result) : kind === "static-exports" ? renderStaticExports(items) : renderJobList(items)
     );
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+const loadChannels = async () => {
+  try {
+    await ensureAdminSession();
+    const result = await json("/api/admin/channels", { credentials: "same-origin" });
+    els.adminChannelList.replaceChildren(renderChannelList(result.items || []));
+  } catch (error) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+const channelBodyFromForm = () => {
+  const form = els.adminChannelForm;
+  const metadataInterval = Number(form.elements.metadataIntervalMinutes.value);
+  const liveScanInterval = Number(form.elements.liveScanIntervalMinutes.value);
+  if (!Number.isInteger(metadataInterval) || metadataInterval < 1 || metadataInterval > 1440) {
+    throw new Error("metadata interval minutes は 1 から 1440 の整数で指定してください。");
+  }
+  if (!Number.isInteger(liveScanInterval) || liveScanInterval < 1 || liveScanInterval > 1440) {
+    throw new Error("live scan interval minutes は 1 から 1440 の整数で指定してください。");
+  }
+  return {
+    enabled: form.elements.enabled.checked,
+    uploads_playlist_id: form.elements.uploadsPlaylistId.value.trim() || null,
+    display_name: form.elements.displayName.value.trim() || null,
+    metadata_interval_minutes: metadataInterval,
+    live_scan_interval_minutes: liveScanInterval,
+    notification_enabled: form.elements.notificationEnabled.checked
+  };
+};
+
+const saveChannel = async () => {
+  const form = els.adminChannelForm;
+  const channelId = form.elements.channelId.value.trim();
+  if (!channelId) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: "channel_id を入力してください。" }));
+    return;
+  }
+  try {
+    await ensureAdminSession();
+    const result = await json(`/api/admin/channels/${encodeURIComponent(channelId)}`, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
+      body: JSON.stringify(channelBodyFromForm())
+    });
+    fillChannelForm(result.item || {});
+    els.adminResult.textContent = `${result.item?.channel_id || channelId} のチャンネル設定を保存しました。`;
+    await loadChannels();
+  } catch (error) {
+    els.adminChannelList.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+const parseTagsInput = (value) => String(value || "")
+  .split(",")
+  .map((tag) => tag.trim())
+  .filter(Boolean)
+  .filter((tag, index, tags) => tags.indexOf(tag) === index);
+
+const tagBodyFromForm = () => {
+  const form = els.adminTagForm;
+  const mode = String(form.elements.tagMode.value || "add-remove");
+  if (mode === "replace") {
+    return { replace_tags: parseTagsInput(form.elements.replaceTags.value) };
+  }
+  return {
+    add_tags: parseTagsInput(form.elements.addTags.value),
+    remove_tags: parseTagsInput(form.elements.removeTags.value)
+  };
+};
+
+const saveVideoTags = async () => {
+  const form = els.adminTagForm;
+  const videoId = form.elements.tagVideoId.value.trim();
+  if (!videoId) {
+    els.adminTagResult.replaceChildren(el("p", { class: "empty-state", text: "video_id を入力してください。" }));
+    return;
+  }
+  try {
+    await ensureAdminSession();
+    const result = await json(`/api/admin/videos/${encodeURIComponent(videoId)}/tags`, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
+      body: JSON.stringify(tagBodyFromForm())
+    });
+    els.adminTagResult.replaceChildren(
+      el("p", { text: `${result.video_id || videoId} のタグを保存しました。` }),
+      el("div", { class: "tag-row" }, (result.tags || []).map((tag) => el("span", { class: "tag-pill", text: tag })))
+    );
+  } catch (error) {
+    els.adminTagResult.replaceChildren(el("p", { class: "empty-state", text: error.message }));
   }
 };
 
@@ -502,7 +775,8 @@ const loadJobDetail = async (jobId) => {
     return;
   }
   try {
-    const result = await json(`/api/admin/jobs/${jobId}`, { headers: adminHeaders() });
+    await ensureAdminSession();
+    const result = await json(`/api/admin/jobs/${jobId}`, { credentials: "same-origin" });
     els.adminData.replaceChildren(renderJobDetail(result.item || {}));
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
@@ -511,6 +785,16 @@ const loadJobDetail = async (jobId) => {
 
 document.querySelector("#loadJobsButton").addEventListener("click", () => loadAdminData("jobs"));
 document.querySelector("#loadQuotaButton").addEventListener("click", () => loadAdminData("quota"));
+document.querySelector("#loadStaticExportsButton").addEventListener("click", () => loadAdminData("static-exports"));
+document.querySelector("#loadChannelsButton").addEventListener("click", loadChannels);
+els.adminChannelForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveChannel();
+});
+els.adminTagForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveVideoTags();
+});
 document.querySelector("#loadJobDetailButton").addEventListener("click", () => {
   const data = new FormData(document.querySelector("#adminJobForm"));
   loadJobDetail(String(data.get("jobId") || ""));

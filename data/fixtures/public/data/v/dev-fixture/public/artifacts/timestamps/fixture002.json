@@ -1,0 +1,17 @@
+{
+  "schema_version": "public-timestamp-list/v1",
+  "video_id": "fixture002",
+  "generated_at": "2026-05-30T03:56:34Z",
+  "items": [
+    {
+      "offset_sec": 60,
+      "label": "候補",
+      "source": "chat_burst",
+      "score": 0.65,
+      "evidence_terms": [
+        "歌"
+      ],
+      "message_count": 24
+    }
+  ]
+}
