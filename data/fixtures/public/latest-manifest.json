@@ -1,6 +1,6 @@
 {
   "schema_version": "public-manifest/v1",
-  "generated_at": "2026-05-30T02:10:51Z",
+  "generated_at": "2026-05-30T03:56:34Z",
   "export_version": "dev-fixture",
   "base_path": "/data/v/dev-fixture",
   "indexes": {
@@ -12,12 +12,12 @@
     "STATIC-001": {
       "path": "/data/home.json",
       "versioned_path": "/data/v/dev-fixture/public/home.json",
-      "checksum_sha256": "7ae17e93a6291a0247f7413ff98eb1391b1987bf43013a31cd4a0b5b8aa34807"
+      "checksum_sha256": "def02d5550b75b4d2775161fe920425b84aa449f23053bfe7a7a9b38bab78490"
     },
     "STATIC-002": {
       "path": "/data/videos/index.json",
       "versioned_path": "/data/v/dev-fixture/public/index/videos-latest.json",
-      "checksum_sha256": "57844fec5c537f9d07a2a4a994fe4b39fb1bf8e6fcbdd0893f8a00f5f22d60e8"
+      "checksum_sha256": "2e0d4cbd6ce9396cede9acd0ba1c1d5707f4292515013d49dccfab2eb44ecdf9"
     },
     "STATIC-003": {
       "path_pattern": "/data/videos/{video_id}.json",
@@ -25,19 +25,19 @@
         "fixture001": {
           "path": "/data/videos/fixture001.json",
           "versioned_path": "/data/v/dev-fixture/public/videos/fixture001.json",
-          "checksum_sha256": "649375a7892779d21b1b112ff5060eb280e900385ed726b141450a46aa34e43b"
+          "checksum_sha256": "16213bef712f2d14f29a2d19971962e8e359b7058131708983f265ec9ec99add"
         },
         "fixture002": {
           "path": "/data/videos/fixture002.json",
           "versioned_path": "/data/v/dev-fixture/public/videos/fixture002.json",
-          "checksum_sha256": "251d802ce3312344bac7b2a8694647c9f052af509960885045cb1c214b076328"
+          "checksum_sha256": "17f569cb84f50325311515fc2c5ce0605e0ad9967467f92b459ad1f8109ac662"
         }
       }
     },
     "STATIC-004": {
       "path": "/data/tags.json",
       "versioned_path": "/data/v/dev-fixture/public/index/tags.json",
-      "checksum_sha256": "ea64e0a751c27a310e935385641ead8827229004a061eddaef867861b8bc8549"
+      "checksum_sha256": "d8a1a1ff83ac75732a34d6599b5767cba5a5cedd1bbfed9c95bfbcaeb9c5b9c9"
     },
     "STATIC-005": {
       "path_pattern": "/data/calendar/{year}.json",
@@ -45,22 +45,29 @@
         "2026": {
           "path": "/data/calendar/2026.json",
           "versioned_path": "/data/v/dev-fixture/public/calendar/2026.json",
-          "checksum_sha256": "d2b8d8536e08a95f638a98e995747a14d405cfdc61d872dd04b47e7d4a9ca573"
+          "checksum_sha256": "411ca64a0e5caaacbc4c4c192e26f376508481b04d706324d1f6aaf85c3610c4"
         }
       }
     },
     "STATIC-006": {
       "path": "/data/latest-manifest.json",
       "versioned_path": null,
-      "checksum_sha256": "fb21ccfc6bf83f6c0afe7954a97faad72dabeb3b07b0f9d86bb0c93469782771"
+      "checksum_sha256": "1d00f4529931e6580dc89272f102303ff58742c3381bd0efc31b619472746f75"
     },
     "STATIC-007": {
-      "path_pattern": "/data/artifacts/wordcloud/{video_id}.json",
+      "path_pattern": "/data/artifacts/wordcloud/{video_id}.{png|json}",
       "items": {
         "fixture001": {
           "path": "/data/artifacts/wordcloud/fixture001.json",
           "versioned_path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.json",
-          "checksum_sha256": "aad7b32e951c9ae7f689f2660f7ec7d4a6d4ae9c78533be499ea19e3665b67e0"
+          "checksum_sha256": "f2626ddb7ece65ff135307d2dbe4aa804a45ed0f4f05878536ff8be2ac9a654c"
+        }
+      },
+      "image_items": {
+        "fixture001": {
+          "path": "/data/artifacts/wordcloud/fixture001.png",
+          "versioned_path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.png",
+          "checksum_sha256": "356f9729a7bca877bcd742a658db3f93b41189d4ec89f36597da668f1eb21109"
         }
       }
     },
@@ -70,12 +77,12 @@
         "fixture001": {
           "path": "/data/artifacts/timestamps/fixture001.json",
           "versioned_path": "/data/v/dev-fixture/public/artifacts/timestamps/fixture001.json",
-          "checksum_sha256": "b2ad76072d61df38b4bc81a3d378369bd5b79ff5101b2665ea59d6beab09e7ec"
+          "checksum_sha256": "dbcabc9f3b135e49917ff6038ff144ea43850b1af44856f006c0d7faf1579af6"
         },
         "fixture002": {
           "path": "/data/artifacts/timestamps/fixture002.json",
           "versioned_path": "/data/v/dev-fixture/public/artifacts/timestamps/fixture002.json",
-          "checksum_sha256": "a06a3b9b9e60315c1d04f5a63327a13b76e6893e1077c03809ba6893bb343fbb"
+          "checksum_sha256": "63211192f29db4161feefe49289e9afc73af48270115205685d01bf27e363d73"
         }
       }
     }

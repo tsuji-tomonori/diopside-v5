@@ -8,7 +8,7 @@ import time
 import hashlib
 from typing import Any
 
-from diopside_core import DynamoRepository, MemoryRepository, build_timestamp_candidates, generate_wordcloud_svg, now_iso
+from diopside_core import DynamoRepository, MemoryRepository, build_timestamp_candidates, generate_wordcloud_png, generate_wordcloud_svg, now_iso
 
 try:
     import boto3
@@ -44,6 +44,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
     static_detail_entries: dict[str, dict[str, str]] = {}
     static_calendar_entries: dict[str, dict[str, str]] = {}
     static_wordcloud_entries: dict[str, dict[str, str]] = {}
+    static_wordcloud_png_entries: dict[str, dict[str, str]] = {}
     static_timestamp_entries: dict[str, dict[str, str]] = {}
 
     for video in videos:
@@ -60,12 +61,20 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
         wordcloud_url = None
         wordcloud_json_url = None
         wordcloud_artifact = None
+        wordcloud_svg_artifact = None
         wordcloud_json_artifact = None
         if aggregate.get("top_terms"):
-            wordcloud_url = f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.svg"
+            versioned_wordcloud_png_path = f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.png"
+            alias_wordcloud_png_path = f"/data/artifacts/wordcloud/{video_id}.png"
+            wordcloud_url = alias_wordcloud_png_path
+            wordcloud_png = generate_wordcloud_png(aggregate["top_terms"])
+            _write_public_bytes(root, versioned_wordcloud_png_path, wordcloud_png)
+            _write_public_bytes(root, alias_wordcloud_png_path, wordcloud_png)
+            wordcloud_artifact = {"path": alias_wordcloud_png_path, "versioned_path": versioned_wordcloud_png_path, "content_type": "image/png"}
+            repository.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": wordcloud_url, "content_type": "image/png"})
+            wordcloud_svg_url = f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.svg"
             (artifacts_dir / f"{video_id}.svg").write_text(generate_wordcloud_svg(aggregate["top_terms"]), encoding="utf-8")
-            wordcloud_artifact = {"path": wordcloud_url, "content_type": "image/svg+xml"}
-            repository.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": wordcloud_url, "content_type": "image/svg+xml"})
+            wordcloud_svg_artifact = {"path": wordcloud_svg_url, "content_type": "image/svg+xml"}
             versioned_wordcloud_json_path = f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.json"
             alias_wordcloud_json_path = f"/data/artifacts/wordcloud/{video_id}.json"
             wordcloud_json_payload = {
@@ -74,13 +83,15 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
                 "generated_at": generated_at,
                 "top_terms": aggregate.get("top_terms", []),
                 "message_count": aggregate.get("message_count", 0),
-                "source_svg_path": wordcloud_url,
+                "source_png_path": alias_wordcloud_png_path,
+                "source_svg_path": wordcloud_svg_url,
             }
             _write_public_json(root, versioned_wordcloud_json_path, wordcloud_json_payload)
-            _write_public_json(root, alias_wordcloud_json_path, {**wordcloud_json_payload, "source_svg_path": f"/data/v/{version}/public/artifacts/wordcloud/{video_id}.svg"})
+            _write_public_json(root, alias_wordcloud_json_path, wordcloud_json_payload)
             wordcloud_json_url = alias_wordcloud_json_path
             wordcloud_json_artifact = {"path": alias_wordcloud_json_path, "versioned_path": versioned_wordcloud_json_path, "content_type": "application/json"}
             static_wordcloud_entries[video_id] = _static_entry(root, alias_wordcloud_json_path, versioned_wordcloud_json_path)
+            static_wordcloud_png_entries[video_id] = _static_entry(root, alias_wordcloud_png_path, versioned_wordcloud_png_path)
         versioned_timestamp_path = f"/data/v/{version}/public/artifacts/timestamps/{video_id}.json"
         alias_timestamp_path = f"/data/artifacts/timestamps/{video_id}.json"
         timestamp_payload = {
@@ -113,7 +124,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             "schema_version": "public-video-detail/v1",
             "video": public_video,
             "chat_summary": {**aggregate, "wordcloud_url": wordcloud_url, "wordcloud_json_url": wordcloud_json_url},
-            "artifacts": {"wordcloud": wordcloud_artifact, "wordcloud_json": wordcloud_json_artifact, "timestamps": {"path": alias_timestamp_path, "versioned_path": versioned_timestamp_path, "content_type": "application/json"}},
+            "artifacts": {"wordcloud": wordcloud_artifact, "wordcloud_svg": wordcloud_svg_artifact, "wordcloud_json": wordcloud_json_artifact, "timestamps": {"path": alias_timestamp_path, "versioned_path": versioned_timestamp_path, "content_type": "application/json"}},
             "timestamps": timestamps,
         }
         _write_public_json(root, detail_path, detail_payload)
@@ -138,7 +149,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             "wordcloud_available": bool(wordcloud_url),
             "timestamp_available": bool(timestamps),
         }
-        alias_item = {**item, "detail_path": alias_detail_path, "timestamp_path": alias_timestamp_path, **({"wordcloud_json_path": wordcloud_json_url} if wordcloud_json_url else {})}
+        alias_item = {**item, "detail_path": alias_detail_path, "timestamp_path": alias_timestamp_path, **({"wordcloud_path": wordcloud_url, "wordcloud_json_path": wordcloud_json_url} if wordcloud_json_url else {})}
         list_items.append(item)
         alias_list_items.append(alias_item)
         year = (video.get("published_at") or "unknown")[:4]
@@ -207,7 +218,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             "STATIC-004": _static_entry(root, "/data/tags.json", f"/data/v/{version}/public/index/tags.json"),
             "STATIC-005": {"path_pattern": "/data/calendar/{year}.json", "items": static_calendar_entries},
             "STATIC-006": {"path": "/data/latest-manifest.json", "versioned_path": None, "checksum_sha256": None},
-            "STATIC-007": {"path_pattern": "/data/artifacts/wordcloud/{video_id}.json", "items": static_wordcloud_entries},
+            "STATIC-007": {"path_pattern": "/data/artifacts/wordcloud/{video_id}.{png|json}", "items": static_wordcloud_entries, "image_items": static_wordcloud_png_entries},
             "STATIC-008": {"path_pattern": "/data/artifacts/timestamps/{video_id}.json", "items": static_timestamp_entries},
         },
     }
@@ -315,6 +326,12 @@ def _write_public_json(root: pathlib.Path, public_path: str, payload: dict[str, 
     _write_json(_public_path_to_file(root, public_path), payload)
 
 
+def _write_public_bytes(root: pathlib.Path, public_path: str, payload: bytes) -> None:
+    path = _public_path_to_file(root, public_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
 def _public_path_to_file(root: pathlib.Path, public_path: str) -> pathlib.Path:
     normalized = public_path.lstrip("/")
     return root / normalized
@@ -361,6 +378,8 @@ def _refresh_manifest_checksums(root: pathlib.Path, manifest: dict[str, Any]) ->
     for value in manifest.get("static_paths", {}).values():
         if isinstance(value, dict) and "items" in value:
             for entry in value["items"].values():
+                refresh_entry(entry)
+            for entry in value.get("image_items", {}).values():
                 refresh_entry(entry)
         elif isinstance(value, dict):
             refresh_entry(value)

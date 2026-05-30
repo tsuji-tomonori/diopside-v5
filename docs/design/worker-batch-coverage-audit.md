@@ -2,7 +2,7 @@
 
 ## 位置づけ
 
-`docs/design/diopside_basic_design_v0.4.md` の 9.6 / 9.8 を正本とし、現 worker 実装は移行中の実装候補として扱う。現状は `apps/workers/static-exporter/src/static_exporter/pipeline.py` に metadata / chat / normalize / aggregate / maintenance 系の複数責務が統合され、`apps/workers/static-exporter/src/static_exporter/handler.py` が static export を担う。v0.4 が求める worker 分割、batch ごとの handler / job_type / queue / idempotency test は一部のみ満たす。
+`docs/design/diopside_basic_design_v0.4.md` の 9.6 / 9.8 を正本とし、現 worker 実装は移行中の実装候補として扱う。現状は `apps/workers/static-exporter/src/static_exporter/pipeline.py` に metadata / chat / normalize / aggregate / maintenance 系の複数責務が統合され、`apps/workers/static-exporter/src/static_exporter/handler.py` が static export を担う。v0.4 が求める worker 分割、batch ごとの handler / job_type / queue / idempotency test は一部のみ満たすため、worker 物理分割は差分ありとして後続管理する。
 
 ## BATCH-001〜020 対応表
 
@@ -19,7 +19,7 @@
 | BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | continuation 自己再投入の専用 contract は不足 |
 | BATCH-010 | チャット正規化 | `chat_normalize` | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | streaming normalize と summary 更新を検証 |
 | BATCH-011 | チャット集計 | `chat_normalize` 内 aggregate | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | aggregate worker は未分離 |
-| BATCH-012 | ワードクラウド生成 | `rebuild_artifacts` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 差分あり | SVG/JSON 中心。PNG worker は未実装 |
+| BATCH-012 | ワードクラウド生成 | `rebuild_artifacts` / `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | PNG/JSON と互換 SVG を出力。専用 wordcloud worker 分割は未実装 |
 | BATCH-013 | タイムスタンプ候補生成 | `rebuild_artifacts` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | chapters_suggestion.md は未実装 |
 | BATCH-014 | ファイル出力サービス | `file_output`, `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL`, `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | `file_output` job は public/private artifact body と `Artifact` item を記録。物理的な専用 worker 分割は未実装 |
 | BATCH-015 | 静的JSON export | `static_export` / `static_exporter.handler` | `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 | v0.4 alias と versioned manifest を検証 |

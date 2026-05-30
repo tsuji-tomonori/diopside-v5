@@ -66,6 +66,7 @@ const expected = {
     "/data/v/{export_version}/public/index/tags.json",
     "/data/v/{export_version}/public/search/videos-{year}.json",
     "/data/v/{export_version}/public/videos/{video_id}.json",
+    "/data/v/{export_version}/public/artifacts/wordcloud/{video_id}.png",
     "/data/v/{export_version}/public/artifacts/wordcloud/{video_id}.svg",
   ],
   publicDataSchemas: [

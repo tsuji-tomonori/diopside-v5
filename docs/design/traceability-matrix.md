@@ -117,7 +117,7 @@
 | STATIC-004 | Static data | `/data/tags.json` タグ JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 | STATIC-005 | Static data | `/data/calendar/{year}.json` 年/月カレンダー JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 | STATIC-006 | Static data | `/data/latest-manifest.json` export manifest。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
-| STATIC-007 | Static data | `/data/artifacts/wordcloud/{video_id}.{png\|json}` ワードクラウド画像/JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は JSON alias と既存 SVG を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |
+| STATIC-007 | Static data | `/data/artifacts/wordcloud/{video_id}.{png\|json}` ワードクラウド画像/JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` が PNG/JSON alias と versioned path を生成し、既存 SVG を互換 artifact として維持 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 対応 |
 | STATIC-008 | Static data | `/data/artifacts/timestamps/{video_id}.json` タイムスタンプ候補 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 
 ## BATCH-001〜BATCH-020
@@ -135,7 +135,7 @@
 | BATCH-009 | Batch | リプレイチャットページ取得。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 部分実装 |
 | BATCH-010 | Batch | チャット正規化。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/shared/src/diopside_core/chat_parser.py` | `tests/test_core_pipeline.py` | 実装済 |
 | BATCH-011 | Batch | チャット集計。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/shared/src/diopside_core/artifacts.py` | `tests/test_core_pipeline.py` | 実装済 |
-| BATCH-012 | Batch | ワードクラウド生成。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py` | 差分あり |
+| BATCH-012 | Batch | ワードクラウド生成。 | `apps/shared/src/diopside_core/artifacts.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py` | 部分実装 |
 | BATCH-013 | Batch | タイムスタンプ候補生成。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/shared/src/diopside_core/artifacts.py` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 |
 | BATCH-014 | Batch | ファイル出力サービス。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/workers/static-exporter/src/static_exporter/handler.py`, `docs/design/worker-batch-coverage-audit.md` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 |
 | BATCH-015 | Batch | 静的 JSON export。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |

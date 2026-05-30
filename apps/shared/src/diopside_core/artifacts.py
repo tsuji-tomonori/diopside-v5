@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import html
+import binascii
+import hashlib
 import re
+import struct
+import zlib
 from collections import Counter
 from typing import Any, Iterable
 
@@ -146,6 +150,58 @@ def generate_wordcloud_svg(top_terms: list[dict[str, Any]], width: int = 960, he
             "</svg>",
         ]
     )
+
+
+def generate_wordcloud_png(top_terms: list[dict[str, Any]], width: int = 960, height: int = 540) -> bytes:
+    terms = top_terms[:40]
+    pixels = bytearray([247, 251, 250] * width * height)
+    _fill_rect(pixels, width, height, 0, 0, width, 8, (26, 78, 91))
+    max_score = max([float(item.get("score", 1)) for item in terms] or [1])
+    cell_width = max(80, (width - 96) // 4)
+    for index, item in enumerate(terms):
+        term = str(item.get("term", ""))
+        digest = hashlib.sha256(term.encode("utf-8")).digest()
+        score = max(0.0, float(item.get("score", 1)))
+        row = index // 4
+        col = index % 4
+        x = 48 + col * cell_width
+        y = 44 + row * 48
+        bar_width = max(16, min(cell_width - 18, int((cell_width - 18) * score / max_score)))
+        bar_height = 16 + int(18 * score / max_score)
+        color = (36 + digest[0] % 120, 70 + digest[1] % 120, 90 + digest[2] % 120)
+        _fill_rect(pixels, width, height, x, y, bar_width, bar_height, color)
+        stripe_color = (max(color[0] - 28, 0), max(color[1] - 28, 0), max(color[2] - 28, 0))
+        for stripe in range(0, bar_width, 11 + digest[3] % 7):
+            _fill_rect(pixels, width, height, x + stripe, y, 3, bar_height, stripe_color)
+        marker = 6 + digest[4] % 10
+        _fill_rect(pixels, width, height, x, y + bar_height + 5, marker * 2, 6, (18, 52, 59))
+    return _encode_png_rgb(width, height, bytes(pixels))
+
+
+def _fill_rect(pixels: bytearray, width: int, height: int, x: int, y: int, rect_width: int, rect_height: int, color: tuple[int, int, int]) -> None:
+    left = max(0, x)
+    top = max(0, y)
+    right = min(width, x + rect_width)
+    bottom = min(height, y + rect_height)
+    if right <= left or bottom <= top:
+        return
+    row = bytes(color) * (right - left)
+    for yy in range(top, bottom):
+        start = (yy * width + left) * 3
+        pixels[start : start + len(row)] = row
+
+
+def _encode_png_rgb(width: int, height: int, rgb: bytes) -> bytes:
+    rows = [b"\x00" + rgb[y * width * 3 : (y + 1) * width * 3] for y in range(height)]
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png.extend(_png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
+    png.extend(_png_chunk(b"IDAT", zlib.compress(b"".join(rows), level=9)))
+    png.extend(_png_chunk(b"IEND", b""))
+    return bytes(png)
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", binascii.crc32(kind + data) & 0xFFFFFFFF)
 
 
 def _terms(text: str) -> list[str]:

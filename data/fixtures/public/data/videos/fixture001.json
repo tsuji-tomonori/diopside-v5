@@ -26,7 +26,7 @@
     "sk": "CHAT#AGGREGATE",
     "video_id": "fixture001",
     "message_count": 1000,
-    "wordcloud_url": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.svg",
+    "wordcloud_url": "/data/artifacts/wordcloud/fixture001.png",
     "top_terms": [
       {
         "term": "ありがとう",
@@ -41,11 +41,16 @@
     "paid_message_count": 0,
     "emoji_count": 0,
     "timeline_buckets": [],
-    "updated_at": "2026-05-30T02:10:51Z",
+    "updated_at": "2026-05-30T03:56:34Z",
     "wordcloud_json_url": "/data/artifacts/wordcloud/fixture001.json"
   },
   "artifacts": {
     "wordcloud": {
+      "path": "/data/artifacts/wordcloud/fixture001.png",
+      "versioned_path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.png",
+      "content_type": "image/png"
+    },
+    "wordcloud_svg": {
       "path": "/data/v/dev-fixture/public/artifacts/wordcloud/fixture001.svg",
       "content_type": "image/svg+xml"
     },

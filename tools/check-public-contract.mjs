@@ -6,6 +6,7 @@ const root = process.argv[2] ?? "data/fixtures/public";
 
 const json = async (path) => JSON.parse(await readFile(join(root, path.replace(/^\//, "")), "utf8"));
 const readText = async (path) => readFile(join(root, path.replace(/^\//, "")), "utf8");
+const readBinary = async (path) => readFile(join(root, path.replace(/^\//, "")));
 const exists = async (path) => access(join(root, path.replace(/^\//, ""))).then(() => true, () => false);
 const sha256 = async (path) => createHash("sha256").update(await readFile(join(root, path.replace(/^\//, "")))).digest("hex");
 
@@ -148,10 +149,18 @@ async function validateStaticAliases(manifest, versionedVideos, versionedTags, v
   for (const [videoId, entry] of Object.entries(wordcloudEntries)) {
     await validateStaticEntry(entry, `STATIC-007 ${videoId}`, { versionedRequired: true });
     const wordcloud = await json(entry.path);
-    requireKeys(wordcloud, ["schema_version", "video_id", "generated_at", "top_terms", "message_count"], `STATIC-007 ${videoId}`);
+    requireKeys(wordcloud, ["schema_version", "video_id", "generated_at", "top_terms", "message_count", "source_png_path"], `STATIC-007 ${videoId}`);
     assert(wordcloud.schema_version === "public-wordcloud/v1", `invalid STATIC-007 wordcloud schema for ${videoId}`);
     assert(wordcloud.video_id === videoId, `STATIC-007 video_id mismatch for ${videoId}`);
     assert(Array.isArray(wordcloud.top_terms), `STATIC-007 top_terms must be array for ${videoId}`);
+  }
+  requireKeys(staticPaths["STATIC-007"], ["image_items"], "STATIC-007");
+  const wordcloudImageEntries = staticPaths["STATIC-007"].image_items;
+  for (const [videoId, entry] of Object.entries(wordcloudImageEntries)) {
+    await validateStaticEntry(entry, `STATIC-007 image ${videoId}`, { versionedRequired: true });
+    assert(entry.path === `/data/artifacts/wordcloud/${videoId}.png`, `STATIC-007 image path mismatch for ${videoId}`);
+    assert(entry.versioned_path.endsWith(`/artifacts/wordcloud/${videoId}.png`), `STATIC-007 image versioned path mismatch for ${videoId}`);
+    await validatePng(entry.path, `STATIC-007 image ${videoId}`);
   }
 
   const timestampEntries = staticPaths["STATIC-008"].items;
@@ -198,15 +207,30 @@ async function validateVideoDetail(detail, item, publicBasePath) {
 
 async function validateWordcloud(detail, item, publicBasePath) {
   const artifact = detail.artifacts.wordcloud;
-  requireKeys(artifact, ["path", "content_type"], `detail ${item.video_id}.artifacts.wordcloud`);
+  requireKeys(artifact, ["path", "versioned_path", "content_type"], `detail ${item.video_id}.artifacts.wordcloud`);
   assert(artifact.path === detail.chat_summary.wordcloud_url, `wordcloud artifact path mismatch for ${item.video_id}`);
-  assert(artifact.content_type === "image/svg+xml", `wordcloud content_type mismatch for ${item.video_id}`);
-  assertVersionedPath(artifact.path, `${publicBasePath}/artifacts/wordcloud/`, `detail ${item.video_id} wordcloud path`);
-  assert(artifact.path.endsWith(`/${item.video_id}.svg`), `wordcloud path must end with video_id.svg for ${item.video_id}`);
-  assert(await exists(artifact.path), `wordcloud SVG missing for ${item.video_id}: ${artifact.path}`);
-  const svg = await readText(artifact.path);
+  assert(artifact.content_type === "image/png", `wordcloud content_type mismatch for ${item.video_id}`);
+  assert(artifact.path === `/data/artifacts/wordcloud/${item.video_id}.png`, `wordcloud path must be STATIC-007 PNG alias for ${item.video_id}`);
+  assertVersionedPath(artifact.versioned_path, `${publicBasePath}/artifacts/wordcloud/`, `detail ${item.video_id} wordcloud versioned path`);
+  assert(artifact.versioned_path.endsWith(`/${item.video_id}.png`), `wordcloud versioned path must end with video_id.png for ${item.video_id}`);
+  await validatePng(artifact.path, `detail ${item.video_id} wordcloud`);
+
+  const svgArtifact = detail.artifacts.wordcloud_svg;
+  requireKeys(svgArtifact, ["path", "content_type"], `detail ${item.video_id}.artifacts.wordcloud_svg`);
+  assert(svgArtifact.content_type === "image/svg+xml", `wordcloud_svg content_type mismatch for ${item.video_id}`);
+  assertVersionedPath(svgArtifact.path, `${publicBasePath}/artifacts/wordcloud/`, `detail ${item.video_id} wordcloud_svg path`);
+  assert(svgArtifact.path.endsWith(`/${item.video_id}.svg`), `wordcloud_svg path must end with video_id.svg for ${item.video_id}`);
+  assert(await exists(svgArtifact.path), `wordcloud SVG missing for ${item.video_id}: ${svgArtifact.path}`);
+  const svg = await readText(svgArtifact.path);
   assert(svg.trimStart().startsWith("<svg "), `wordcloud SVG must start with <svg for ${item.video_id}`);
   assert(svg.includes("diopside wordcloud"), `wordcloud SVG missing accessible title for ${item.video_id}`);
+}
+
+async function validatePng(path, label) {
+  assert(await exists(path), `${label} PNG missing: ${path}`);
+  const data = await readBinary(path);
+  assert(data.length > 64, `${label} PNG must not be empty`);
+  assert(data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47, `${label} PNG signature mismatch`);
 }
 
 function validateStaticPathManifest(manifest) {

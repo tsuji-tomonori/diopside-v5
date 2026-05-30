@@ -639,7 +639,7 @@ def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     repo.put_video({**video, "video_id": video_id, "timestamps": timestamps})
     repo.put_artifact(video_id, {"artifact_type": "timestamp", "public_url_path": f"/data/latest-video/{video_id}", "content_type": "application/json"})
     if aggregate.get("top_terms"):
-        repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.svg", "content_type": "image/svg+xml"})
+        repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.png", "content_type": "image/png"})
     return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
 
 
