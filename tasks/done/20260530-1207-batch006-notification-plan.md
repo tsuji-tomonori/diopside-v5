@@ -1,6 +1,6 @@
 # batch006 notification plan
 
-- 状態: do
+- 状態: done
 - 種別: 機能追加
 - 対象: `BATCH-006`, `NotificationPlan`, `P0-09`
 
@@ -26,3 +26,19 @@ v0.4 設計では BATCH-006 として、配信30分前・開始時刻・archive_
 - `git diff --check`
 - `npm test`
 - `npm run verify`
+
+## 完了結果
+
+- 実装 commit: `133197b`
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581460011
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581460013
+- 作業レポート: `reports/working/20260530-1211-batch006-notification-plan-report.md`
+
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py apps/workers/static-exporter/src/static_exporter/pipeline.py`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_repository_schema_contract.py tests/test_worker_batch_coverage_contract.py`: pass（48 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm test`: pass（89 tests）
+- `npm run verify`: pass（test / build / package / local e2e）
