@@ -246,6 +246,13 @@ def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
     assert usage["job_id"] == "job-live"
     assert client.video_calls == [["vid-live"]]
     assert repo.get_video("vid-live")["live_state"] == "archived"
+    events = [item for item in repo.items.values() if item.get("item_type") == "VideoStateEvent"]
+    assert len(events) == 1
+    assert events[0]["pk"] == "VID#vid-live"
+    assert events[0]["event_name"] == "video.archived"
+    assert events[0]["from_state"] == "upcoming"
+    assert events[0]["to_state"] == "archived"
+    assert events[0]["source_job_id"] == "job-live"
     assert result["updated"] == [{"video_id": "vid-live", "from": "upcoming", "to": "archived"}]
     assert result["enqueue_archive_finalize"] == ["vid-live"]
     assert enqueued[0]["queue_env"] == "DIOPSIDE_AGGREGATE_QUEUE_URL"
@@ -1207,6 +1214,13 @@ def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monk
     assert video["title"] == "vid-final"
     assert video["live_state"] == "archived"
     assert video["archive_finalized_at"]
+    events = [item for item in repo.items.values() if item.get("item_type") == "VideoStateEvent"]
+    assert len(events) == 1
+    assert events[0]["event_name"] == "video.archive_finalized"
+    assert events[0]["from_state"] == "live"
+    assert events[0]["to_state"] == "archived"
+    assert events[0]["source_job_id"] == "job-finalize"
+    assert events[0]["payload"]["refreshed"] is True
     assert repo.get_item("VID#vid-final", "NOTIFY#archive_available")["delivery_state"] == "planned"
     assert quota["method"] == "videos.list"
     assert quota["job_id"] == "job-finalize"

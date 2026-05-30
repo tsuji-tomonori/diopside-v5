@@ -252,6 +252,18 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         repo.put_video(video)
         if before != video["live_state"]:
             updated.append({"video_id": video["video_id"], "from": before, "to": video["live_state"]})
+            repo.append_video_state_event(
+                video["video_id"],
+                video["live_state"],
+                from_state=before,
+                source_job_id=job_id,
+                payload={
+                    "requested_by": params.get("requested_by", "live_status_scan"),
+                    "scheduled_start_time": video.get("scheduled_start_time"),
+                    "actual_start_time": video.get("actual_start_time"),
+                    "actual_end_time": video.get("actual_end_time"),
+                },
+            )
         if video["live_state"] == "live" and video.get("live_chat_id"):
             enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
         if video["live_state"] == "upcoming" and video.get("scheduled_start_time"):
@@ -577,6 +589,7 @@ def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video = repo.get_video(video_id)
     if not video:
         raise ValueError(f"video does not exist: {video_id}")
+    before_state = video.get("live_state")
     refreshed = False
     if not params.get("skip_youtube_refresh"):
         client = params.get("youtube_client") or YouTubeClient()
@@ -594,6 +607,15 @@ def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             refreshed = True
     finalized_at = now_iso()
     repo.put_video({**video, "video_id": video_id, "live_state": "archived", "archive_finalized_at": finalized_at})
+    repo.append_video_state_event(
+        video_id,
+        "archived",
+        from_state=before_state,
+        source_job_id=job_id,
+        occurred_at=finalized_at,
+        event_name="video.archive_finalized",
+        payload={"requested_by": params.get("requested_by", "archive_finalize"), "refreshed": refreshed},
+    )
     archive_plan = _put_notification_plan(repo, video_id, "archive_available", params.get("due_at") or finalized_at, source_job_id=job_id)
     replay_enqueued = _enqueue_job(
         "DIOPSIDE_CHAT_QUEUE_URL",

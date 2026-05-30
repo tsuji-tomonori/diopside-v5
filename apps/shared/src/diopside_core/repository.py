@@ -27,6 +27,7 @@ ITEM_TYPES = {
     "ChannelCursor",
     "Video",
     "VideoIndex",
+    "VideoStateEvent",
     "VideoTagIndex",
     "VideoTagLink",
     "VideoMonthIndex",
@@ -71,10 +72,6 @@ def video_month_key(published_at: str | None) -> str | None:
     if not (year.isdigit() and month.isdigit() and 1 <= int(month) <= 12):
         return None
     return f"{year}{month}"
-
-
-def inverted_timestamp(value: str) -> str:
-    return "".join(str(9 - int(char)) if char.isdigit() else char for char in value)
 
 
 def app_config_item(config: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +216,45 @@ def inverted_timestamp(value: str | None) -> str:
     if len(digits) < 14:
         digits = digits.ljust(14, "0")
     return "".join(str(9 - int(ch)) for ch in digits)
+
+
+def video_state_event_name(to_state: str) -> str:
+    return {
+        "discovered": "video.discovered",
+        "upcoming": "video.upcoming_detected",
+        "live": "video.live_started",
+        "archived": "video.archived",
+        "unavailable": "video.unavailable",
+    }.get(to_state, f"video.{to_state}")
+
+
+def video_state_event_item(
+    video_id: str,
+    to_state: str,
+    *,
+    from_state: str | None = None,
+    source_job_id: str | None = None,
+    occurred_at: str | None = None,
+    payload: dict[str, Any] | None = None,
+    event_name: str | None = None,
+) -> dict[str, Any]:
+    occurred = occurred_at or now_iso()
+    event = event_name or video_state_event_name(to_state)
+    event_id = stable_id("vse", f"{video_id}:{occurred}:{from_state}:{to_state}:{source_job_id or ''}:{event}")
+    return {
+        "item_type": "VideoStateEvent",
+        "pk": f"VID#{video_id}",
+        "sk": f"EVT#STATE#{occurred}#{event_id}",
+        "event_id": event_id,
+        "video_id": video_id,
+        "event_name": event,
+        "from_state": from_state,
+        "to_state": to_state,
+        "source_job_id": source_job_id,
+        "occurred_at": occurred,
+        "payload": payload or {},
+        "updated_at": now_iso(),
+    }
 
 
 def video_tag_link_item(video: dict[str, Any], tag_label: str) -> dict[str, Any]:
@@ -623,6 +659,7 @@ class Repository(Protocol):
     def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
     def get_channel(self, channel_id: str) -> dict[str, Any] | None: ...
+    def append_video_state_event(self, video_id: str, to_state: str, *, from_state: str | None = None, source_job_id: str | None = None, payload: dict[str, Any] | None = None, occurred_at: str | None = None, event_name: str | None = None) -> dict[str, Any]: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_app_config(self) -> dict[str, Any] | None: ...
@@ -804,6 +841,19 @@ class MemoryRepository:
             self.delete_item(random_bucket["pk"], random_bucket["sk"])
         self.rebuild_tag_summaries(sorted(previous_tags | current_tags))
         return item
+
+    def append_video_state_event(self, video_id: str, to_state: str, *, from_state: str | None = None, source_job_id: str | None = None, payload: dict[str, Any] | None = None, occurred_at: str | None = None, event_name: str | None = None) -> dict[str, Any]:
+        return self.put_item(
+            video_state_event_item(
+                video_id,
+                to_state,
+                from_state=from_state,
+                source_job_id=source_job_id,
+                payload=payload,
+                occurred_at=occurred_at,
+                event_name=event_name,
+            )
+        )
 
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]:
         items = [item for (pk, sk), item in self.items.items() if pk == "RANDOM#DEFAULT" and sk.startswith("VID#") and item.get("item_type") == "RandomBucket"]

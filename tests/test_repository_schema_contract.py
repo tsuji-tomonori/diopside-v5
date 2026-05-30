@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from diopside_core.repository import ITEM_TYPES, MemoryRepository, random_bucket_item, tag_id_for_label, video_item
+from diopside_core.repository import ITEM_TYPES, MemoryRepository, random_bucket_item, tag_id_for_label, video_item, video_state_event_item
 
 
 V04_ITEM_TYPES = {
@@ -63,6 +63,35 @@ def test_video_item_current_schema_contract():
     assert item["published_at_sort"] == "2026-05-30T00:00:00Z"
     assert item["tags"] == ["歌枠", "雑談"]
     assert "updated_at" in item
+
+
+def test_repository_writes_video_state_event_v04_key():
+    repo = MemoryRepository()
+
+    event = repo.append_video_state_event(
+        "vid001",
+        "archived",
+        from_state="live",
+        source_job_id="job-live",
+        occurred_at="2026-05-30T00:00:00Z",
+        payload={"actual_end_time": "2026-05-30T00:00:00Z"},
+    )
+
+    assert event["item_type"] == "VideoStateEvent"
+    assert event["pk"] == "VID#vid001"
+    assert event["sk"].startswith("EVT#STATE#2026-05-30T00:00:00Z#")
+    assert event["event_id"].startswith("vse_")
+    assert event["video_id"] == "vid001"
+    assert event["event_name"] == "video.archived"
+    assert event["from_state"] == "live"
+    assert event["to_state"] == "archived"
+    assert event["source_job_id"] == "job-live"
+    assert event["occurred_at"] == "2026-05-30T00:00:00Z"
+    assert event["payload"] == {"actual_end_time": "2026-05-30T00:00:00Z"}
+
+    direct = video_state_event_item("vid001", "live", from_state="upcoming", occurred_at="2026-05-30T01:00:00Z")
+    assert direct["event_name"] == "video.live_started"
+    assert direct["sk"].startswith("EVT#STATE#2026-05-30T01:00:00Z#")
 
 
 def test_repository_writes_current_index_and_summary_item_shapes():
