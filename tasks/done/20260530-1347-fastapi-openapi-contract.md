@@ -30,15 +30,15 @@
 
 ## 受け入れ条件
 
-- [ ] `apps/api/src/diopside_api/fastapi_app.py` に FastAPI app factory がある。
-- [ ] FastAPI 未インストール環境でも通常 tests/package が失敗しない。
-- [ ] `apps/api/src/diopside_api/openapi_contract.py` が OpenAPI 3.1 JSON を生成できる。
-- [ ] OpenAPI contract に API-001〜023 の method/path が全て含まれる。
-- [ ] OpenAPI contract に主要 `schema_version` が記録される。
-- [ ] 既存 `lambda_handler` route と OpenAPI contract の route set が test で照合される。
-- [ ] README、traceability、compliance audit が更新される。
-- [ ] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
-- [ ] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
+- [x] `apps/api/src/diopside_api/fastapi_app.py` に FastAPI app factory がある。
+- [x] FastAPI 未インストール環境でも通常 tests/package が失敗しない。
+- [x] `apps/api/src/diopside_api/openapi_contract.py` が OpenAPI 3.1 JSON を生成できる。
+- [x] OpenAPI contract に API-001〜023 の method/path が全て含まれる。
+- [x] OpenAPI contract に主要 `schema_version` が記録される。
+- [x] 既存 `lambda_handler` route と OpenAPI contract の route set が test で照合される。
+- [x] README、traceability、compliance audit が更新される。
+- [x] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
+- [x] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
 
 ## 実装計画
 
@@ -75,6 +75,21 @@
 - FastAPI / Mangum 依存同梱は未対応のため、runtime entrypoint は既存 Lambda handler のままである。
 - OpenAPI schema は path/method/schema_version の contract に留まり、Pydantic model の完全な request/response schema ではない。
 
+## 検証結果
+
+- `python3 -m py_compile apps/api/src/diopside_api/openapi_contract.py apps/api/src/diopside_api/fastapi_app.py`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m pytest tests/test_openapi_contract.py tests/test_api_handler.py`: pass（30 tests）
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m diopside_api.openapi_contract`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（114 tests + build/package/local e2e）
+- `unzip -l build/deploy/api.zip | rg "diopside_api/(fastapi_app|openapi_contract)\\.py"`: pass
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581713439
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581714003
+
 ## 状態
 
-in_progress
+done
