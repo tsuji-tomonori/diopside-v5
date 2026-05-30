@@ -20,6 +20,7 @@ BATCH-008 は replay initial data / HTML 解析、unknown renderer 保持、cont
 BATCH-009 は replay continuation token から public continuation response を取得する helper と `chat_collect` 分岐を追加し、action 正規化、次 continuation 再投入、`ChatPageManifest` 保存を `tests/test_core_pipeline.py` で検証した。実 YouTube replay continuation response での dev rehearsal は未実施。
 BATCH-011 は `chat_normalize` が normalized JSONL を生成する同一 pass で `ChatAggregateAccumulator` により summary JSON、timeline bucket、top terms、author / paid / emoji 統計を生成し、`ChatAggregate` item と `processed/chat-aggregate/.../summary.json` へ保存する。`tests/test_core_pipeline.py` で normalize / aggregate / streaming iterable を検証済みのため機能実装済みに更新した。aggregate 専用 worker の物理分割は `WORKER-SPLIT` の差分として別管理する。
 BATCH-013 は `build_timestamp_candidates` の結果から `chapters_suggestion.md` を deterministic に生成し、`rebuild_artifacts` は processed artifact、static export は alias / versioned public artifact と detail JSON 参照を出力するよう更新した。timestamp 専用 worker の物理分割は `WORKER-SPLIT` の差分として別管理する。
+BATCH-016 は `quota_rollup` が call record から v0.4 key shape の daily method summary を保存し、日次合計が `warning_threshold_units` 以上の場合は `warning_emitted` を保存して `quota_threshold_warning` JobEvent を記録するよう更新した。外部通知 delivery、管理 UI daily summary 表示、CloudWatch Alarm 連携は後続差分として残る。
 
 ## 2. 正本化
 
@@ -54,7 +55,7 @@ BATCH-013 は `build_timestamp_candidates` の結果から `chapters_suggestion.
 | P1 | Presigned URL | 対応 | `POST /api/admin/artifacts/presigned-url` を追加。private S3 artifact のみ署名対象 |
 | P1 | NotificationPlan | 部分対応 | 配信 30 分前・開始時刻・archive_available の `NotificationPlan` item を保存。外部通知 delivery は未対応 |
 | P1 | file output service | 部分対応 | `file_output` job を追加し、public/private artifact body 出力と `Artifact` item の `artifact_version` / `content_hash` 記録に対応。物理 worker 分割は未対応 |
-| P1 | quota rollup | 部分対応 | `quota_rollup` が call record から v0.4 key shape の daily method summary `QuotaUsage` item を保存。threshold warning event は未対応 |
+| P1 | quota rollup | 対応 | `quota_rollup` が call record から v0.4 key shape の daily method summary `QuotaUsage` item を保存し、閾値超過時に `quota_threshold_warning` JobEvent を記録。外部通知 delivery、管理 UI daily summary 表示、CloudWatch Alarm は後続 |
 | P1 | wordcloud artifact | 対応 | PNG/JSON alias と versioned path を出力。既存 SVG は互換 artifact として維持 |
 | P1 | VideoMonthIndex | 部分対応 | `put_video` が `VideoMonthIndex` item を保存し、archive calendar API/static export が月別 read model を優先利用。既存 data backfill は未対応 |
 | P1 | TagSummary | 部分対応 | `put_video` / tag 補正が `TagSummary` item を保存し、API/static export の tag list が read model を優先利用。管理 UI 編集と既存 data backfill は未対応 |

@@ -868,6 +868,7 @@ def test_repository_keeps_quota_daily_summary_out_of_call_record_list():
             "call_count": 1,
             "units_used": 1,
             "unit_per_call": 1,
+            "warning_emitted": False,
             "updated_at": "2026-05-30T12:27:00Z",
             "gsi3pk": "QUOTA#ROLLUP",
             "gsi3sk": "20260530#videos.list",

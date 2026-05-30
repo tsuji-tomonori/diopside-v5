@@ -1309,6 +1309,8 @@ def test_quota_rollup_summarizes_usage_and_stores_daily_method_items():
     assert result["total_units"] == 3
     assert result["by_method"] == {"videos.list": 2, "playlistItems.list": 1}
     assert result["summary_count"] == 2
+    assert result["warning_emitted"] is False
+    assert result["warning_threshold_units"] == 9000
     assert videos_summary["record_type"] == "daily_method_summary"
     assert videos_summary["quota_date"] == quota_date
     assert videos_summary["call_count"] == 2
@@ -1317,9 +1319,38 @@ def test_quota_rollup_summarizes_usage_and_stores_daily_method_items():
     assert videos_summary["video_count"] == 3
     assert videos_summary["channel_ids"] == ["ch"]
     assert videos_summary["job_ids"] == ["job-live", "job-video"]
+    assert videos_summary["warning_emitted"] is False
+    assert videos_summary["warning_threshold_units"] == 9000
+    assert videos_summary["warning_total_units"] == 3
     assert playlist_summary["call_count"] == 1
     assert playlist_summary["units_used"] == 1
     assert len(repo.list_quota_usage()) == 3
+
+
+def test_quota_rollup_emits_threshold_warning_event_once():
+    repo = MemoryRepository()
+    job, _ = repo.create_job("quota_rollup", {"quota_date": "20260530"}, "quota-warning")
+    repo.record_quota_usage("videos.list", 3, {}, channel_id="ch", video_count=1, job_id="job-video")
+    repo.record_quota_usage("liveChatMessages.list", 2, {}, channel_id="ch", video_count=0, job_id="job-chat")
+
+    result = quota_rollup(repo, {"job_id": job["job_id"], "quota_date": "20260530", "warning_threshold_units": 5})
+    rerun = quota_rollup(repo, {"job_id": job["job_id"], "quota_date": "20260530", "warning_threshold_units": 5})
+    videos_summary = repo.get_item("QUOTA#20260530", "METHOD#videos.list")
+    chat_summary = repo.get_item("QUOTA#20260530", "METHOD#liveChatMessages.list")
+    events = [event for event in repo.get_job(job["job_id"])["events"] if event["event_type"] == "quota_threshold_warning"]
+
+    assert result["warning_emitted"] is True
+    assert result["warning_event_id"]
+    assert rerun["warning_emitted"] is True
+    assert rerun["warning_event_id"] is None
+    assert videos_summary["warning_emitted"] is True
+    assert videos_summary["warning_threshold_units"] == 5
+    assert videos_summary["warning_total_units"] == 5
+    assert chat_summary["warning_emitted"] is True
+    assert len(events) == 1
+    assert events[0]["payload"]["total_units"] == 5
+    assert events[0]["payload"]["threshold_units"] == 5
+    assert events[0]["payload"]["by_method"] == {"liveChatMessages.list": 2, "videos.list": 3}
 
 
 def test_cleanup_returns_safe_dry_run_report_without_deleting():
@@ -1409,6 +1440,7 @@ def test_dispatch_job_supports_scheduled_maintenance_jobs():
 
     assert quota["status"] == "succeeded"
     assert quota["total_units"] == 1
+    assert quota["warning_emitted"] is False
     assert cleanup_result["status"] == "succeeded"
     assert cleanup_result["deleted_count"] == 0
 

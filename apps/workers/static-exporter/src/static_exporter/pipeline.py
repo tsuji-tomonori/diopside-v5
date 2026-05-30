@@ -591,6 +591,7 @@ def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     usage = repo.list_quota_usage(int(params.get("limit", 10000)))
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     total_units = 0
+    threshold_units = int(params.get("warning_threshold_units") or 9000)
     for item in usage:
         method = item.get("method") or "unknown"
         units = int(item.get("units") or 0)
@@ -617,6 +618,11 @@ def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             group["job_ids"].add(item["job_id"])
         total_units += units
     rolled_up_at = now_iso()
+    warning_emitted = bool(total_units >= threshold_units) if threshold_units > 0 else False
+    warning_already_emitted = False
+    for (quota_date, method) in grouped:
+        existing = repo.get_item(f"QUOTA#{quota_date}", f"METHOD#{method}")
+        warning_already_emitted = warning_already_emitted or bool(existing and existing.get("warning_emitted"))
     summaries = []
     by_method: dict[str, int] = {}
     for _, group in sorted(grouped.items()):
@@ -638,6 +644,9 @@ def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
                 "channel_ids": sorted(group["channel_ids"]),
                 "job_ids": sorted(group["job_ids"]),
                 "source_record_count": call_count,
+                "warning_emitted": warning_emitted,
+                "warning_threshold_units": threshold_units,
+                "warning_total_units": total_units,
                 "updated_at": rolled_up_at,
                 "gsi3pk": "QUOTA#ROLLUP",
                 "gsi3sk": f"{group['quota_date']}#{group['method']}",
@@ -645,12 +654,27 @@ def quota_rollup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         )
         summaries.append(item)
         by_method[item["method"]] = by_method.get(item["method"], 0) + item["units_used"]
+    warning_event = None
+    if warning_emitted and not warning_already_emitted and params.get("job_id"):
+        warning_event = repo.append_job_event(
+            params["job_id"],
+            "quota_threshold_warning",
+            {
+                "quota_dates": sorted({group["quota_date"] for group in grouped.values()}),
+                "total_units": total_units,
+                "threshold_units": threshold_units,
+                "by_method": by_method,
+            },
+        )
     return {
         "requested_by": params.get("requested_by", "scheduler"),
         "item_count": len(usage),
         "total_units": total_units,
         "by_method": by_method,
         "summary_count": len(summaries),
+        "warning_emitted": warning_emitted,
+        "warning_threshold_units": threshold_units,
+        "warning_event_id": warning_event.get("sk") if warning_event else None,
         "summaries": summaries,
     }
 

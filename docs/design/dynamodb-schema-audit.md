@@ -30,7 +30,7 @@
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` が `EVT#{seq}` と `event_name` / `state_after` / `occurred_at` / `payload` を保存。`event_type` / `details` は互換 alias として保持 | 部分実装 | 既存 `EVENT#...` item の backfill、同一 job への高並列 append 時の条件付き seq 採番は未対応 |
 | `Lock` | `LOCK#{lock_key}` / `META` | `acquire_lock` / `release_lock` が `owner_job_id`、`owner_request_id`、`acquired_at`、`expires_at` 付き `Lock` item を保存・解放 | 部分実装 | worker job への適用と実 AWS 条件式の統合確認は未対応 |
 | `Idempotency` | `IDEMP#{dedupe_key}` / `META` | `create_job` が `Idempotency` item を保存し、Memory は `idempotency_index` が空でも item lookup で dedupe 可能。DynamoDB は現行の Job conditional put も維持 | 部分実装 | 既存 job への backfill、`Idempotency` item 単独の conditional write への切替は未対応 |
-| `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 部分実装 | call record 互換は維持。quota threshold warning event は未実装 |
+| `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 実装済 | call record 互換は維持。外部通知 delivery / 管理 UI summary 表示 / Alarm は後続 |
 | `RandomBucket` | `RANDOM#DEFAULT` / `VID#{bucket_no}#{video_id}` | `put_video` が公開動画の `RandomBucket` を v0.4 key shape で保存し、random API が seed/count/tag/year 条件で参照 | 部分実装 | 専用 rebuild job と既存データ backfill は未対応 |
 
 ## 現 repository contract
@@ -54,7 +54,7 @@
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
 - `Lock` は `LOCK#{lock_key}` / `META` に保存し、未期限切れ lock は別 owner から取得できず、同 owner または期限切れ lock は取得・更新できる。TTL は UNIX epoch seconds の `expires_at` に保存する。
 - `Idempotency` は `IDEMP#{dedupe_key}` / `META` に保存し、MemoryRepository は item lookup でも job 重複起動を抑止する。DynamoRepository は現行の Job conditional put を主な重複抑止として維持する。
-- `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、call record 一覧には混在させない。
+- `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、`warning_emitted` と warning metadata を持つ。call record 一覧には混在させない。
 - チャット本文、raw response、大きな集計・成果物本体は DynamoDB に保存せず、S3 URI / public path / summary のみを保持する。
 
 ## 後続修正方針
@@ -63,4 +63,4 @@
 2. item type ごとの詳細 `schema_version` 命名と既存 DynamoDB data の common metadata backfill 方針を決める。
 3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済み。既存 data backfill と専用 rebuild job は後続で扱う。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せた。後続で既存 `EVENT#...` item の backfill と高並列 append 時の条件付き seq 採番を設計する。
-5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。
+5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event を外部通知 delivery と alarm へ接続する。

@@ -23,7 +23,7 @@
 | BATCH-013 | タイムスタンプ候補生成 | `rebuild_artifacts` / `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 実装済 | timestamp JSON と `chapters_suggestion.md` を出力。物理 timestamp worker 分割は `WORKER-SPLIT` 差分として後続管理 |
 | BATCH-014 | ファイル出力サービス | `file_output`, `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL`, `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | `file_output` job は public/private artifact body と `Artifact` item を記録。物理的な専用 worker 分割は未実装 |
 | BATCH-015 | 静的JSON export | `static_export` / `static_exporter.handler` | `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 | v0.4 alias と versioned manifest を検証 |
-| BATCH-016 | quota使用量ロールアップ | `quota_rollup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_repository_schema_contract.py` | 部分実装 | call record から v0.4 key shape の daily method summary item を保存。quota threshold warning event は未実装 |
+| BATCH-016 | quota使用量ロールアップ | `quota_rollup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_repository_schema_contract.py` | 実装済 | call record から daily method summary item を保存し、閾値超過時は `quota_threshold_warning` JobEvent を記録。外部通知 delivery / 管理 UI summary 表示 / Alarm は後続 |
 | BATCH-017 | アーカイブ確定処理 | `archive_finalize` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | live ended 検知から replay collect / static export を後続投入。遅延 Scheduler と NotificationPlan 連携は未実装 |
 | BATCH-018 | 失敗ジョブ再投入/Redrive | `retry_job` | target job queue | `tests/test_core_pipeline.py`, `tests/test_api_handler.py` | 部分実装 | DLQ redrive report は手順中心 |
 | BATCH-019 | 古いraw/中間成果物クリーンアップ | `cleanup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | 現状は dry-run report のみで削除しない |
@@ -37,7 +37,7 @@
 - 管理 API、EventBridge Scheduler template、GitHub Actions workflow_dispatch、worker の後続投入は v0.4 `JobMessage` field として `job_id`、`job_type`、`idempotency_key`、`requested_by`、`attempt`、`trace_id`、`payload` を送る。`dispatch_job` は既存外部 producer 互換のため旧 `input` field も受け付ける。
 - `file_output` は BATCH-014 の worker job として、入力 payload 由来の body / json_body / body_base64 を public/private artifact key へ出力し、`Artifact` item に `artifact_version`、`content_hash`、`byte_size`、`generated_at` を保存する。
 - `notification_plan` は `before_30min`、`at_start`、`archive_available` の `NotificationPlan` item を v0.4 key shape で冪等作成する。
-- `quota_rollup` は `QuotaUsage` call record を日別・method別に集計し、`pk=QUOTA#{yyyyMMdd}` / `sk=METHOD#{method}` の daily summary item を upsert する。
+- `quota_rollup` は `QuotaUsage` call record を日別・method別に集計し、`pk=QUOTA#{yyyyMMdd}` / `sk=METHOD#{method}` の daily summary item を upsert する。日次合計が `warning_threshold_units` 以上なら `warning_emitted=true` を保存し、同一 summary で未通知の場合は `quota_threshold_warning` JobEvent を記録する。
 - `cleanup` は削除を実行せず、常に dry-run report を返す。
 - `retry_job` は対象 job の job_type から queue env を引き、`retry_requested` event を残して再投入する。
 
@@ -47,5 +47,5 @@
 2. `archive_finalize` の遅延 Scheduler 連携を実装し、archive_available の通知時刻を運用要件に合わせる。
 3. BATCH-011 / 012 / 013 の物理 worker 分割を進め、BATCH-012 / 013 は wordcloud / timestamp 専用 job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
 4. replay continuation の dev rehearsal を行い、実 YouTube 応答で BATCH-008 / 009 の parser coverage を確認する。
-5. BATCH-016 は quota threshold warning event、上限接近時の通知、管理 UI での summary 表示へ接続する。
+5. BATCH-016 は quota threshold warning event を追加済み。上限接近時の外部通知 delivery、管理 UI での daily summary 表示、CloudWatch Alarm へ接続する。
 6. GitHub Actions workflow_dispatch の実 AWS dispatch rehearsal を行い、role/queue secret と job event 証跡を確認する。
