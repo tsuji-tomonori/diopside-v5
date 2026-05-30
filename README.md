@@ -99,6 +99,19 @@ S3 upload 時は `/data/v/{export_version}/public/...` の versioned data を先
 
 YouTube API key は CloudFormation の `YouTubeApiKey` NoEcho parameter から `WorkerFunction` の `DIOPSIDE_YOUTUBE_API_KEY` へ渡します。コードや template default には直書きしません。local 実行では `YOUTUBE_API_KEY` または `DIOPSIDE_YOUTUBE_API_KEY` を使えます。
 
+## IAM権限境界
+
+Lambda の実行 role は職務ごとに分離します。
+
+| Role | 対象 | 主な権限境界 |
+|---|---|---|
+| `ApiRole` | `ApiFunction` | 管理 job enqueue の `sqs:SendMessage`、public/admin read model 用の DynamoDB read/write、PublicDataBucket の `s3:GetObject` |
+| `StaticExporterRole` | `StaticExporterFunction` | static export 用の DynamoDB read/write、PublicDataBucket の `s3:GetObject` / `s3:PutObject`、`StaticExportQueue` の consume |
+| `WorkerRole` | `WorkerFunction` | worker queue の consume、各 job の再投入用 `sqs:SendMessage`、Raw/Processed bucket の `s3:GetObject` / `s3:PutObject`、DynamoDB read/write |
+| `SchedulerRole` | EventBridge Scheduler | `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみ |
+
+`StaticExporterRole` は Raw/Processed bucket へアクセスせず、`WorkerRole` は PublicDataBucket へ書き込みません。どの role も `s3:*`、`sqs:*`、`dynamodb:*` は使わず、必要な action を列挙します。将来の分離方針として、worker の job type が増えた場合は metadata/chat/normalize/aggregate を別 Lambda + 別 role に分け、queue consume と S3 prefix をさらに狭めます。
+
 ## 運用 job
 
 | API | job_type | 内容 |
