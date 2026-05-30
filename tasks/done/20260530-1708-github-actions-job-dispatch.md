@@ -1,6 +1,6 @@
 # GitHub Actions JobMessage dispatch
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -59,3 +59,24 @@ README の worker / job dispatch 記述、`docs/design/worker-batch-coverage-aud
 ## リスク
 
 - workflow は手動実行時に実 AWS SQS へ message を送るため、運用者は target queue secret と role scope を正しく設定する必要がある。
+
+## 完了結果
+
+- `.github/workflows/manual-job-dispatch.yml` を追加し、GitHub Actions `workflow_dispatch` から v0.4 `JobMessage` を SQS へ送れるようにした。
+- `job_type` から metadata/chat/normalize/aggregate/static-export queue URL secret へ routing する contract を追加した。
+- GitHub OIDC role assumption を使い、長期 AWS access key を要求しない workflow とした。
+- README、worker batch audit、traceability matrix を更新した。
+- 作業レポート: `reports/working/20260530-1708-github-actions-job-dispatch.md`
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582230552
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582230533
+
+## 検証結果
+
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_github_workflows_contract.py`: pass（2 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（134 tests + build/package/local e2e）
+
+## 未実施・制約
+
+- 実 AWS での `workflow_dispatch`: 未実施。理由: 手動実行時に実 SQS へ送信するため、運用環境の queue secrets / OIDC role 設定後に実施する。
