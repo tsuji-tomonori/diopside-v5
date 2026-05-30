@@ -170,6 +170,21 @@ def video_tag_link_item(video: dict[str, Any], tag_label: str) -> dict[str, Any]
     }
 
 
+def chat_aggregate_item(video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]:
+    computed_at = aggregate.get("computed_at") or now_iso()
+    return {
+        **aggregate,
+        "item_type": "ChatAggregate",
+        "pk": f"VID#{video_id}",
+        "sk": "CHAT#AGG#v1",
+        "video_id": video_id,
+        "aggregate_version": aggregate.get("aggregate_version", "v1"),
+        "message_count": int(aggregate.get("message_count", 0)),
+        "computed_at": computed_at,
+        "updated_at": now_iso(),
+    }
+
+
 def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
     video_id = video["video_id"]
     bucket_no = int(hashlib.sha256(video_id.encode("utf-8")).hexdigest()[:8], 16) % 10000
@@ -690,10 +705,10 @@ class MemoryRepository:
         return self.put_video({**video, "tags": tags, "manual_tag_correction": manual, "manual_tags_updated_at": stamp})
 
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]:
-        return self.put_item({"item_type": "ChatAggregate", "pk": f"VIDEO#{video_id}", "sk": "CHAT#AGGREGATE", "video_id": video_id, **aggregate, "updated_at": now_iso()})
+        return self.put_item(chat_aggregate_item(video_id, aggregate))
 
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None:
-        return self.get_item(f"VIDEO#{video_id}", "CHAT#AGGREGATE")
+        return self.get_item(f"VID#{video_id}", "CHAT#AGG#v1") or self.get_item(f"VIDEO#{video_id}", "CHAT#AGGREGATE")
 
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
         return self.put_item(artifact_item(video_id, artifact))

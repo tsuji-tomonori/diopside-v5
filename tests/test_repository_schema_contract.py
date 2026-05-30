@@ -96,8 +96,10 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert tag_index["gsi2pk"] == "TAG#歌枠"
     assert tag_link["item_type"] == "VideoTagLink"
     assert tag_link["gsi2pk"] == f"TAG#{tag_id_for_label('歌枠')}"
-    assert aggregate["pk"] == "VIDEO#vid001"
-    assert aggregate["sk"] == "CHAT#AGGREGATE"
+    assert aggregate["pk"] == "VID#vid001"
+    assert aggregate["sk"] == "CHAT#AGG#v1"
+    assert aggregate["aggregate_version"] == "v1"
+    assert aggregate["computed_at"]
     assert artifact["sk"] == "ARTIFACT#wordcloud#v1"
     assert artifact["artifact_version"] == "v1"
     assert artifact["content_hash"].startswith("sha256:")
@@ -476,6 +478,42 @@ def test_repository_writes_video_tag_link_v04_item_shape():
     assert link["gsi2pk"] == f"TAG#{tag_id}"
     assert link["gsi2sk"].endswith("#vid001")
     assert link["schema_version"] == "ddb-VideoTagLink-v1"
+
+
+def test_repository_writes_chat_aggregate_v04_key_and_reads_legacy_fallback():
+    repo = MemoryRepository()
+
+    aggregate = repo.put_chat_aggregate(
+        "vid001",
+        {
+            "message_count": 10,
+            "source_normalized_s3_uri": "s3://processed/chat-normalized/video_id=vid001/part-000.jsonl",
+            "heatmap_s3_uri": "s3://processed/chat-aggregate/video_id=vid001/heatmap.json",
+            "top_terms": [{"term": "ありがとう", "count": 3}],
+        },
+    )
+
+    assert aggregate["item_type"] == "ChatAggregate"
+    assert aggregate["pk"] == "VID#vid001"
+    assert aggregate["sk"] == "CHAT#AGG#v1"
+    assert aggregate["video_id"] == "vid001"
+    assert aggregate["aggregate_version"] == "v1"
+    assert aggregate["message_count"] == 10
+    assert aggregate["computed_at"]
+    assert repo.get_chat_aggregate("vid001") == aggregate
+
+    legacy = repo.put_item(
+        {
+            "item_type": "ChatAggregate",
+            "pk": "VIDEO#legacy",
+            "sk": "CHAT#AGGREGATE",
+            "video_id": "legacy",
+            "message_count": 1,
+            "top_terms": [],
+        }
+    )
+
+    assert repo.get_chat_aggregate("legacy") == legacy
 
 
 def test_repository_writes_tag_summary_and_hides_stale_tags():

@@ -20,7 +20,7 @@
 | `TagSummary` | `TAG#{tag_id}` / `META` | `put_video` / `update_video_tags` が `TagSummary` を保存し、`list_tags` / API / static export が read model を優先利用 | 部分実装 | category/sort order の管理 UI 編集と既存データ backfill は未対応 |
 | `ChatManifest` | `VID#{video_id}` / `CHAT#MANIFEST` | `ITEM_TYPES` で許可、現 key は `VIDEO#...` 系 | 差分あり | required state fields の contract が未固定 |
 | `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `ChatMessageChunkManifest`、`CHAT#RAW#...` | 差分あり | raw page manifest 名と key が異なる |
-| `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` は `VIDEO#...` / `CHAT#AGGREGATE` | 差分あり | heatmap / source uri など required fields が未整合 |
+| `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` が v0.4 key で保存し、旧 `VIDEO#...` / `CHAT#AGGREGATE` は `get_chat_aggregate` fallback | 部分実装 | 既存データ backfill、heatmap / source uri required 化、payload schema 完全固定は未対応 |
 | `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` が versioned key で保存し、`artifact_version` / `content_hash` / `generated_at` を付与。旧 `VIDEO#...` item は list/get fallback | 部分実装 | 既存データ backfill と artifact payload schema の完全固定は未対応 |
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
 | `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存 | 部分実装 | 管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
@@ -39,6 +39,7 @@
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。
+- `ChatAggregate` は `VID#{video_id}` / `CHAT#AGG#v1` に保存し、`aggregate_version`、`message_count`、`computed_at` を持つ。旧 `VIDEO#{video_id}` / `CHAT#AGGREGATE` は読み取り fallback で扱う。
 - `Artifact` は `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` に保存し、`artifact_version` と `content_hash` を必ず持つ。旧 `VIDEO#{video_id}` artifact は読み取り fallback で扱う。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
