@@ -1,6 +1,6 @@
 # CDK parity bootstrap
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -81,3 +81,9 @@
 
 - `aws-cdk-lib` / `constructs` 追加により npm install 時間と package-lock が増える。
 - 今回は `CfnInclude` による bootstrap であり、construct 分割や CDK deploy rehearsal は未完了。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582549277
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582549475
