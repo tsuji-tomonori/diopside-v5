@@ -97,6 +97,27 @@ def test_export_public_data_from_repository(tmp_path):
     subprocess.run(["node", "tools/check-public-contract.mjs", str(tmp_path)], check=True)
 
 
+def test_export_public_data_reflects_manual_tag_correction(tmp_path):
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "公開アーカイブ",
+            "published_at": "2026-05-28T00:00:00Z",
+            "tags": ["自動", "雑談"],
+        }
+    )
+    repo.update_video_tags("vid001", add_tags=["手動"], remove_tags=["雑談"])
+
+    export_public_data(repo, tmp_path, "unit")
+
+    tags = json.loads((tmp_path / "data/tags.json").read_text(encoding="utf-8"))
+    detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
+    labels = {item["label"] for item in tags["items"]}
+    assert labels == {"手動", "自動"}
+    assert detail["video"]["tags"] == ["自動", "手動"]
+
+
 def test_export_public_wordcloud_svg_is_deterministic(tmp_path):
     repo = MemoryRepository()
     repo.put_video({"video_id": "vid001", "title": "公開アーカイブ", "published_at": "2026-05-28T00:00:00Z", "tags": []})

@@ -147,6 +147,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `GET /api/admin/channels` | `admin-channel-list/v1` | channel list |
 | `GET /api/admin/quota-usage` | `admin-quota-usage/v1` | quota usage list |
 | `PUT /api/admin/channels/{channel_id}` | `admin-channel-config/v1` | channel config を更新 |
+| `PUT /api/admin/videos/{video_id}/tags` | `admin-video-tags/v1` | 動画の手動タグ追加・削除 |
 | `POST /api/admin/artifacts/presigned-url` | `admin-artifact-presigned-url/v1` | private S3 artifact の短時間署名 URL を発行 |
 | `POST /api/admin/jobs/metadata-sync` | job accepted response | `metadata_sync` を enqueue |
 | `POST /api/admin/jobs/live-status-scan` | job accepted response | `live_status_scan` を enqueue |
@@ -157,7 +158,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/retry` | job accepted response | `retry_job` を enqueue |
 | `POST /api/admin/jobs/{job_id}/cancel` | job accepted response | `cancel_job` を enqueue |
 
-管理 UI は `POST /api/admin/session` で `DIOPSIDE_ADMIN_TOKEN` 相当の passphrase を検証し、HttpOnly / Secure / SameSite=Lax の session cookie と `csrf_token` を受け取ります。管理 GET は cookie session だけで利用でき、管理 PUT/POST は cookie session と `X-CSRF-Token` を必須にします。CLI / automation は従来通り `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を fallback として利用できます。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。`POST /api/admin/artifacts/presigned-url` は `s3://` の private artifact だけを対象にし、`raw/`、`processed/`、`failed/` prefix 以外や public path には署名 URL を発行しません。
+管理 UI は `POST /api/admin/session` で `DIOPSIDE_ADMIN_TOKEN` 相当の passphrase を検証し、HttpOnly / Secure / SameSite=Lax の session cookie と `csrf_token` を受け取ります。管理 GET は cookie session だけで利用でき、管理 PUT/POST は cookie session と `X-CSRF-Token` を必須にします。CLI / automation は従来通り `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を fallback として利用できます。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。`PUT /api/admin/videos/{video_id}/tags` は `add_tags` / `remove_tags` / `replace_tags` で `Video.tags` と `VideoTagIndex` を更新し、次回 static export で `/data/tags.json` と動画詳細 JSON へ反映します。`POST /api/admin/artifacts/presigned-url` は `s3://` の private artifact だけを対象にし、`raw/`、`processed/`、`failed/` prefix 以外や public path には署名 URL を発行しません。
 
 ## public data schema
 

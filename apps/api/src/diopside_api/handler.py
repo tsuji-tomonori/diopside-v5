@@ -129,6 +129,12 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
             if len(parts) != 4:
                 raise ApiError(404, "NOT_FOUND", "指定された channel API は存在しません。")
             return _update_channel(parts[3], request.body or {}, trace_id)
+        if request.method == "PUT" and request.path.startswith("/api/admin/videos/") and request.path.endswith("/tags"):
+            _require_csrf(request, admin_auth)
+            parts = request.path.strip("/").split("/")
+            if len(parts) != 5:
+                raise ApiError(404, "NOT_FOUND", "指定された video tag API は存在しません。")
+            return _update_video_tags(parts[3], request.body or {}, trace_id)
         if request.method == "POST" and request.path == "/api/admin/artifacts/presigned-url":
             _require_csrf(request, admin_auth)
             return _issue_artifact_presigned_url(request.body or {}, trace_id)
@@ -368,6 +374,55 @@ def _update_channel(channel_id: str, body: dict[str, Any], trace_id: str) -> dic
         }
     )
     return {"schema_version": "admin-channel-config/v1", "item": _channel_response(item), "trace_id": trace_id}
+
+
+def _update_video_tags(video_id: str, body: dict[str, Any], trace_id: str) -> dict[str, Any]:
+    if not video_id:
+        raise ApiError(400, "INVALID_REQUEST", "video_id が必要です。")
+    if not isinstance(body, dict):
+        raise ApiError(400, "INVALID_JSON_BODY", "JSON object body が必要です。")
+    allowed = {"add_tags", "remove_tags", "replace_tags"}
+    unknown = set(body) - allowed
+    if unknown:
+        raise ApiError(400, "INVALID_REQUEST", "未対応の body field があります。", {"fields": sorted(unknown)})
+    if not any(key in body for key in allowed):
+        raise ApiError(400, "INVALID_REQUEST", "add_tags、remove_tags、replace_tags のいずれかが必要です。")
+    if "replace_tags" in body and ("add_tags" in body or "remove_tags" in body):
+        raise ApiError(400, "INVALID_REQUEST", "replace_tags は add_tags / remove_tags と同時に指定できません。")
+    add_tags = _validate_tag_list(body.get("add_tags"), "add_tags", required=False)
+    remove_tags = _validate_tag_list(body.get("remove_tags"), "remove_tags", required=False)
+    replace_tags = _validate_tag_list(body.get("replace_tags"), "replace_tags", required=False) if "replace_tags" in body else None
+    try:
+        item = _repository().update_video_tags(video_id, add_tags=add_tags, remove_tags=remove_tags, replace_tags=replace_tags)
+    except KeyError as exc:
+        raise ApiError(404, "VIDEO_NOT_FOUND", "指定された動画は存在しません。") from exc
+    return {
+        "schema_version": "admin-video-tags/v1",
+        "video_id": video_id,
+        "tags": item.get("tags", []),
+        "manual_tag_correction": item.get("manual_tag_correction"),
+        "trace_id": trace_id,
+    }
+
+
+def _validate_tag_list(value: Any, name: str, *, required: bool) -> list[str]:
+    if value is None:
+        if required:
+            raise ApiError(400, "INVALID_REQUEST", f"{name} が必要です。")
+        return []
+    if not isinstance(value, list):
+        raise ApiError(400, "INVALID_REQUEST", f"{name} は string array で指定してください。")
+    result = []
+    for tag in value:
+        if not isinstance(tag, str):
+            raise ApiError(400, "INVALID_REQUEST", f"{name} は string array で指定してください。")
+        normalized = tag.strip()
+        if not normalized:
+            continue
+        if len(normalized) > 64:
+            raise ApiError(400, "INVALID_REQUEST", "tag は 64 文字以内で指定してください。")
+        result.append(normalized)
+    return list(dict.fromkeys(result))
 
 
 def _issue_artifact_presigned_url(body: dict[str, Any], trace_id: str) -> dict[str, Any]:

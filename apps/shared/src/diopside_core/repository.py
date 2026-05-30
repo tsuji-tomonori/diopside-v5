@@ -45,6 +45,10 @@ def stable_id(prefix: str, value: str) -> str:
     return f"{prefix}_{hashlib.sha256(value.encode('utf-8')).hexdigest()[:24]}"
 
 
+def _unique_tags(tags: list[str]) -> list[str]:
+    return list(dict.fromkeys(tag.strip() for tag in tags if isinstance(tag, str) and tag.strip()))
+
+
 def video_item(video: dict[str, Any]) -> dict[str, Any]:
     video_id = video["video_id"]
     published_at = video.get("published_at") or video.get("scheduled_start_time") or "1970-01-01T00:00:00Z"
@@ -73,10 +77,12 @@ def derive_job_state(events: list[dict[str, Any]]) -> str:
 class Repository(Protocol):
     def put_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
     def get_item(self, pk: str, sk: str) -> dict[str, Any] | None: ...
+    def delete_item(self, pk: str, sk: str) -> None: ...
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]: ...
     def get_video(self, video_id: str) -> dict[str, Any] | None: ...
     def list_tags(self) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
+    def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]: ...
@@ -117,6 +123,9 @@ class MemoryRepository:
         item = self.items.get((pk, sk))
         return deepcopy(item) if item else None
 
+    def delete_item(self, pk: str, sk: str) -> None:
+        self.items.pop((pk, sk), None)
+
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]:
         videos = [item for item in self.items.values() if item.get("item_type") == "Video" and item.get("public", True)]
         videos.sort(key=lambda item: item.get("published_at", ""), reverse=True)
@@ -133,7 +142,12 @@ class MemoryRepository:
         return [{"tag_id": stable_id("tag", tag), "label": tag, "video_count": count, "category": "auto"} for tag, count in sorted(counts.items())]
 
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]:
+        existing = self.get_video(video["video_id"])
+        previous_tags = set(existing.get("tags", [])) if existing else set()
         item = self.put_item(video_item(video))
+        current_tags = set(item.get("tags", []))
+        for tag in previous_tags - current_tags:
+            self.delete_item(f"TAG#{tag}", f"VIDEO#{item['video_id']}")
         for tag in item.get("tags", []):
             self.put_item(
                 {
@@ -148,6 +162,26 @@ class MemoryRepository:
                 }
             )
         return item
+
+    def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]:
+        video = self.get_video(video_id)
+        if not video:
+            raise KeyError(video_id)
+        if replace_tags is not None:
+            tags = _unique_tags(replace_tags)
+        else:
+            remove = set(remove_tags or [])
+            tags = [tag for tag in video.get("tags", []) if tag not in remove]
+            tags.extend(add_tags or [])
+            tags = _unique_tags(tags)
+        stamp = now_iso()
+        manual = {
+            "add_tags": _unique_tags(add_tags or []),
+            "remove_tags": _unique_tags(remove_tags or []),
+            **({"replace_tags": _unique_tags(replace_tags)} if replace_tags is not None else {}),
+            "updated_at": stamp,
+        }
+        return self.put_video({**video, "tags": tags, "manual_tag_correction": manual, "manual_tags_updated_at": stamp})
 
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]:
         return self.put_item({"item_type": "ChatAggregate", "pk": f"VIDEO#{video_id}", "sk": "CHAT#AGGREGATE", "video_id": video_id, **aggregate, "updated_at": now_iso()})
@@ -308,6 +342,9 @@ class DynamoRepository(MemoryRepository):
     def get_item(self, pk: str, sk: str) -> dict[str, Any] | None:
         item = self.table.get_item(Key={"pk": pk, "sk": sk}).get("Item")
         return deepcopy(item) if item else None
+
+    def delete_item(self, pk: str, sk: str) -> None:
+        self.table.delete_item(Key={"pk": pk, "sk": sk})
 
     def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]:
         job_id = stable_id("job", idempotency_key)

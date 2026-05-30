@@ -41,7 +41,7 @@
 | FR-A-002 | Admin | 手動でメタデータ同期できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 実装済 |
 | FR-A-003 | Admin | 手動でチャット収集できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 部分実装 |
 | FR-A-004 | Admin | 失敗ジョブを再実行できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 部分実装 |
-| FR-A-005 | Admin | タグを補正できる。 | `apps/shared/src/diopside_core/repository.py` | なし | 未対応 |
+| FR-A-005 | Admin | タグを補正できる。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_api_handler.py`, `tests/test_repository_schema_contract.py`, `tests/test_static_exporter.py` | 部分実装 |
 | FR-A-006 | Admin | 生成物を再出力できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py` | 部分実装 |
 | FR-A-007 | Admin | quota 使用量を確認できる。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 実装済 |
 | FR-YT-001 | YouTube | uploads playlist から新規動画を取得する。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |

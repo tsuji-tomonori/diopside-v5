@@ -104,6 +104,29 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
 
 
+def test_repository_updates_video_tags_and_removes_stale_tag_index():
+    repo = MemoryRepository()
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive",
+            "published_at": "2026-05-30T00:00:00Z",
+            "tags": ["歌枠", "雑談"],
+            "public": True,
+        }
+    )
+
+    updated = repo.update_video_tags("vid001", add_tags=["手動"], remove_tags=["雑談"])
+
+    assert updated["tags"] == ["歌枠", "手動"]
+    assert updated["manual_tag_correction"]["add_tags"] == ["手動"]
+    assert updated["manual_tag_correction"]["remove_tags"] == ["雑談"]
+    assert repo.get_item("TAG#歌枠", "VIDEO#vid001")
+    assert repo.get_item("TAG#手動", "VIDEO#vid001")
+    assert repo.get_item("TAG#雑談", "VIDEO#vid001") is None
+    assert [item["label"] for item in repo.list_tags()] == ["手動", "歌枠"]
+
+
 def test_repository_accepts_notification_plan_v04_item_shape():
     repo = MemoryRepository()
 

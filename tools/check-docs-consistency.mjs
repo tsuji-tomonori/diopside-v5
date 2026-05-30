@@ -31,6 +31,7 @@ const expected = {
     ["GET", "/api/admin/channels"],
     ["GET", "/api/admin/quota-usage"],
     ["PUT", "/api/admin/channels/{channel_id}"],
+    ["PUT", "/api/admin/videos/{video_id}/tags"],
     ["POST", "/api/admin/artifacts/presigned-url"],
     ["POST", "/api/admin/jobs/metadata-sync"],
     ["POST", "/api/admin/jobs/live-status-scan"],
@@ -56,6 +57,7 @@ const expected = {
     "admin-channel-list/v1",
     "admin-quota-usage/v1",
     "admin-channel-config/v1",
+    "admin-video-tags/v1",
     "admin-artifact-presigned-url/v1",
   ],
   publicDataPaths: [

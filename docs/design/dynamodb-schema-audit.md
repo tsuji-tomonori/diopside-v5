@@ -37,7 +37,7 @@
 
 - `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`Job`、`JobEvent`、`QuotaUsage`、`Lock` を許可する。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
-- tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。
+- tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は append-only item として保存され、現在状態は保存値ではなく末尾 event から導出する。
 - `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、call record 一覧には混在させない。

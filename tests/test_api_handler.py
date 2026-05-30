@@ -448,6 +448,71 @@ def test_admin_channel_update_validates_body(monkeypatch):
     os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
 
 
+def test_admin_video_tag_update_requires_csrf_and_persists(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "vid001", "title": "archive", "published_at": "2026-05-30T00:00:00Z", "tags": ["自動", "雑談"], "public": True})
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, csrf_error = call(
+        "PUT",
+        "/api/admin/videos/vid001/tags",
+        body={"add_tags": ["手動"], "remove_tags": ["雑談"]},
+        headers={"authorization": "Bearer secret"},
+    )
+    assert status == 403
+    assert csrf_error["code"] == "CSRF_INVALID"
+
+    status, body = call(
+        "PUT",
+        "/api/admin/videos/vid001/tags",
+        body={"add_tags": ["手動", "手動"], "remove_tags": ["雑談"]},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 200
+    assert body["schema_version"] == "admin-video-tags/v1"
+    assert body["video_id"] == "vid001"
+    assert body["tags"] == ["自動", "手動"]
+    assert repo.get_video("vid001")["tags"] == ["自動", "手動"]
+    assert repo.get_item("TAG#雑談", "VIDEO#vid001") is None
+    assert repo.get_item("TAG#手動", "VIDEO#vid001")
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
+def test_admin_video_tag_update_validates_body_and_not_found(monkeypatch):
+    repo = MemoryRepository()
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call(
+        "PUT",
+        "/api/admin/videos/missing/tags",
+        body={"replace_tags": ["手動"]},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 404
+    assert body["code"] == "VIDEO_NOT_FOUND"
+
+    status, invalid = call(
+        "PUT",
+        "/api/admin/videos/missing/tags",
+        body={"replace_tags": ["手動"], "add_tags": ["追加"]},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 400
+    assert invalid["code"] == "INVALID_REQUEST"
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
 def test_admin_presigned_url_restricts_private_artifacts(monkeypatch):
     repo = MemoryRepository()
     repo.put_artifact("vid001", {"artifact_type": "raw-chat", "s3_uri": "s3://raw-bucket/raw/youtube/chat/vid001.jsonl", "content_type": "application/jsonl"})
