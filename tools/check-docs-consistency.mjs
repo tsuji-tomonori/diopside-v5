@@ -5,6 +5,7 @@ const root = process.cwd();
 
 const files = {
   readme: "README.md",
+  ddbAudit: "docs/design/dynamodb-schema-audit.md",
   api: "apps/api/src/diopside_api/handler.py",
   worker: "apps/workers/static-exporter/src/static_exporter/pipeline.py",
   staticExporter: "apps/workers/static-exporter/src/static_exporter/handler.py",
@@ -129,6 +130,7 @@ const read = async (path) => readFile(join(root, path), "utf8");
 const exists = async (path) => access(path).then(() => true, () => false);
 
 const readme = await read(files.readme);
+const ddbAudit = await read(files.ddbAudit);
 const api = await read(files.api);
 const worker = await read(files.worker);
 const staticExporter = await read(files.staticExporter);
@@ -169,6 +171,42 @@ assert(chat.includes('CHAT_MESSAGE_SCHEMA_VERSION = "chat-message/v1"'), "chat i
 for (const key of expected.chatRequiredKeys) {
   assert(readme.includes(`\`${key}\``), `README missing normalized chat key: ${key}`);
   assert(chat.includes(`"${key}"`), `chat implementation missing normalized chat key: ${key}`);
+}
+
+for (const itemType of [
+  "AppConfig",
+  "Channel",
+  "ChannelRef",
+  "ChannelSyncCursor",
+  "Video",
+  "VideoMonthIndex",
+  "VideoStateEvent",
+  "VideoStatSnapshot",
+  "VideoTagLink",
+  "TagSummary",
+  "ChatManifest",
+  "ChatPageManifest",
+  "ChatAggregate",
+  "Artifact",
+  "NotificationPlan",
+  "StaticExport",
+  "Job",
+  "JobEvent",
+  "Lock",
+  "Idempotency",
+  "QuotaUsage",
+  "RandomBucket",
+]) {
+  assert(ddbAudit.includes(`\`${itemType}\``), `DDB audit missing v0.4 item type: ${itemType}`);
+}
+
+for (const itemType of [
+  "ChannelCursor",
+  "VideoIndex",
+  "VideoTagIndex",
+  "ChatMessageChunkManifest",
+]) {
+  assert(ddbAudit.includes(`\`${itemType}\``), `DDB audit missing current item type: ${itemType}`);
 }
 
 assert(staticExporter.includes("latest-manifest.json"), "static exporter missing latest-manifest.json");

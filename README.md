@@ -29,6 +29,8 @@ CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/dat
 
 物理 key は `pk` / `sk`、GSI は `by_public_date`、`by_tag`、`by_work_queue` です。実装は `apps/shared/src/diopside_core/repository.py` に集約しています。公開動画、job 一覧、quota usage 一覧は DynamoDB `scan` を使わず、公開動画は `by_public_date`、job/quota 一覧は `by_work_queue` の Query + pagination で取得します。
 
+v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version`、`ChannelRef`、`VideoMonthIndex`、`NotificationPlan`、`RandomBucket` などに未対応または差分があります。
+
 | item_type | pk | sk | 主な用途 |
 |---|---|---|---|
 | `AppConfig` | `CONFIG#app` | `...` | channel/default 設定 |

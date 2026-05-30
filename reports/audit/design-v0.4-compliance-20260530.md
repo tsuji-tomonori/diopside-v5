@@ -11,7 +11,7 @@
 
 `.workspace/plan-20260530.txt` の最初の PR 方針に沿って、v0.4 設計書を repository 内に正本化し、現在の `main` 実装との初版 traceability を作成した。
 
-現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする AWS CDK、FastAPI on Lambda、Next.js static export、BATCH-006/BATCH-017 などには差分または未対応が残る。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進めたが、wordcloud PNG は未対応で JSON/SVG を先行サポートとしている。API-007/API-022/API-023 は既存 Lambda handler に追加し、FastAPI 移行は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。
+現 main は CloudFront + S3 + Lambda + DynamoDB + SQS + EventBridge という低コスト serverless の大枠に近い。一方で、v0.4 が正本とする AWS CDK、FastAPI on Lambda、Next.js static export、BATCH-006/BATCH-017 などには差分または未対応が残る。STATIC-001〜008 は同 PR 内の追加 commit で alias path と manifest checksum の contract 対応を進めたが、wordcloud PNG は未対応で JSON/SVG を先行サポートとしている。API-007/API-022/API-023 は既存 Lambda handler に追加し、FastAPI 移行は後続課題として残す。ADMIN-SESSION は HttpOnly cookie + CSRF を追加し、CLI / automation 向け Bearer fallback は維持した。DDB schema は v0.4 item type との差分を audit 化し、現 repository contract をテストで固定した。
 
 ## 2. 正本化
 
@@ -32,7 +32,7 @@
 | P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
 | P0-06 | API-001〜023 | API-007/API-022/API-023 を追加。FastAPI/OpenAPI と一部 route の詳細 contract は後続 | 部分対応 | `api/fastapi-v04-contract` で framework と OpenAPI 証跡を追加 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum を static exporter と contract check に追加。wordcloud PNG は未対応 | 部分対応 | PNG が必要な場合は後続 `static/wordcloud-png-artifact` で対応 |
-| P0-08 | DDB schema | README と repository に single-table 実装があるが v0.4 全 item との一致は未証明 | 要追加監査 | schema item ごとの contract test を追加 |
+| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化 | 監査済み・差分あり | key prefix / schema_version / 未対応 item の実装は後続 |
 | P0-09 | Worker coverage | job_type は統合実装。BATCH-006/BATCH-017 などが不足 | 差分あり | `worker/batch-v04-coverage` で handler/job/queue/test 対応を埋める |
 | P0-10 | Dev deploy rehearsal | 実 dev 環境で YouTube 実データ 1 件の end-to-end 確認はこの PR では未実施 | 未検証 | credentials と dev stack がある環境で別途実施 |
 
