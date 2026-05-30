@@ -1,6 +1,6 @@
 # Archive calendar UI
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -54,6 +54,15 @@ README の public UI/API 説明、`docs/design/traceability-matrix.md`、audit r
 - `npm run e2e:local`
 - `git diff --check`
 - `npm run verify`
+
+## 完了結果
+
+- `node --check apps/web/public/app.js`: pass
+- `node tools/check-web-dom-safety.mjs`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `npm run e2e:local`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（135 tests、build、package:deploy、local e2e）
 
 ## PR レビュー観点
 
