@@ -132,6 +132,53 @@ def test_repository_writes_idempotency_item_and_uses_it_for_dedupe_lookup():
     assert item["entity_id"] == "metadata:ch001"
 
 
+def test_repository_acquires_and_releases_lock_with_ttl_contract():
+    repo = MemoryRepository()
+
+    first = repo.acquire_lock("chat_replay#vid001", "job001", ttl_seconds=60, owner_request_id="req001")
+    blocked = repo.acquire_lock("chat_replay#vid001", "job002", ttl_seconds=60, owner_request_id="req002")
+    refreshed = repo.acquire_lock("chat_replay#vid001", "job001", ttl_seconds=120, owner_request_id="req003")
+    wrong_release = repo.release_lock("chat_replay#vid001", "job002")
+    right_release = repo.release_lock("chat_replay#vid001", "job001")
+
+    assert first["item_type"] == "Lock"
+    assert first["pk"] == "LOCK#chat_replay#vid001"
+    assert first["sk"] == "META"
+    assert first["lock_key"] == "chat_replay#vid001"
+    assert first["owner_job_id"] == "job001"
+    assert first["owner_request_id"] == "req001"
+    assert first["acquired_at"]
+    assert isinstance(first["expires_at"], int)
+    assert first["schema_version"] == "ddb-Lock-v1"
+    assert first["entity_id"] == "chat_replay#vid001"
+    assert blocked is None
+    assert refreshed["owner_request_id"] == "req003"
+    assert refreshed["expires_at"] >= first["expires_at"]
+    assert wrong_release is False
+    assert right_release is True
+    assert repo.get_item("LOCK#chat_replay#vid001", "META") is None
+
+
+def test_repository_replaces_expired_lock_for_new_owner():
+    repo = MemoryRepository()
+    repo.put_item(
+        {
+            "item_type": "Lock",
+            "pk": "LOCK#chat_replay#vid001",
+            "sk": "META",
+            "lock_key": "chat_replay#vid001",
+            "owner_job_id": "job001",
+            "acquired_at": "2026-05-30T00:00:00Z",
+            "expires_at": 1,
+        }
+    )
+
+    replaced = repo.acquire_lock("chat_replay#vid001", "job002", ttl_seconds=60)
+
+    assert replaced["owner_job_id"] == "job002"
+    assert repo.get_item("LOCK#chat_replay#vid001", "META")["owner_job_id"] == "job002"
+
+
 def test_repository_writes_job_events_with_v04_shape_and_legacy_aliases():
     repo = MemoryRepository()
     job, _ = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")

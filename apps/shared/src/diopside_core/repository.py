@@ -234,6 +234,23 @@ def idempotency_item(idempotency_key: str, job_id: str, job_type: str, payload: 
     }
 
 
+def lock_item(lock_key: str, owner_job_id: str, ttl_seconds: int, owner_request_id: str | None = None) -> dict[str, Any]:
+    now = int(time.time())
+    stamp = now_iso()
+    item = {
+        "item_type": "Lock",
+        "pk": f"LOCK#{lock_key}",
+        "sk": "META",
+        "lock_key": lock_key,
+        "owner_job_id": owner_job_id,
+        "acquired_at": stamp,
+        "expires_at": now + ttl_seconds,
+    }
+    if owner_request_id:
+        item["owner_request_id"] = owner_request_id
+    return item
+
+
 def item_schema_version(item_type: str) -> str:
     return f"ddb-{item_type}-v1"
 
@@ -419,6 +436,8 @@ class Repository(Protocol):
     def get_job(self, job_id: str) -> dict[str, Any] | None: ...
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]: ...
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None: ...
+    def release_lock(self, lock_key: str, owner_job_id: str) -> bool: ...
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]: ...
     def list_channels(self) -> list[dict[str, Any]]: ...
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]: ...
@@ -703,6 +722,20 @@ class MemoryRepository:
         events = job_events_for_job(list(self.items.values()), job_id)
         return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
 
+    def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None:
+        existing = self.get_item(f"LOCK#{lock_key}", "META")
+        now = int(time.time())
+        if existing and int(existing.get("expires_at", 0)) > now and existing.get("owner_job_id") != owner_job_id:
+            return None
+        return self.put_item(lock_item(lock_key, owner_job_id, ttl_seconds, owner_request_id))
+
+    def release_lock(self, lock_key: str, owner_job_id: str) -> bool:
+        existing = self.get_item(f"LOCK#{lock_key}", "META")
+        if not existing or existing.get("owner_job_id") != owner_job_id:
+            return False
+        self.delete_item(f"LOCK#{lock_key}", "META")
+        return True
+
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
         chunks = [item for (pk, _), item in self.items.items() if pk == f"VIDEO#{video_id}" and item.get("item_type") == "ChatMessageChunkManifest"]
         chunks.sort(key=lambda item: item.get("sk", ""))
@@ -836,6 +869,34 @@ class DynamoRepository(MemoryRepository):
         response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
         events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
         return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+
+    def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None:
+        item = normalize_item_metadata(lock_item(lock_key, owner_job_id, ttl_seconds, owner_request_id))
+        now = int(time.time())
+        try:
+            self.table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(pk) OR expires_at < :now OR owner_job_id = :owner_job_id",
+                ExpressionAttributeValues={":now": now, ":owner_job_id": owner_job_id},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return None
+            raise
+        return deepcopy(item)
+
+    def release_lock(self, lock_key: str, owner_job_id: str) -> bool:
+        try:
+            self.table.delete_item(
+                Key={"pk": f"LOCK#{lock_key}", "sk": "META"},
+                ConditionExpression="owner_job_id = :owner_job_id",
+                ExpressionAttributeValues={":owner_job_id": owner_job_id},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
 
     def list_videos(self, limit: int = 100) -> list[dict[str, Any]]:
         if Key is None:
