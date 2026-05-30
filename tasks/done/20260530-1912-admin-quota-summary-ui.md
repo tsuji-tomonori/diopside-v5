@@ -1,6 +1,6 @@
 # 管理 UI quota summary 表示
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -76,6 +76,17 @@
 - UI が API の optional field 欠落時も壊れないこと。
 - call record 表示が残っていること。
 - 未実施の外部通知 / Alarm / backfill を実施済み扱いしていないこと。
+
+## Done 条件
+
+- [x] 上記受け入れ条件を満たす。
+- [x] task md を `tasks/done/` へ移動し、状態を done に更新する。
+- [x] 変更を commit / push し、PR に受け入れ条件確認とセルフレビューを日本語コメントする。
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582516662
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582517298
 
 ## リスク
 
