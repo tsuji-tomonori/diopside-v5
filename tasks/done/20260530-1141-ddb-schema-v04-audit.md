@@ -1,6 +1,6 @@
 # ddb schema v0.4 audit
 
-- 状態: do
+- 状態: done
 - 種別: 設計準拠監査 / contract test
 - 対象: `P0-08`, `DDB-SCHEMA`
 
@@ -23,3 +23,18 @@ v0.4 設計は DynamoDB single-table の item type、key、GSI、S3 退避方針
 - `git diff --check`
 - `npm test`
 - `npm run verify`
+
+## 完了結果
+
+- 実装 commit: `a566228`
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581394652
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581394653
+- 作業レポート: `reports/working/20260530-1145-ddb-schema-v04-audit-report.md`
+
+## 検証結果
+
+- `node tools/check-docs-consistency.mjs`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_repository_schema_contract.py`: pass（4 tests）
+- `git diff --check`: pass
+- `npm test`: pass（82 tests）
+- `npm run verify`: pass（test / build / package / local e2e）
