@@ -1,11 +1,13 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 const root = process.argv[2] ?? "data/fixtures/public";
 
 const json = async (path) => JSON.parse(await readFile(join(root, path.replace(/^\//, "")), "utf8"));
 const readText = async (path) => readFile(join(root, path.replace(/^\//, "")), "utf8");
 const exists = async (path) => access(join(root, path.replace(/^\//, ""))).then(() => true, () => false);
+const sha256 = async (path) => createHash("sha256").update(await readFile(join(root, path.replace(/^\//, "")))).digest("hex");
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -16,6 +18,7 @@ requireKeys(manifest, ["schema_version", "generated_at", "export_version", "base
 assert(manifest.schema_version === "public-manifest/v1", "invalid manifest schema");
 assert(typeof manifest.export_version === "string" && manifest.export_version.length > 0, "manifest export_version must be non-empty string");
 assert(manifest.base_path === `/data/v/${manifest.export_version}`, `manifest base_path must match export_version: ${manifest.base_path}`);
+validateStaticPathManifest(manifest);
 
 const publicBasePath = `${manifest.base_path}/public`;
 for (const key of ["videos_latest", "tags"]) {
@@ -78,7 +81,91 @@ for (const [, path] of searchIndexes) {
   }
 }
 
+await validateStaticAliases(manifest, videos, tags, videoIds, publicBasePath);
+
 console.log(`public contract is valid: ${root}`);
+
+async function validateStaticAliases(manifest, versionedVideos, versionedTags, videoIds, publicBasePath) {
+  const staticPaths = manifest.static_paths;
+  const homeEntry = staticPaths["STATIC-001"];
+  await validateStaticEntry(homeEntry, "STATIC-001", { versionedRequired: true });
+  const home = await json(homeEntry.path);
+  requireKeys(home, ["schema_version", "generated_at", "latest_videos", "popular_tags"], "STATIC-001 home");
+  assert(home.schema_version === "public-home/v1", "invalid STATIC-001 home schema");
+  assert(Array.isArray(home.latest_videos), "STATIC-001 latest_videos must be array");
+  assert(Array.isArray(home.popular_tags), "STATIC-001 popular_tags must be array");
+
+  const videosEntry = staticPaths["STATIC-002"];
+  await validateStaticEntry(videosEntry, "STATIC-002", { versionedRequired: true });
+  const aliasVideos = await json(videosEntry.path);
+  requireKeys(aliasVideos, ["schema_version", "generated_at", "items"], "STATIC-002 videos");
+  assert(aliasVideos.schema_version === "public-video-list/v1", "invalid STATIC-002 videos schema");
+  assert(aliasVideos.items.length === versionedVideos.items.length, "STATIC-002 item count must match versioned videos_latest");
+  for (const item of aliasVideos.items) {
+    requireKeys(item, ["video_id", "title", "published_at", "tags", "detail_path", "wordcloud_available", "timestamp_available", "timestamp_path"], `STATIC-002 item ${item.video_id}`);
+    assert(videoIds.has(item.video_id), `STATIC-002 references unknown video_id: ${item.video_id}`);
+    assert(item.detail_path === `/data/videos/${item.video_id}.json`, `STATIC-002 detail_path must be alias path for ${item.video_id}`);
+    assert(item.timestamp_path === `/data/artifacts/timestamps/${item.video_id}.json`, `STATIC-002 timestamp_path must be alias path for ${item.video_id}`);
+  }
+
+  const detailEntries = staticPaths["STATIC-003"].items;
+  for (const videoId of videoIds) {
+    const entry = detailEntries[videoId];
+    await validateStaticEntry(entry, `STATIC-003 ${videoId}`, { versionedRequired: true });
+    assert(entry.path === `/data/videos/${videoId}.json`, `STATIC-003 path mismatch for ${videoId}`);
+    assertVersionedPath(entry.versioned_path, `${publicBasePath}/videos/`, `STATIC-003 ${videoId} versioned_path`);
+    const aliasDetail = await json(entry.path);
+    await validateVideoDetail(aliasDetail, { video_id: videoId, title: aliasDetail.video.title, wordcloud_available: Boolean(aliasDetail.chat_summary.wordcloud_url), timestamp_available: aliasDetail.timestamps.length > 0 }, publicBasePath);
+  }
+
+  const tagsEntry = staticPaths["STATIC-004"];
+  await validateStaticEntry(tagsEntry, "STATIC-004", { versionedRequired: true });
+  const aliasTags = await json(tagsEntry.path);
+  assert(aliasTags.schema_version === "public-tag-list/v1", "invalid STATIC-004 tags schema");
+  assert(aliasTags.items.length === versionedTags.items.length, "STATIC-004 item count must match versioned tags");
+
+  const calendarEntries = staticPaths["STATIC-005"].items;
+  assert(Object.keys(calendarEntries).length > 0, "STATIC-005 must include at least one calendar year");
+  for (const [year, entry] of Object.entries(calendarEntries)) {
+    await validateStaticEntry(entry, `STATIC-005 ${year}`, { versionedRequired: true });
+    const calendar = await json(entry.path);
+    requireKeys(calendar, ["schema_version", "generated_at", "year", "months"], `STATIC-005 ${year}`);
+    assert(calendar.schema_version === "public-archive-calendar/v1", `invalid STATIC-005 calendar schema for ${year}`);
+    assert(calendar.year === year, `STATIC-005 year mismatch for ${year}`);
+    assert(Array.isArray(calendar.months), `STATIC-005 months must be array for ${year}`);
+    for (const month of calendar.months) {
+      requireKeys(month, ["month", "video_count", "items"], `STATIC-005 ${year} month`);
+      assert(month.video_count === month.items.length, `STATIC-005 video_count mismatch for ${year}-${month.month}`);
+    }
+  }
+
+  const manifestEntry = staticPaths["STATIC-006"];
+  assert(manifestEntry.path === "/data/latest-manifest.json", "STATIC-006 path must be latest-manifest.json");
+  assert(typeof manifestEntry.checksum_sha256 === "string" && /^[a-f0-9]{64}$/.test(manifestEntry.checksum_sha256), "STATIC-006 checksum must be sha256 hex");
+  assert(manifestEntry.checksum_sha256 === manifestPayloadChecksum(manifest), "STATIC-006 canonical manifest checksum mismatch");
+
+  const wordcloudEntries = staticPaths["STATIC-007"].items;
+  for (const [videoId, entry] of Object.entries(wordcloudEntries)) {
+    await validateStaticEntry(entry, `STATIC-007 ${videoId}`, { versionedRequired: true });
+    const wordcloud = await json(entry.path);
+    requireKeys(wordcloud, ["schema_version", "video_id", "generated_at", "top_terms", "message_count"], `STATIC-007 ${videoId}`);
+    assert(wordcloud.schema_version === "public-wordcloud/v1", `invalid STATIC-007 wordcloud schema for ${videoId}`);
+    assert(wordcloud.video_id === videoId, `STATIC-007 video_id mismatch for ${videoId}`);
+    assert(Array.isArray(wordcloud.top_terms), `STATIC-007 top_terms must be array for ${videoId}`);
+  }
+
+  const timestampEntries = staticPaths["STATIC-008"].items;
+  for (const videoId of videoIds) {
+    const entry = timestampEntries[videoId];
+    await validateStaticEntry(entry, `STATIC-008 ${videoId}`, { versionedRequired: true });
+    const timestamps = await json(entry.path);
+    requireKeys(timestamps, ["schema_version", "video_id", "generated_at", "items"], `STATIC-008 ${videoId}`);
+    assert(timestamps.schema_version === "public-timestamp-list/v1", `invalid STATIC-008 timestamp schema for ${videoId}`);
+    assert(timestamps.video_id === videoId, `STATIC-008 video_id mismatch for ${videoId}`);
+    assert(Array.isArray(timestamps.items), `STATIC-008 items must be array for ${videoId}`);
+    for (const item of timestamps.items) validateTimestamp(item, videoId);
+  }
+}
 
 async function validateVideoDetail(detail, item, publicBasePath) {
   requireKeys(detail, ["schema_version", "video", "chat_summary", "artifacts", "timestamps"], item.detail_path);
@@ -120,6 +207,38 @@ async function validateWordcloud(detail, item, publicBasePath) {
   const svg = await readText(artifact.path);
   assert(svg.trimStart().startsWith("<svg "), `wordcloud SVG must start with <svg for ${item.video_id}`);
   assert(svg.includes("diopside wordcloud"), `wordcloud SVG missing accessible title for ${item.video_id}`);
+}
+
+function validateStaticPathManifest(manifest) {
+  requireKeys(manifest, ["static_paths"], "latest-manifest.json");
+  for (const id of ["STATIC-001", "STATIC-002", "STATIC-003", "STATIC-004", "STATIC-005", "STATIC-006", "STATIC-007", "STATIC-008"]) {
+    assert(id in manifest.static_paths, `manifest missing static_paths.${id}`);
+  }
+}
+
+async function validateStaticEntry(entry, label, { versionedRequired }) {
+  requireKeys(entry, ["path", "versioned_path", "checksum_sha256"], label);
+  assert(typeof entry.path === "string" && entry.path.startsWith("/data/"), `${label} path must be /data path`);
+  assert(await exists(entry.path), `${label} path missing: ${entry.path}`);
+  if (versionedRequired) {
+    assertVersionedPath(entry.versioned_path, "/data/v/", `${label} versioned_path`);
+    assert(await exists(entry.versioned_path), `${label} versioned_path missing: ${entry.versioned_path}`);
+  }
+  assert(entry.checksum_sha256 === await sha256(entry.path), `${label} checksum mismatch for ${entry.path}`);
+}
+
+function manifestPayloadChecksum(manifest) {
+  const payload = JSON.parse(JSON.stringify(manifest));
+  payload.static_paths["STATIC-006"].checksum_sha256 = null;
+  return createHash("sha256").update(JSON.stringify(sortKeys(payload))).digest("hex");
+}
+
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortKeys(item)]));
+  }
+  return value;
 }
 
 function validateTimestamp(timestamp, videoId) {

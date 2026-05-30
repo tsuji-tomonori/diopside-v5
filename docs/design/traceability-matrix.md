@@ -111,14 +111,14 @@
 
 | design_id | category | requirement | implementation_files | tests | status |
 |---|---|---|---|---|---|
-| STATIC-001 | Static data | `/data/home.json` ホーム JSON。 | なし | なし | 未対応 |
-| STATIC-002 | Static data | `/data/videos/index.json` 動画一覧 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は versioned `/data/v/{export_version}/public/index/videos-latest.json` を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 差分あり |
-| STATIC-003 | Static data | `/data/videos/{video_id}.json` 動画詳細 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は versioned `/data/v/{export_version}/public/videos/{video_id}.json` を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 差分あり |
-| STATIC-004 | Static data | `/data/tags.json` タグ JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は versioned `/data/v/{export_version}/public/index/tags.json` を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 差分あり |
-| STATIC-005 | Static data | `/data/calendar/{year}.json` 年/月カレンダー JSON。 | なし | なし | 未対応 |
-| STATIC-006 | Static data | `/data/latest-manifest.json` export manifest。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |
-| STATIC-007 | Static data | `/data/artifacts/wordcloud/{video_id}.{png\|json}` ワードクラウド画像/JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は versioned SVG を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 差分あり |
-| STATIC-008 | Static data | `/data/artifacts/timestamps/{video_id}.json` タイムスタンプ候補 JSON。 | タイムスタンプは動画詳細 JSON に内包 | `tests/test_static_exporter.py` | 差分あり |
+| STATIC-001 | Static data | `/data/home.json` ホーム JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-002 | Static data | `/data/videos/index.json` 動画一覧 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-003 | Static data | `/data/videos/{video_id}.json` 動画詳細 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-004 | Static data | `/data/tags.json` タグ JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-005 | Static data | `/data/calendar/{year}.json` 年/月カレンダー JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-006 | Static data | `/data/latest-manifest.json` export manifest。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-007 | Static data | `/data/artifacts/wordcloud/{video_id}.{png\|json}` ワードクラウド画像/JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` は JSON alias と既存 SVG を生成 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |
+| STATIC-008 | Static data | `/data/artifacts/timestamps/{video_id}.json` タイムスタンプ候補 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 
 ## BATCH-001〜BATCH-020
 

@@ -66,12 +66,29 @@ def test_export_public_data_from_repository(tmp_path):
     )
     manifest = export_public_data(repo, tmp_path, "unit")
     assert manifest["indexes"]["videos_latest"] == "/data/v/unit/public/index/videos-latest.json"
+    assert manifest["static_paths"]["STATIC-001"]["path"] == "/data/home.json"
+    assert manifest["static_paths"]["STATIC-002"]["path"] == "/data/videos/index.json"
+    assert manifest["static_paths"]["STATIC-003"]["items"]["vid001"]["path"] == "/data/videos/vid001.json"
+    assert manifest["static_paths"]["STATIC-005"]["items"]["2026"]["path"] == "/data/calendar/2026.json"
+    assert manifest["static_paths"]["STATIC-007"]["items"]["vid001"]["path"] == "/data/artifacts/wordcloud/vid001.json"
+    assert manifest["static_paths"]["STATIC-008"]["items"]["vid001"]["path"] == "/data/artifacts/timestamps/vid001.json"
     detail = json.loads((tmp_path / "data/v/unit/public/videos/vid001.json").read_text(encoding="utf-8"))
+    alias_detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
+    home = json.loads((tmp_path / "data/home.json").read_text(encoding="utf-8"))
+    calendar = json.loads((tmp_path / "data/calendar/2026.json").read_text(encoding="utf-8"))
+    wordcloud_json = json.loads((tmp_path / "data/artifacts/wordcloud/vid001.json").read_text(encoding="utf-8"))
+    timestamps_json = json.loads((tmp_path / "data/artifacts/timestamps/vid001.json").read_text(encoding="utf-8"))
     empty_detail = json.loads((tmp_path / "data/v/unit/public/videos/vid002.json").read_text(encoding="utf-8"))
     svg_path = tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.svg"
     assert detail["chat_summary"]["wordcloud_url"] == "/data/v/unit/public/artifacts/wordcloud/vid001.svg"
     assert detail["artifacts"]["wordcloud"] == {"path": "/data/v/unit/public/artifacts/wordcloud/vid001.svg", "content_type": "image/svg+xml"}
     assert detail["timestamps"][0]["offset_sec"] == 30
+    assert alias_detail["video"]["video_id"] == "vid001"
+    assert home["schema_version"] == "public-home/v1"
+    assert home["latest_videos"][0]["detail_path"] == "/data/videos/vid001.json"
+    assert calendar["months"][0]["items"][0]["detail_path"] == "/data/videos/vid001.json"
+    assert wordcloud_json["top_terms"][0]["term"] == "ありがとう"
+    assert timestamps_json["items"][0]["offset_sec"] == 30
     assert svg_path.exists()
     assert "ありがとう" in svg_path.read_text(encoding="utf-8")
     assert empty_detail["chat_summary"]["wordcloud_url"] is None
