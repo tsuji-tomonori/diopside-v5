@@ -1,6 +1,6 @@
 # Admin channel settings UI
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -60,3 +60,30 @@ README の管理 UI 説明、`docs/design/traceability-matrix.md` の FR-A-001 e
 - channel 更新 POST/PUT が CSRF 付き cookie session を使うこと。
 - 管理 UI の既存 job 操作と local e2e を壊していないこと。
 - local e2e server が本番 handler と同じ method coverage を持ち、`PUT` route を 501 にしないこと。
+
+## 完了結果
+
+- 管理 UI から channel list を読み込み、API item を選択して form に反映できるようにした。
+- 管理 UI から `channel_id`、`uploads_playlist_id`、`display_name`、取得有効/無効、通知候補生成、metadata/live scan interval を更新できるようにした。
+- channel update は既存の cookie session + CSRF flow を使い、Bearer token の localStorage 保存は追加していない。
+- local e2e server に `PUT` method 委譲を追加し、既存管理 PUT API を browser flow で検証できるようにした。
+- README、traceability、audit、作業レポートを更新した。
+- 作業レポート: `reports/working/20260530-1724-admin-channel-settings-ui.md`
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582290527
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582290524
+
+## 検証結果
+
+- `node --check apps/web/public/app.js`: pass
+- `python3 -m py_compile apps/api/src/diopside_api/local_server.py`: pass
+- `node tools/check-web-dom-safety.mjs`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m pytest tests/test_api_handler.py::test_admin_channel_update_requires_csrf_and_persists tests/test_api_handler.py::test_admin_channel_update_validates_body`: pass（2 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `npm run e2e:local`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（134 tests + build/package/local e2e）
+
+## 未実施・制約
+
+- 実 AWS 環境での channel update は未実施。理由: dev/prod DynamoDB への実データ変更を伴うため、環境指定後に実施する。
+- 既存 DynamoDB data の ChannelRef/AppConfig backfill と AppConfig 統合画面は後続対象。
