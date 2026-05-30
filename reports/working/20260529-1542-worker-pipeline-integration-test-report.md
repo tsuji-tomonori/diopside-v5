@@ -1,0 +1,58 @@
+# worker pipeline integration test強化 作業レポート
+
+## 受けた指示
+
+- `.workspace/` 配下の設計書と 2026-05-29 の plan に基づいて作業する。
+- `main` から pull してから、P4-03 integration test強化を進める。
+- Worktree Task PR Flow に従い、task、検証、PR コメントまで行う。
+
+## 要件整理
+
+- DynamoDB/S3/SQS を mock または local fake でつないだ worker pipeline test を追加する。
+- 追加テストは `npm test`、ひいては CI の `npm run verify` で実行される必要がある。
+
+## 検討・判断
+
+- fake DynamoDB 相当として `MemoryRepository` を使う。
+- fake S3 相当として `DIOPSIDE_LOCAL_ARTIFACT_DIR` の local artifact directory を使う。
+- fake SQS 相当として `static_exporter.pipeline._enqueue_job` を monkeypatch し、queue env、payload、delay を記録する。
+- job entrypoint は `dispatch_job` を使い、metadata、live status scan、chat collect、normalize、rebuild artifacts を同じ repository / artifact root で接続する。
+
+## 実施作業
+
+- `tests/test_core_pipeline.py` に worker pipeline integration test を追加した。
+- P4-03 の task md を作成した。
+- PR #35 の初回 CI で `npm run e2e:local` 後の Chrome profile cleanup が `ENOTEMPTY` で失敗したため、`tools/run-local-e2e.mjs` の一時ディレクトリ削除に retry を追加した。
+- PR #35 の再実行 CI で Chrome 起動待ちが timeout したため、headless Chrome に `--no-sandbox` / `--disable-dev-shm-usage` を追加し、起動待ちを 15 秒へ延長した。
+
+## 成果物
+
+- `tests/test_core_pipeline.py`
+- `tools/run-local-e2e.mjs`
+- `tasks/do/20260529-1542-worker-pipeline-integration-test.md`
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/35
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570743073
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/35#issuecomment-4570744227
+
+## 検証
+
+- `git diff --check`: 成功
+- `PYTHONPATH=apps/shared/src:apps/api/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py -k worker_pipeline_integration`: 1 passed
+- `npm run e2e:local`: 成功
+- `npm test`: 62 passed
+- `npm run verify`: 成功
+  - `npm test`: 62 passed
+  - `npm run build`: 成功
+  - `npm run package:deploy`: 成功
+  - `npm run e2e:local`: 成功
+- GitHub Actions `CI / npm verify`: 成功
+
+## fit 評価
+
+- P4-03 の DynamoDB/S3/SQS local fake 接続による worker pipeline test 追加要求に対応した。
+- 追加テストは `npm test` に含まれるため、P4-01 の GitHub Actions CI の `npm run verify` で実行される。
+
+## 未対応・制約・リスク
+
+- 実 AWS DynamoDB/S3/SQS との接続確認は P4-03 の対象外のため未実施。
+- GitHub Apps による PR top-level comment は 403 のため、`gh pr comment` で代替した。
