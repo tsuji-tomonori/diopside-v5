@@ -1,6 +1,6 @@
 # diopside v5
 
-`diopside` は、白雪巴 YouTube 公開アーカイブを低コストに検索・閲覧し、公開チャットからワードクラウドとタイムスタンプ候補を生成する serverless アプリケーションです。設計根拠は `.workspace/diopside_basic_design_v0.4.md` です。
+`diopside` は、白雪巴 YouTube 公開アーカイブを低コストに検索・閲覧し、公開チャットからワードクラウドとタイムスタンプ候補を生成する serverless アプリケーションです。設計根拠は `docs/design/diopside_basic_design_v0.4.md` です。
 
 ## 全体構成
 
