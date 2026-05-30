@@ -1,6 +1,6 @@
 # BATCH-006 notification delivery state
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -80,3 +80,9 @@
 ## リスク
 
 - SNS / Discord / Email の実疎通は未確認。実運用では target 設定と権限、物理 DLQ の確認が別途必要。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582533273
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582533428
