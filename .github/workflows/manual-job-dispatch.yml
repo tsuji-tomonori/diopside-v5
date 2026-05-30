@@ -1,0 +1,124 @@
+name: Manual Job Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: "Worker job_type to dispatch"
+        required: true
+        type: choice
+        options:
+          - metadata_sync
+          - live_status_scan
+          - chat_collect
+          - chat_normalize
+          - rebuild_artifacts
+          - file_output
+          - archive_finalize
+          - notification_plan
+          - static_export
+          - retry_job
+          - cancel_job
+          - quota_rollup
+          - cleanup
+      idempotency_key:
+        description: "Dedupe key for this manual run"
+        required: true
+        type: string
+      payload_json:
+        description: "Job-specific JSON payload"
+        required: true
+        default: "{}"
+        type: string
+      job_id:
+        description: "Optional job_id override"
+        required: false
+        type: string
+      trace_id:
+        description: "Optional trace_id override"
+        required: false
+        type: string
+      attempt:
+        description: "Application-level attempt number"
+        required: false
+        default: "0"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dispatch:
+    name: Send JobMessage to SQS
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DIOPSIDE_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ vars.DIOPSIDE_AWS_REGION || 'ap-northeast-1' }}
+
+      - name: Build and send JobMessage
+        env:
+          JOB_TYPE: ${{ inputs.job_type }}
+          IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
+          PAYLOAD_JSON: ${{ inputs.payload_json }}
+          JOB_ID_INPUT: ${{ inputs.job_id }}
+          TRACE_ID_INPUT: ${{ inputs.trace_id }}
+          ATTEMPT: ${{ inputs.attempt }}
+          METADATA_QUEUE_URL: ${{ secrets.DIOPSIDE_METADATA_QUEUE_URL }}
+          CHAT_QUEUE_URL: ${{ secrets.DIOPSIDE_CHAT_QUEUE_URL }}
+          NORMALIZE_QUEUE_URL: ${{ secrets.DIOPSIDE_NORMALIZE_QUEUE_URL }}
+          AGGREGATE_QUEUE_URL: ${{ secrets.DIOPSIDE_AGGREGATE_QUEUE_URL }}
+          STATIC_EXPORT_QUEUE_URL: ${{ secrets.DIOPSIDE_STATIC_EXPORT_QUEUE_URL }}
+        run: |
+          set -euo pipefail
+
+          jq -e . >/dev/null <<<"${PAYLOAD_JSON}"
+
+          case "${JOB_TYPE}" in
+            metadata_sync|live_status_scan|retry_job|cancel_job)
+              QUEUE_URL="${METADATA_QUEUE_URL}"
+              ;;
+            chat_collect)
+              QUEUE_URL="${CHAT_QUEUE_URL}"
+              ;;
+            chat_normalize)
+              QUEUE_URL="${NORMALIZE_QUEUE_URL}"
+              ;;
+            rebuild_artifacts|file_output|archive_finalize|notification_plan|quota_rollup|cleanup)
+              QUEUE_URL="${AGGREGATE_QUEUE_URL}"
+              ;;
+            static_export)
+              QUEUE_URL="${STATIC_EXPORT_QUEUE_URL}"
+              ;;
+            *)
+              echo "Unsupported job_type: ${JOB_TYPE}" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ -z "${QUEUE_URL}" ]; then
+            echo "Queue URL secret is not configured for ${JOB_TYPE}" >&2
+            exit 1
+          fi
+
+          JOB_ID="${JOB_ID_INPUT:-github-${JOB_TYPE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
+          TRACE_ID="${TRACE_ID_INPUT:-github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
+
+          MESSAGE_BODY="$(jq -cn \
+            --arg job_id "${JOB_ID}" \
+            --arg job_type "${JOB_TYPE}" \
+            --arg idempotency_key "${IDEMPOTENCY_KEY}" \
+            --arg requested_by "github_actions" \
+            --arg trace_id "${TRACE_ID}" \
+            --argjson attempt "${ATTEMPT}" \
+            --argjson payload "${PAYLOAD_JSON}" \
+            '{job_id:$job_id,job_type:$job_type,idempotency_key:$idempotency_key,requested_by:$requested_by,attempt:$attempt,trace_id:$trace_id,payload:$payload}')"
+
+          aws sqs send-message \
+            --queue-url "${QUEUE_URL}" \
+            --message-body "${MESSAGE_BODY}" \
+            --output json
