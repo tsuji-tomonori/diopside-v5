@@ -746,6 +746,23 @@ def test_failed_job_writes_debug_artifact(tmp_path, monkeypatch):
     assert list((tmp_path / f"failed/jobs/job_id={created['job_id']}").rglob("*.json"))
 
 
+def test_failed_job_emits_json_error_log(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("DIOPSIDE_LOCAL_ARTIFACT_DIR", str(tmp_path))
+    repo = MemoryRepository()
+    with pytest.raises(ValueError):
+        dispatch_job(repo, {"job_type": "unknown", "job_id": "failed-log", "trace_id": "trace-worker-error"})
+
+    log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert log["component"] == "worker"
+    assert log["event"] == "worker_job"
+    assert log["trace_id"] == "trace-worker-error"
+    assert log["job_id"] == "failed-log"
+    assert log["job_type"] == "unknown"
+    assert log["result"] == "failed"
+    assert log["error"]["type"] == "ValueError"
+    assert log["error"]["debug_uri"].endswith(".json")
+
+
 def test_retry_and_cancel_job_update_target_events():
     repo = MemoryRepository()
     failed, _ = repo.create_job("chat_normalize", {"video_id": "vid001"}, "retry-source")
@@ -799,6 +816,31 @@ def test_dispatch_job_supports_scheduled_maintenance_jobs():
     assert quota["total_units"] == 1
     assert cleanup_result["status"] == "succeeded"
     assert cleanup_result["deleted_count"] == 0
+
+
+def test_worker_emits_json_success_log(capsys):
+    repo = MemoryRepository()
+
+    result = dispatch_job(
+        repo,
+        {
+            "job_type": "cleanup",
+            "job_id": "scheduler-cleanup-log",
+            "trace_id": "trace-worker-success",
+            "input": {"requested_by": "scheduler", "video_id": "vid-log"},
+        },
+    )
+
+    log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert result["status"] == "succeeded"
+    assert log["component"] == "worker"
+    assert log["event"] == "worker_job"
+    assert log["trace_id"] == "trace-worker-success"
+    assert log["job_id"] == "scheduler-cleanup-log"
+    assert log["job_type"] == "cleanup"
+    assert log["video_id"] == "vid-log"
+    assert log["result"] == "succeeded"
+    assert isinstance(log["duration_ms"], float)
 
 
 class FakeDynamoTable:

@@ -28,6 +28,35 @@ def test_health_public():
     assert body["status"] == "ok"
 
 
+def test_api_emits_json_request_log(capsys):
+    status, body = call("GET", "/api/videos/fixture001", headers={"x-trace-id": "trace-unit"})
+
+    log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert status == 200
+    assert body["video"]["video_id"] == "fixture001"
+    assert log["component"] == "api"
+    assert log["event"] == "api_request"
+    assert log["trace_id"] == "trace-unit"
+    assert log["status"] == 200
+    assert log["result"] == "succeeded"
+    assert log["video_id"] == "fixture001"
+    assert isinstance(log["duration_ms"], float)
+    assert "authorization" not in log
+
+
+def test_api_error_log_matches_error_response_trace(capsys):
+    status, body = call("GET", "/api/admin/jobs", headers={"x-trace-id": "trace-error"})
+
+    log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert status == 503
+    assert body["trace_id"] == "trace-error"
+    assert log["trace_id"] == body["trace_id"]
+    assert log["status"] == 503
+    assert log["result"] == "failed"
+    assert log["error"]["code"] == "ADMIN_NOT_CONFIGURED"
+    assert log["error"]["type"] == "ApiError"
+
+
 def test_public_video_search_and_detail():
     status, body = call("GET", "/api/videos", query={"tag": "歌枠"})
     assert status == 200

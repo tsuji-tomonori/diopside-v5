@@ -4,6 +4,8 @@ import json
 import os
 import pathlib
 import hashlib
+import time
+import uuid
 from collections import Counter
 from typing import Any
 
@@ -37,8 +39,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
 
 def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
     job_type = payload.get("job_type")
     job_id = payload.get("job_id", "manual")
+    trace_id = payload.get("trace_id") or payload.get("input", {}).get("trace_id") or f"trc_{uuid.uuid4().hex}"
     params = {**payload.get("input", payload), "job_id": job_id}
     repo.append_job_event(job_id, "started", {"job_type": job_type})
     try:
@@ -63,11 +67,21 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
         else:
             raise ValueError(f"unsupported job_type: {job_type}")
         repo.append_job_event(job_id, "completed", result)
-        return {"job_id": job_id, "job_type": job_type, "status": "succeeded", **result}
+        response = {"job_id": job_id, "job_type": job_type, "status": "succeeded", **result}
+        _log_worker_job(started, trace_id, job_id, job_type, params, result=response)
+        return response
     except Exception as exc:
         debug_key = f"failed/jobs/job_id={job_id}/{now_iso()}.json"
         debug_uri = _write_blob(debug_key, json.dumps({"type": type(exc).__name__, "message": str(exc), "payload": payload}, ensure_ascii=False, indent=2).encode("utf-8"), "application/json")
         repo.append_job_event(job_id, "failed", {"type": type(exc).__name__, "message": str(exc), "debug_uri": debug_uri})
+        _log_worker_job(
+            started,
+            trace_id,
+            job_id,
+            job_type,
+            params,
+            error={"type": type(exc).__name__, "message": str(exc), "debug_uri": debug_uri},
+        )
         raise
 
 
@@ -444,6 +458,38 @@ def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     if aggregate.get("top_terms"):
         repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.svg", "content_type": "image/svg+xml"})
     return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
+
+
+def _log_worker_job(
+    started: float,
+    trace_id: str,
+    job_id: str,
+    job_type: str | None,
+    params: dict[str, Any],
+    *,
+    result: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> None:
+    log = {
+        "service": "diopside",
+        "component": "worker",
+        "event": "worker_job",
+        "trace_id": trace_id,
+        "job_id": job_id,
+        "job_type": job_type,
+        "video_id": _first_present(result, params, key="video_id"),
+        "result": "failed" if error else "succeeded",
+        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+        **({"error": error} if error else {}),
+    }
+    print(json.dumps({key: value for key, value in log.items() if value is not None}, ensure_ascii=False), flush=True)
+
+
+def _first_present(*sources: dict[str, Any] | None, key: str) -> Any:
+    for source in sources:
+        if source and source.get(key) is not None:
+            return source[key]
+    return None
 
 
 def _channel_config(repo: Any, params: dict[str, Any]) -> dict[str, Any]:

@@ -42,23 +42,31 @@ class ApiError(Exception):
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    started = time.perf_counter()
     trace_id = _header_map(event).get("x-trace-id") or f"trc_{uuid.uuid4().hex}"
+    request: Request | None = None
     try:
         request = _request_from_event(event)
         result = route(request, trace_id)
-        return _response(result, trace_id=trace_id)
+        response = _response(result, trace_id=trace_id)
+        _log_api_request(event, request, response, started, trace_id, result=result)
+        return response
     except ApiError as exc:
-        return _response(
+        response = _response(
             {"code": exc.code, "message": exc.message, "details": exc.details, "trace_id": trace_id},
             status=exc.status,
             trace_id=trace_id,
         )
+        _log_api_request(event, request, response, started, trace_id, error={"type": "ApiError", "code": exc.code, "message": exc.message})
+        return response
     except Exception as exc:  # pragma: no cover - defensive Lambda boundary.
-        return _response(
+        response = _response(
             {"code": "INTERNAL_ERROR", "message": "想定外のエラーが発生しました。", "details": {"type": type(exc).__name__}, "trace_id": trace_id},
             status=500,
             trace_id=trace_id,
         )
+        _log_api_request(event, request, response, started, trace_id, error={"type": type(exc).__name__, "message": str(exc)})
+        return response
 
 
 def route(request: Request, trace_id: str) -> dict[str, Any]:
@@ -455,6 +463,59 @@ def _response(payload: dict[str, Any], status: int = 200, trace_id: str = "") ->
         },
         "body": json.dumps(payload, ensure_ascii=False),
     }
+
+
+def _log_api_request(
+    event: dict[str, Any],
+    request: Request | None,
+    response: dict[str, Any],
+    started: float,
+    trace_id: str,
+    *,
+    result: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> None:
+    status = int(response["statusCode"])
+    method = request.method if request else (event.get("requestContext", {}).get("http", {}).get("method") or event.get("httpMethod", "GET"))
+    path = request.path if request else (event.get("rawPath") or event.get("path") or "/")
+    body = request.body if request else None
+    log = {
+        "service": SERVICE,
+        "component": "api",
+        "event": "api_request",
+        "trace_id": trace_id,
+        "method": method,
+        "path": path,
+        "status": status,
+        "result": "succeeded" if status < 400 else "failed",
+        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+        "job_id": _first_present(result, body, key="job_id"),
+        "job_type": _first_present(result, body, key="job_type"),
+        "video_id": _extract_video_id(path, result, body),
+        **({"error": error} if error else {}),
+    }
+    print(json.dumps({key: value for key, value in log.items() if value is not None}, ensure_ascii=False), flush=True)
+
+
+def _first_present(*sources: dict[str, Any] | None, key: str) -> Any:
+    for source in sources:
+        if source and source.get(key) is not None:
+            return source[key]
+    return None
+
+
+def _extract_video_id(path: str, *sources: dict[str, Any] | None) -> str | None:
+    for source in sources:
+        if not source:
+            continue
+        if source.get("video_id"):
+            return str(source["video_id"])
+        if isinstance(source.get("video"), dict) and source["video"].get("video_id"):
+            return str(source["video"]["video_id"])
+    parts = path.strip("/").split("/")
+    if len(parts) >= 3 and parts[:2] == ["api", "videos"]:
+        return parts[2]
+    return None
 
 
 def _now() -> str:
