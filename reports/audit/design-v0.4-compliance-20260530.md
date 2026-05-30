@@ -65,7 +65,7 @@
 1. `api/fastapi-v04-contract`
    - 既存 route coverage を FastAPI/OpenAPI へ移行し、API-001〜023 の schema 証跡を生成する。
 2. `admin/cookie-csrf-session`
-   - 管理 UI の正式保護方式を v0.4 に合わせる。
+   - 対応済。管理 UI の正式保護方式を v0.4 に合わせ、traceability の `NFR-SEC-005` も実装済みに更新した。
 3. `worker/batch-v04-coverage`
    - BATCH-001〜020 を job_type、queue、入力/出力 schema、テストに紐付ける。
 4. `static/wordcloud-png-artifact`

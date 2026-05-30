@@ -77,7 +77,7 @@
 | NFR-SEC-002 | Security | 公開データのみ取得する。 | `apps/shared/src/diopside_core/youtube.py` | `tests/test_core_pipeline.py` | 部分実装 |
 | NFR-SEC-003 | Security | replay 取得は best-effort に限定する。 | `apps/shared/src/diopside_core/chat_parser.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
 | NFR-SEC-004 | Security | 個人識別性を抑える。 | `apps/shared/src/diopside_core/chat_parser.py` | `tests/test_core_pipeline.py` | 部分実装 |
-| NFR-SEC-005 | Security | 管理操作は保護する。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 差分あり |
+| NFR-SEC-005 | Security | 管理操作は保護する。 | `apps/api/src/diopside_api/handler.py`, `apps/web/public/app.js` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 実装済 |
 
 ## API-001〜API-023
 
