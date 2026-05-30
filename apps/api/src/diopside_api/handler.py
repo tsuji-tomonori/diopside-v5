@@ -123,6 +123,8 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
             return {"schema_version": "admin-channel-list/v1", "items": _list_channels(), "trace_id": trace_id}
         if request.method == "GET" and request.path == "/api/admin/quota-usage":
             return {"schema_version": "admin-quota-usage/v1", "items": _list_quota_usage(), "trace_id": trace_id}
+        if request.method == "GET" and request.path == "/api/admin/static-exports":
+            return {"schema_version": "admin-static-export-list/v1", "items": _list_static_exports(), "trace_id": trace_id}
         if request.method == "PUT" and request.path.startswith("/api/admin/channels/"):
             _require_csrf(request, admin_auth)
             parts = request.path.strip("/").split("/")
@@ -850,6 +852,30 @@ def _list_quota_usage() -> list[dict[str, Any]]:
                 "channel_id": item.get("channel_id", details.get("channel_id")),
                 "video_count": item.get("video_count", details.get("video_count")),
                 "job_id": item.get("job_id", details.get("job_id")),
+            }
+        )
+    return items
+
+
+def _list_static_exports() -> list[dict[str, Any]]:
+    items = []
+    for item in _repository().list_static_exports(20):
+        items.append(
+            {
+                "export_id": item.get("export_id"),
+                "export_version": item.get("export_version"),
+                "exported_at": item.get("exported_at"),
+                "reason": item.get("reason"),
+                "manifest_s3_uri": item.get("manifest_s3_uri"),
+                "public_prefix": item.get("public_prefix"),
+                "video_count": item.get("video_count"),
+                "tag_count": item.get("tag_count"),
+                "uploaded_object_count": item.get("uploaded_object_count"),
+                "publish_state": item.get("publish_state"),
+                "content_hash": item.get("content_hash"),
+                "schema_versions": item.get("schema_versions", []),
+                "generated_job_id": item.get("generated_job_id"),
+                "updated_at": item.get("updated_at"),
             }
         )
     return items

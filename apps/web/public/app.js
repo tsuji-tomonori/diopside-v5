@@ -495,6 +495,21 @@ const renderQuotaUsage = (items) => items.length
   ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
   : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" });
 
+const staticExportText = (item) => [
+  item.export_version || "export_version未設定",
+  item.publish_state || "state未設定",
+  `videos ${item.video_count ?? "-"}`,
+  `tags ${item.tag_count ?? "-"}`,
+  item.manifest_s3_uri || "manifest未設定"
+].join(" / ");
+
+const renderStaticExports = (items) => items.length
+  ? el("ul", {}, items.slice(0, 12).map((item) => el("li", {}, [
+    el("strong", { text: staticExportText(item) }),
+    el("p", { class: "detail-meta", text: `${fmtDate(item.exported_at)} / ${item.content_hash || "hash未設定"}` })
+  ])))
+  : el("p", { class: "empty-state", text: "表示できる static export 履歴はありません。" });
+
 const channelSummaryText = (item) => [
   item.channel_id || "channel_id未設定",
   item.display_name || "display_name未設定",
@@ -556,11 +571,12 @@ const renderJobDetail = (item) => {
 const loadAdminData = async (kind) => {
   try {
     await ensureAdminSession();
-    const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { credentials: "same-origin" });
+    const path = kind === "quota" ? "/api/admin/quota-usage" : kind === "static-exports" ? "/api/admin/static-exports" : "/api/admin/jobs";
+    const result = await json(path, { credentials: "same-origin" });
     const items = result.items || [];
     els.adminData.replaceChildren(
-      el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
-      kind === "quota" ? renderQuotaUsage(items) : renderJobList(items)
+      el("h3", { text: kind === "quota" ? "quota usage" : kind === "static-exports" ? "static export履歴" : "jobs" }),
+      kind === "quota" ? renderQuotaUsage(items) : kind === "static-exports" ? renderStaticExports(items) : renderJobList(items)
     );
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
@@ -678,6 +694,7 @@ const loadJobDetail = async (jobId) => {
 
 document.querySelector("#loadJobsButton").addEventListener("click", () => loadAdminData("jobs"));
 document.querySelector("#loadQuotaButton").addEventListener("click", () => loadAdminData("quota"));
+document.querySelector("#loadStaticExportsButton").addEventListener("click", () => loadAdminData("static-exports"));
 document.querySelector("#loadChannelsButton").addEventListener("click", loadChannels);
 els.adminChannelForm.addEventListener("submit", (event) => {
   event.preventDefault();

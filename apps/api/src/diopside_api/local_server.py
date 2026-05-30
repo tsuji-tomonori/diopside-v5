@@ -72,6 +72,7 @@ def seed_local_fixture_repository() -> None:
         if detail_path.exists():
             detail = json.loads(detail_path.read_text(encoding="utf-8")).get("video", {})
         repo.put_video({**item, **detail, "public": True})
+    repo.record_static_export(manifest, reason="local_fixture")
     api_handler._REPOSITORY = repo
 
 

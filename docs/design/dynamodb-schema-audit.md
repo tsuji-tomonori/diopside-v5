@@ -25,7 +25,7 @@
 | `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` が v0.4 key で保存し、旧 `VIDEO#...` / `CHAT#AGGREGATE` は `get_chat_aggregate` fallback | 部分実装 | 既存データ backfill、heatmap / source uri required 化、payload schema 完全固定は未対応 |
 | `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` が versioned key で保存し、`artifact_version` / `content_hash` / `generated_at` を付与。旧 `VIDEO#...` item は list/get fallback | 部分実装 | 既存データ backfill と artifact payload schema の完全固定は未対応 |
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
-| `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存 | 部分実装 | 管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
+| `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存し、管理 API/UI が履歴を表示 | 部分実装 | 既存履歴 backfill と superseded 更新は未対応 |
 | `Job` | `JOB#{job_id}` / `META` | `create_job` が `dedupe_key` / `idempotency_key`、`latest_state` / `derived_state`、`target_type`、`next_run_at` を持つ read model を保存し、`append_job_event` 後に最新状態と state GSI を更新 | 部分実装 | 既存 job の backfill、高並列 event append 時の条件付き seq 採番、attempt 更新は未対応 |
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` が `EVT#{seq}` と `event_name` / `state_after` / `occurred_at` / `payload` を保存。`event_type` / `details` は互換 alias として保持 | 部分実装 | 既存 `EVENT#...` item の backfill、同一 job への高並列 append 時の条件付き seq 採番は未対応 |
 | `Lock` | `LOCK#{lock_key}` / `META` | `acquire_lock` / `release_lock` が `owner_job_id`、`owner_request_id`、`acquired_at`、`expires_at` 付き `Lock` item を保存・解放 | 部分実装 | worker job への適用と実 AWS 条件式の統合確認は未対応 |
@@ -61,6 +61,6 @@
 
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
 2. item type ごとの詳細 `schema_version` 命名と既存 DynamoDB data の common metadata backfill 方針を決める。
-3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済みだが、rebuild/backfill/API表示は後続で扱う。
+3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済み。既存 data backfill と専用 rebuild job は後続で扱う。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せた。後続で既存 `EVENT#...` item の backfill と高並列 append 時の条件付き seq 採番を設計する。
 5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。

@@ -51,7 +51,7 @@
 | P1 | VideoMonthIndex | 部分対応 | `put_video` が `VideoMonthIndex` item を保存し、archive calendar API/static export が月別 read model を優先利用。既存 data backfill は未対応 |
 | P1 | TagSummary | 部分対応 | `put_video` / tag 補正が `TagSummary` item を保存し、API/static export の tag list が read model を優先利用。管理 UI 編集と既存 data backfill は未対応 |
 | P1 | RandomBucket | 部分対応 | `put_video` が v0.4 key shape の `RandomBucket` を保存し、`GET /api/random-videos` が seed/count/tag/year で安定抽出。rebuild job と backfill は未対応 |
-| P1 | StaticExport history | 部分対応 | `static_export` job が `StaticExport` history item を保存。管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
+| P1 | StaticExport history | 部分対応 | `static_export` job が `StaticExport` history item を保存し、管理 API/UI から履歴を表示可能。既存履歴 backfill と superseded 更新は未対応 |
 | P1 | timestamp standalone | 対応 | `/data/artifacts/timestamps/{video_id}.json` を出力 |
 | P2 | worker 分割 | 差分あり | `static_exporter.pipeline` に複数責務が統合されている |
 | P2 | packages 分割 | 差分あり | `packages/domain` や `packages/youtube-client` 分割は未実施 |

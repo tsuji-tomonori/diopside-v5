@@ -190,6 +190,8 @@ async function checkBrowserFlows(url) {
           .catch(() => {
             throw new Error("video tag flow failed: " + text("#adminTagResult"));
           });
+        click("#loadStaticExportsButton");
+        await waitFor(() => text("#adminData").includes("static export履歴") && text("#adminData").includes("dev-fixture") && text("#adminData").includes("local://latest-manifest.json"));
       })()`);
     } finally {
       client.close();

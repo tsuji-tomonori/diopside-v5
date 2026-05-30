@@ -479,6 +479,44 @@ def test_admin_quota_usage_returns_visible_fields(monkeypatch):
     monkeypatch.setattr(handler, "_REPOSITORY", None)
 
 
+def test_admin_static_export_history_returns_visible_fields(monkeypatch):
+    repo = MemoryRepository()
+    repo.record_static_export(
+        {
+            "schema_version": "public-manifest/v1",
+            "generated_at": "2026-05-30T00:00:00Z",
+            "export_version": "unit-export",
+            "static_paths": {"STATIC-006": {"checksum_sha256": "hash-unit"}},
+        },
+        reason="unit",
+        manifest_s3_uri="s3://public/latest-manifest.json",
+        public_prefix="data/v/unit-export/public",
+        video_count=2,
+        tag_count=3,
+        generated_job_id="job-static",
+        uploaded_object_count=12,
+    )
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call("GET", "/api/admin/static-exports", headers={"authorization": "Bearer secret"})
+
+    assert status == 200
+    assert body["schema_version"] == "admin-static-export-list/v1"
+    assert body["items"][0]["export_version"] == "unit-export"
+    assert body["items"][0]["manifest_s3_uri"] == "s3://public/latest-manifest.json"
+    assert body["items"][0]["video_count"] == 2
+    assert body["items"][0]["tag_count"] == 3
+    assert body["items"][0]["uploaded_object_count"] == 12
+    assert body["items"][0]["content_hash"] == "hash-unit"
+    assert body["items"][0]["generated_job_id"] == "job-static"
+    assert "pk" not in body["items"][0]
+    assert "sk" not in body["items"][0]
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
 def test_admin_channel_update_requires_csrf_and_persists(monkeypatch):
     repo = MemoryRepository()
     monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")

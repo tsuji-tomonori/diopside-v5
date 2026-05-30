@@ -45,6 +45,7 @@ EXTRA_ROUTES: tuple[ApiRouteContract, ...] = (
     ApiRouteContract("ADMIN-SESSION", "POST", "/api/admin/session", "管理 session 発行 API", "admin-session/v1", "public"),
     ApiRouteContract("ADMIN-ME", "GET", "/api/admin/me", "管理 session 確認 API", "admin-session/v1", "admin"),
     ApiRouteContract("FR-A-005", "PUT", "/api/admin/videos/{video_id}/tags", "動画タグ補正 API", "admin-video-tags/v1", "admin"),
+    ApiRouteContract("STATIC-EXPORT-HISTORY", "GET", "/api/admin/static-exports", "StaticExport 履歴 API", "admin-static-export-list/v1", "admin"),
 )
 
 
