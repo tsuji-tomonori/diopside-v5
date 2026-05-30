@@ -83,7 +83,7 @@
 
 | design_id | category | requirement | implementation_files | tests | status |
 |---|---|---|---|---|---|
-| API-001 | API | `GET /api/health` health API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
+| API-001 | API | `GET /api/health` health API。 | `apps/api/src/diopside_api/handler.py`, `apps/api/src/diopside_api/openapi_contract.py` | `tests/test_api_handler.py`, `tests/test_openapi_contract.py` | 実装済 |
 | API-002 | API | `GET /api/config` 公開設定取得 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py`, `tools/check-docs-consistency.mjs` | 実装済 |
 | API-003 | API | `GET /api/home` ホーム API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-004 | API | `GET /api/videos` 動画一覧 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
@@ -105,7 +105,7 @@
 | API-020 | API | `GET /api/admin/quota-usage` quota 使用量 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-021 | API | `GET /api/admin/channels` 対象チャンネル設定取得 API。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 実装済 |
 | API-022 | API | `PUT /api/admin/channels/{channel_id}` 対象チャンネル設定更新 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py` | 実装済 |
-| API-023 | API | `POST /api/admin/artifacts/presigned-url` 管理用 S3 署名 URL 発行 API。 | `apps/api/src/diopside_api/handler.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py` | 実装済 |
+| API-023 | API | `POST /api/admin/artifacts/presigned-url` 管理用 S3 署名 URL 発行 API。 | `apps/api/src/diopside_api/handler.py`, `apps/api/src/diopside_api/openapi_contract.py`, `apps/shared/src/diopside_core/repository.py` | `tests/test_api_handler.py`, `tests/test_openapi_contract.py` | 実装済 |
 
 ## STATIC-001〜STATIC-008
 
@@ -153,7 +153,7 @@
 | S3-PATH | S3 | raw/processed/public/export artifact path。 | `apps/workers/static-exporter/src/static_exporter/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_static_exporter.py`, `tests/test_core_pipeline.py` | 部分実装 |
 | CF-PATH | CloudFront | `/api/*`, `/data/*`, assets, SPA rewrite, OAC。 | `infra/cloudformation/diopside.yaml`, `README.md` | `tests/test_cloudformation_contract.py`, `tools/run-post-deploy-smoke.mjs` | 部分実装 |
 | IAC-CDK | IaC | AWS CDK を IaC 正本にする。 | なし。現 main は `infra/cloudformation/diopside.yaml` 中心 | なし | 差分あり |
-| API-FASTAPI | Backend | FastAPI on Lambda を API 正本にする。 | なし。現 main は Python Lambda handler 中心 | なし | 差分あり |
+| API-FASTAPI | Backend | FastAPI on Lambda を API 正本にする。 | `apps/api/src/diopside_api/fastapi_app.py`, `apps/api/src/diopside_api/openapi_contract.py`。現 deploy entrypoint は Python Lambda handler 中心 | `tests/test_openapi_contract.py` | 部分実装 |
 | WEB-NEXT | Frontend | Next.js static export + React client components。 | なし。現 main は `apps/web/public` の静的 SPA 中心 | `tools/run-local-e2e.mjs`, `tools/check-web-dom-safety.mjs` | 差分あり |
 | ADMIN-SESSION | Security | 管理 UI/API は HttpOnly cookie + CSRF で保護する。 | `apps/api/src/diopside_api/handler.py`, `apps/web/public/app.js` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 実装済 |
 | WORKER-SPLIT | Worker | metadata/chat/normalize/aggregate/wordcloud/timestamp/export の責務分離。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` に統合実装、`docs/design/worker-batch-coverage-audit.md` に差分監査 | `tests/test_worker_batch_coverage_contract.py`, `tests/test_core_pipeline.py` | 監査済み・差分あり |
