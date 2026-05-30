@@ -32,7 +32,7 @@
 | P0-05 | 管理認証 | HttpOnly cookie + CSRF を追加。Bearer token + CSRF は CLI / automation fallback として維持 | 対応済 | session API と管理 UI cookie 保護を追加済み |
 | P0-06 | API-001〜023 | API-001〜023 の handler coverage と OpenAPI contract test を追加。FastAPI adapter は既存 handler へ委譲 | 部分対応 | Pydantic schema 完全化と runtime 切替は後続 |
 | P0-07 | STATIC-001〜008 | v0.4 alias path、versioned path、manifest checksum、wordcloud PNG/JSON を static exporter と contract check に追加 | 対応 | SVG は互換 artifact として維持 |
-| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。`ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / schema_version / 残未対応 item の実装は後続 |
+| P0-08 | DDB schema | v0.4 item type と現 repository contract の差分を `docs/design/dynamodb-schema-audit.md` に整理し、主要 writer の current schema を test 化。common metadata、`ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` の writer/query path を追加 | 監査済み・差分あり | key prefix / 詳細 schema_version 命名 / 残未対応 item の実装は後続 |
 | P0-09 | Worker coverage | BATCH-001〜020 と現 pipeline/handler/job/queue/test の対応を `docs/design/worker-batch-coverage-audit.md` に整理し、job_type / queue mapping を test 化。BATCH-006 は `notification_plan`、BATCH-017 は `archive_finalize` job を追加 | 監査済み・差分あり | 外部通知 delivery、専用 file-output、worker 分割は後続実装 |
 | P0-10 | Dev deploy rehearsal | 実 dev 環境で YouTube 実データ 1 件の end-to-end 確認はこの PR では未実施 | 未検証 | credentials と dev stack がある環境で別途実施 |
 

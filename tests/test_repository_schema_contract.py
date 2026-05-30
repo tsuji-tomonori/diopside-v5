@@ -104,6 +104,50 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert repo.get_job(job["job_id"])["events"][0]["event_type"] == "queued"
 
 
+def test_repository_adds_common_item_metadata_and_preserves_created_at():
+    repo = MemoryRepository()
+
+    first = repo.put_item(
+        {
+            "item_type": "AppConfig",
+            "pk": "CONFIG#app",
+            "sk": "META",
+            "system_name": "diopside",
+        }
+    )
+    updated = repo.put_item(
+        {
+            "item_type": "AppConfig",
+            "pk": "CONFIG#app",
+            "sk": "META",
+            "system_name": "diopside-v5",
+        }
+    )
+    explicit = repo.put_item(
+        {
+            "item_type": "Lock",
+            "pk": "LOCK#manual",
+            "sk": "META",
+            "schema_version": "custom-lock/v1",
+            "entity_id": "manual-lock",
+            "created_at": "2026-05-30T00:00:00Z",
+            "updated_at": "2026-05-30T01:00:00Z",
+        }
+    )
+
+    assert first["schema_version"] == "ddb-AppConfig-v1"
+    assert first["entity_id"] == "CONFIG#app#META"
+    assert "created_at" in first
+    assert "updated_at" in first
+    assert updated["created_at"] == first["created_at"]
+    assert updated["schema_version"] == first["schema_version"]
+    assert updated["entity_id"] == first["entity_id"]
+    assert explicit["schema_version"] == "custom-lock/v1"
+    assert explicit["entity_id"] == "manual-lock"
+    assert explicit["created_at"] == "2026-05-30T00:00:00Z"
+    assert explicit["updated_at"] == "2026-05-30T01:00:00Z"
+
+
 def test_repository_writes_channel_ref_and_lists_channels_from_read_model():
     repo = MemoryRepository()
 

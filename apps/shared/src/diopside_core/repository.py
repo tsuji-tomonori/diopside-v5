@@ -212,6 +212,43 @@ def _static_export_schema_versions(manifest: dict[str, Any]) -> dict[str, str]:
     return versions
 
 
+def item_schema_version(item_type: str) -> str:
+    return f"ddb-{item_type}-v1"
+
+
+def item_entity_id(item: dict[str, Any]) -> str:
+    for key in [
+        "entity_id",
+        "video_id",
+        "channel_id",
+        "tag_id",
+        "job_id",
+        "export_id",
+        "artifact_id",
+        "lock_key",
+        "quota_date",
+        "idempotency_key",
+    ]:
+        value = item.get(key)
+        if value:
+            return str(value)
+    return f"{item['pk']}#{item['sk']}"
+
+
+def normalize_item_metadata(item: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    normalized = deepcopy(item)
+    stamp = now_iso()
+    if not normalized.get("schema_version"):
+        normalized["schema_version"] = existing.get("schema_version") if existing else item_schema_version(normalized["item_type"])
+    if not normalized.get("entity_id"):
+        normalized["entity_id"] = existing.get("entity_id") if existing else item_entity_id(normalized)
+    if not normalized.get("created_at"):
+        normalized["created_at"] = existing.get("created_at") if existing else normalized.get("updated_at", stamp)
+    if not normalized.get("updated_at"):
+        normalized["updated_at"] = stamp
+    return normalized
+
+
 def derive_job_state(events: list[dict[str, Any]]) -> str:
     if not events:
         return "queued"
@@ -266,8 +303,9 @@ class MemoryRepository:
     def put_item(self, item: dict[str, Any]) -> dict[str, Any]:
         if item.get("item_type") not in ITEM_TYPES:
             raise ValueError(f"unsupported item_type: {item.get('item_type')}")
-        self.items[(item["pk"], item["sk"])] = deepcopy(item)
-        return deepcopy(item)
+        normalized = normalize_item_metadata(item, self.items.get((item["pk"], item["sk"])))
+        self.items[(normalized["pk"], normalized["sk"])] = deepcopy(normalized)
+        return deepcopy(normalized)
 
     def get_item(self, pk: str, sk: str) -> dict[str, Any] | None:
         item = self.items.get((pk, sk))
@@ -601,8 +639,10 @@ class DynamoRepository(MemoryRepository):
     def put_item(self, item: dict[str, Any]) -> dict[str, Any]:
         if item.get("item_type") not in ITEM_TYPES:
             raise ValueError(f"unsupported item_type: {item.get('item_type')}")
-        self.table.put_item(Item=item)
-        return deepcopy(item)
+        existing = self.get_item(item["pk"], item["sk"])
+        normalized = normalize_item_metadata(item, existing)
+        self.table.put_item(Item=normalized)
+        return deepcopy(normalized)
 
     def get_item(self, pk: str, sk: str) -> dict[str, Any] | None:
         item = self.table.get_item(Key={"pk": pk, "sk": sk}).get("Item")
@@ -628,6 +668,7 @@ class DynamoRepository(MemoryRepository):
             "gsi3pk": "JOB#ALL",
             "gsi3sk": f"{stamp}#{job_type}#{job_id}",
         }
+        item = normalize_item_metadata(item)
         try:
             self.table.put_item(Item=item, ConditionExpression="attribute_not_exists(pk)")
         except ClientError as exc:

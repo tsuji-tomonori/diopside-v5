@@ -28,8 +28,9 @@ CloudFront behavior は上から `/api/*`、`/data/latest-manifest.json`、`/dat
 ## DynamoDB item schema
 
 物理 key は `pk` / `sk`、GSI は `by_public_date`、`by_tag`、`by_work_queue` です。実装は `apps/shared/src/diopside_core/repository.py` に集約しています。公開動画、job 一覧、quota usage 一覧は DynamoDB `scan` を使わず、公開動画は `by_public_date`、job/quota 一覧は `by_work_queue` の Query + pagination で取得します。
+repository writer は保存時に共通 metadata として `schema_version`、`entity_id`、`created_at`、`updated_at` を付与します。既存 item の `created_at` と明示指定された `schema_version` / `entity_id` は上書きしません。
 
-v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix、`schema_version` などに未対応または差分があります。`ChannelRef`、`VideoMonthIndex`、`NotificationPlan`、`TagSummary`、`RandomBucket`、`StaticExport` は v0.4 key shape で部分実装しています。
+v0.4 正本との差分は `docs/design/dynamodb-schema-audit.md` に整理しています。現 repository は single-table と S3 退避方針は近い一方、key prefix や item type ごとの詳細 schema version 命名などに未対応または差分があります。`ChannelRef`、`VideoMonthIndex`、`NotificationPlan`、`TagSummary`、`RandomBucket`、`StaticExport` は v0.4 key shape で部分実装しています。
 
 | item_type | pk | sk | 主な用途 |
 |---|---|---|---|

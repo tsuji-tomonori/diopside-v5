@@ -2,7 +2,7 @@
 
 ## 位置づけ
 
-`docs/design/diopside_basic_design_v0.4.md` の 5.4.4 / 5.4.5 を正本とし、現 repository 実装は移行中の実装候補として扱う。現状は single-table、`pk` / `sk`、`by_public_date`、`by_tag`、`by_work_queue`、S3 への大型データ退避方針は近いが、item type 名、key prefix、`schema_version`、一部 read model item に差分がある。
+`docs/design/diopside_basic_design_v0.4.md` の 5.4.4 / 5.4.5 を正本とし、現 repository 実装は移行中の実装候補として扱う。現状は single-table、`pk` / `sk`、`by_public_date`、`by_tag`、`by_work_queue`、S3 への大型データ退避方針は近いが、item type 名、key prefix、一部 read model item に差分がある。共通属性の `schema_version`、`entity_id`、`created_at`、`updated_at` は repository writer で付与する。
 
 ## v0.4 item type 対応表
 
@@ -46,7 +46,7 @@
 ## 後続修正方針
 
 1. v0.4 key prefix へ移行する場合は、既存 `VIDEO#` / `CHANNEL#` item との互換 migration 方針を先に決める。
-2. `schema_version`、`entity_id`、`created_at`、`updated_at` の共通属性を repository writer に追加する。
+2. item type ごとの詳細 `schema_version` 命名と既存 DynamoDB data の common metadata backfill 方針を決める。
 3. `ChannelRef`、`VideoMonthIndex`、`TagSummary`、`RandomBucket`、`StaticExport` は writer/query path 追加済みだが、rebuild/backfill/API表示は後続で扱う。
 4. `JobEvent` は v0.4 の `EVT#{seq}` / `event_name` / `state_after` へ寄せるか、設計変更提案として現在の time-sort event 方式を明記する。
 5. `QuotaUsage` daily summary を API / 管理 UI でどう見せるかを決め、quota threshold warning event と alarm へ接続する。
