@@ -39,13 +39,13 @@
 
 ## 受け入れ条件
 
-- [ ] `put_artifact` が `pk=VID#{video_id}` / `sk=ARTIFACT#{artifact_type}#{artifact_version}` の `Artifact` item を保存する。
-- [ ] `Artifact` item が `artifact_version` と `content_hash` を必ず持つ。
-- [ ] `list_artifacts` / `get_artifact_by_id` が新 shape を返し、旧 `VIDEO#...` artifact も fallback で扱える。
-- [ ] 既存 `file_output` の artifact 保存・参照テストが通る。
-- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
-- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
-- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+- [x] `put_artifact` が `pk=VID#{video_id}` / `sk=ARTIFACT#{artifact_type}#{artifact_version}` の `Artifact` item を保存する。
+- [x] `Artifact` item が `artifact_version` と `content_hash` を必ず持つ。
+- [x] `list_artifacts` / `get_artifact_by_id` が新 shape を返し、旧 `VIDEO#...` artifact も fallback で扱える。
+- [x] 既存 `file_output` の artifact 保存・参照テストが通る。
+- [x] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [x] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [x] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
 
 ## 検証計画
 
@@ -55,6 +55,20 @@
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: fail -> 旧 key 期待値を更新後 pass（21 tests）
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_static_exporter.py`: pass（50 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（122 tests、build、package、local e2e）
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581845463
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581848667
 
 ## PR レビュー観点
 
@@ -69,4 +83,4 @@
 
 ## 状態
 
-in_progress
+done
