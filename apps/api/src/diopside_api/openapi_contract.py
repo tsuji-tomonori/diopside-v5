@@ -66,6 +66,12 @@ def build_openapi_contract() -> dict[str, Any]:
             response_schema = {"$ref": "#/components/schemas/HealthResponse"}
         elif route.design_id == "API-002":
             response_schema = {"$ref": "#/components/schemas/PublicConfigResponse"}
+        elif route.design_id == "API-003":
+            response_schema = {"$ref": "#/components/schemas/PublicHomeResponse"}
+        elif route.design_id == "API-004":
+            response_schema = {"$ref": "#/components/schemas/PublicVideoListResponse"}
+        elif route.design_id == "API-006":
+            response_schema = {"$ref": "#/components/schemas/PublicTagListResponse"}
         operation: dict[str, Any] = {
             "operationId": operation_id(route),
             "summary": route.summary,
@@ -150,6 +156,61 @@ def build_openapi_contract() -> dict[str, Any]:
                         "default_locale": {"type": "string"},
                         "public_data_manifest": {"type": "string"},
                         "admin_api_enabled": {"type": "boolean"},
+                    },
+                },
+                "PublicVideoListItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["video_id", "title"],
+                    "properties": {
+                        "video_id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "published_at": {"type": ["string", "null"], "format": "date-time"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "detail_path": {"type": ["string", "null"]},
+                    },
+                },
+                "PublicTagItem": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["label", "video_count"],
+                    "properties": {
+                        "tag_id": {"type": ["string", "null"]},
+                        "label": {"type": "string"},
+                        "video_count": {"type": "integer"},
+                        "category": {"type": ["string", "null"]},
+                    },
+                },
+                "PublicHomeResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "latest_videos", "popular_tags"],
+                    "properties": {
+                        "schema_version": {"const": "public-home/v1"},
+                        "latest_videos": {"type": "array", "items": {"$ref": "#/components/schemas/PublicVideoListItem"}},
+                        "popular_tags": {"type": "array", "items": {"$ref": "#/components/schemas/PublicTagItem"}},
+                        "updated_at": {"type": ["string", "null"], "format": "date-time"},
+                        "generated_at": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                },
+                "PublicVideoListResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items"],
+                    "properties": {
+                        "schema_version": {"const": "public-video-list/v1"},
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicVideoListItem"}},
+                        "generated_at": {"type": ["string", "null"], "format": "date-time"},
+                    },
+                },
+                "PublicTagListResponse": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "required": ["schema_version", "items"],
+                    "properties": {
+                        "schema_version": {"const": "public-tag-list/v1"},
+                        "items": {"type": "array", "items": {"$ref": "#/components/schemas/PublicTagItem"}},
+                        "generated_at": {"type": ["string", "null"], "format": "date-time"},
                     },
                 },
             },

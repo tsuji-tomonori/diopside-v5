@@ -36,6 +36,41 @@ def create_app() -> Any:
         public_data_manifest: str
         admin_api_enabled: bool
 
+    class PublicVideoListItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        video_id: str
+        title: str
+        published_at: str | None = None
+        tags: list[str] = []
+        detail_path: str | None = None
+
+    class PublicTagItem(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        label: str
+        video_count: int
+        tag_id: str | None = None
+        category: str | None = None
+
+    class PublicHomeResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        latest_videos: list[PublicVideoListItem]
+        popular_tags: list[PublicTagItem]
+        updated_at: str | None = None
+        generated_at: str | None = None
+
+    class PublicVideoListResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        items: list[PublicVideoListItem]
+        generated_at: str | None = None
+
+    class PublicTagListResponse(BaseModel):
+        model_config = ConfigDict(extra="allow")
+        schema_version: str
+        items: list[PublicTagItem]
+        generated_at: str | None = None
+
     app = FastAPI(title="diopside API", version="v0.4-contract")
 
     def custom_openapi() -> dict[str, Any]:
@@ -49,8 +84,20 @@ def create_app() -> Any:
     async def config(request: Any) -> PublicConfigResponse:
         return PublicConfigResponse.model_validate(await _invoke_lambda_json(request, "GET"))
 
+    async def home(request: Any) -> PublicHomeResponse:
+        return PublicHomeResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
+    async def videos(request: Any) -> PublicVideoListResponse:
+        return PublicVideoListResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
+    async def tags(request: Any) -> PublicTagListResponse:
+        return PublicTagListResponse.model_validate(await _invoke_lambda_json(request, "GET"))
+
     _set_request_signature(health, Request)
     _set_request_signature(config, Request)
+    _set_request_signature(home, Request)
+    _set_request_signature(videos, Request)
+    _set_request_signature(tags, Request)
 
     app.add_api_route(
         "/api/health",
@@ -68,8 +115,32 @@ def create_app() -> Any:
         operation_id="get_api_002",
         response_model=PublicConfigResponse,
     )
+    app.add_api_route(
+        "/api/home",
+        home,
+        methods=["GET"],
+        summary="ホーム集約 API",
+        operation_id="get_api_003",
+        response_model=PublicHomeResponse,
+    )
+    app.add_api_route(
+        "/api/videos",
+        videos,
+        methods=["GET"],
+        summary="動画一覧・検索 API",
+        operation_id="get_api_004",
+        response_model=PublicVideoListResponse,
+    )
+    app.add_api_route(
+        "/api/tags",
+        tags,
+        methods=["GET"],
+        summary="タグ一覧 API",
+        operation_id="get_api_006",
+        response_model=PublicTagListResponse,
+    )
 
-    native_paths = {("GET", "/api/health"), ("GET", "/api/config")}
+    native_paths = {("GET", "/api/health"), ("GET", "/api/config"), ("GET", "/api/home"), ("GET", "/api/videos"), ("GET", "/api/tags")}
     for route in all_route_contracts():
         if (route.method, route.path) in native_paths:
             continue

@@ -25,6 +25,9 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["paths"]["/api/health"]["get"]["x-design-id"] == "API-001"
     assert spec["paths"]["/api/health"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/HealthResponse"}
     assert spec["paths"]["/api/config"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicConfigResponse"}
+    assert spec["paths"]["/api/home"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicHomeResponse"}
+    assert spec["paths"]["/api/videos"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicVideoListResponse"}
+    assert spec["paths"]["/api/tags"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/PublicTagListResponse"}
     assert spec["paths"]["/api/videos/{video_id}"]["get"]["x-schema-version"] == "public-video-detail/v1"
     assert spec["paths"]["/api/admin/jobs/{job_id}/cancel"]["post"]["x-design-id"] == "API-019"
     assert spec["paths"]["/api/admin/channels/{channel_id}"]["put"]["x-schema-version"] == "admin-channel-config/v1"
@@ -32,6 +35,9 @@ def test_openapi_contract_records_paths_methods_and_schema_versions():
     assert spec["components"]["securitySchemes"]["AdminSession"]["in"] == "cookie"
     assert spec["components"]["schemas"]["HealthResponse"]["required"] == ["service", "version", "status", "checked_at"]
     assert spec["components"]["schemas"]["PublicConfigResponse"]["properties"]["schema_version"]["const"] == "public-config/v1"
+    assert spec["components"]["schemas"]["PublicHomeResponse"]["properties"]["latest_videos"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
+    assert spec["components"]["schemas"]["PublicVideoListResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicVideoListItem"}
+    assert spec["components"]["schemas"]["PublicTagListResponse"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/PublicTagItem"}
 
 
 def test_openapi_contract_routes_are_documented_and_present_in_lambda_handler_source():
