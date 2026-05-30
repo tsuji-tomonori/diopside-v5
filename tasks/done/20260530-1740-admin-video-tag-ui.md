@@ -1,6 +1,6 @@
 # Admin video tag correction UI
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -62,3 +62,31 @@ README の管理 UI 説明、`docs/design/traceability-matrix.md` の FR-A-005 e
 - local fixture seed は `DIOPSIDE_LOCAL_FIXTURE_MODE=true` の local server に限定されていること。
 - replace mode が add/remove と同時に送られないこと。
 - tag update が既存 session/CSRF flow を使うこと。
+
+## 完了結果
+
+- 管理 UI から `video_id` と tag add/remove/replace を入力し、`PUT /api/admin/videos/{video_id}/tags` を実行できるようにした。
+- add/remove mode は `add_tags` / `remove_tags`、replace mode は `replace_tags` のみを送るようにした。
+- tag update は既存の cookie session + CSRF flow を使い、Bearer token の localStorage 保存は追加していない。
+- local fixture mode の API server 起動時だけ public fixture video を MemoryRepository に seed し、local e2e で tag update success flow を検証できるようにした。
+- README、traceability、audit、作業レポートを更新した。
+- 作業レポート: `reports/working/20260530-1740-admin-video-tag-ui.md`
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582309018
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582309023
+
+## 検証結果
+
+- `node --check apps/web/public/app.js`: pass
+- `python3 -m py_compile apps/api/src/diopside_api/local_server.py`: pass
+- `node --check tools/run-local-e2e.mjs`: pass
+- `node tools/check-web-dom-safety.mjs`: pass
+- `PYTHONPATH=apps/shared/src:apps/api/src python3 -m pytest tests/test_api_handler.py::test_admin_video_tag_update_requires_csrf_and_persists tests/test_api_handler.py::test_admin_video_tag_update_validates_body_and_not_found`: pass（2 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `npm run e2e:local`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（134 tests + build/package/local e2e）
+
+## 未実施・制約
+
+- 実 AWS 環境での tag update は未実施。理由: dev/prod DynamoDB への実データ変更を伴うため、環境指定後に実施する。
+- tag category / sort order の管理 UI 編集と、tag 補正後の自動 static export enqueue は後続対象。
