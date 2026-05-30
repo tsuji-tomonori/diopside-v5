@@ -125,6 +125,7 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
 def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     channel_id = params.get("channel_id", "manual")
+    uploads_playlist_id = params.get("uploads_playlist_id")
     job_id = params.get("job_id")
     playlist_page_token = params.get("page_token")
     playlist_next_page_token = None
@@ -137,6 +138,7 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         client = params.get("youtube_client") or YouTubeClient()
         channel = _channel_config(repo, params)
         channel_id = channel["channel_id"]
+        uploads_playlist_id = channel.get("uploads_playlist_id")
         playlist_page_token = playlist_page_token if playlist_page_token is not None else _metadata_cursor(repo, channel_id).get("next_page_token")
         playlist = client.playlist_items(channel["uploads_playlist_id"], playlist_page_token, int(params.get("max_results", 50)))
         raw_playlist_uri = _write_json_blob(
@@ -187,22 +189,19 @@ def metadata_sync(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         repo.put_video(video)
         channel_id = video.get("channel_id") or channel_id
         saved.append(video["video_id"])
-    repo.put_item(
+    repo.put_channel_sync_cursor(
+        channel_id,
         {
-            "item_type": "ChannelCursor",
-            "pk": f"CHANNEL#{channel_id}",
-            "sk": "CURSOR#metadata",
-            "channel_id": channel_id,
-            "cursor_name": "metadata",
+            "uploads_playlist_id": uploads_playlist_id,
             "page_token": playlist_page_token,
             "next_page_token": playlist_next_page_token,
-            "last_video_id": saved[0] if saved else None,
+            "last_seen_video_id": saved[0] if saved else None,
             "last_video_ids": saved,
             "raw_playlist_uri": raw_playlist_uri,
             "raw_videos_uri": raw_videos_uri,
             "saved_count": len(saved),
-            "updated_at": now_iso(),
-        }
+            "job_id": job_id,
+        },
     )
     return {
         "channel_id": channel_id,
@@ -795,7 +794,7 @@ def _channel_config(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _metadata_cursor(repo: Any, channel_id: str) -> dict[str, Any]:
-    return repo.get_item(f"CHANNEL#{channel_id}", "CURSOR#metadata") or {}
+    return repo.get_channel_sync_cursor(channel_id) or {}
 
 
 def _live_chat_rate_limited(response: dict[str, Any]) -> bool:

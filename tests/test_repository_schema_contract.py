@@ -276,6 +276,52 @@ def test_repository_writes_app_config_v04_key_and_reads_legacy_fallback():
     assert legacy_repo.get_app_config() == legacy
 
 
+def test_repository_writes_channel_sync_cursor_v04_key_and_reads_legacy_fallback():
+    repo = MemoryRepository()
+
+    cursor = repo.put_channel_sync_cursor(
+        "ch001",
+        {
+            "uploads_playlist_id": "uploads",
+            "next_page_token": "next-token",
+            "last_seen_video_id": "vid001",
+            "last_seen_published_at": "2026-05-30T00:00:00Z",
+            "raw_playlist_uri": "s3://raw/playlist.json",
+            "raw_videos_uri": "s3://raw/videos.json",
+            "saved_count": 2,
+            "job_id": "job-meta",
+        },
+    )
+
+    assert cursor["item_type"] == "ChannelSyncCursor"
+    assert cursor["pk"] == "CH#ch001"
+    assert cursor["sk"] == "CURSOR#uploads"
+    assert cursor["channel_id"] == "ch001"
+    assert cursor["uploads_playlist_id"] == "uploads"
+    assert cursor["next_page_token"] == "next-token"
+    assert cursor["next_page_token_hash"].startswith("page_")
+    assert cursor["last_seen_video_id"] == "vid001"
+    assert cursor["raw_playlist_uri"] == "s3://raw/playlist.json"
+    assert cursor["raw_videos_uri"] == "s3://raw/videos.json"
+    assert cursor["saved_count"] == 2
+    assert cursor["job_id"] == "job-meta"
+    assert repo.get_channel_sync_cursor("ch001") == cursor
+
+    legacy_repo = MemoryRepository()
+    legacy = legacy_repo.put_item(
+        {
+            "item_type": "ChannelCursor",
+            "pk": "CHANNEL#legacy",
+            "sk": "CURSOR#metadata",
+            "channel_id": "legacy",
+            "cursor_name": "metadata",
+            "next_page_token": "resume-token",
+        }
+    )
+
+    assert legacy_repo.get_channel_sync_cursor("legacy") == legacy
+
+
 def test_repository_adds_common_item_metadata_and_preserves_created_at():
     repo = MemoryRepository()
 

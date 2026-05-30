@@ -171,12 +171,18 @@ def test_metadata_sync_paginates_saves_raw_and_cursor(tmp_path, monkeypatch):
         },
     )
 
-    cursor = repo.get_item("CHANNEL#ch", "CURSOR#metadata")
+    cursor = repo.get_channel_sync_cursor("ch")
     video = repo.get_video("vid001")
     assert result["next_page_token"] == "next-token"
     assert result["raw_playlist_uri"]
     assert result["raw_videos_uri"]
+    assert cursor["item_type"] == "ChannelSyncCursor"
+    assert cursor["pk"] == "CH#ch"
+    assert cursor["sk"] == "CURSOR#uploads"
+    assert cursor["uploads_playlist_id"] == "uploads"
     assert cursor["next_page_token"] == "next-token"
+    assert cursor["next_page_token_hash"].startswith("page_")
+    assert cursor["last_seen_video_id"] == "vid001"
     assert cursor["last_video_ids"] == ["vid001", "vid002"]
     assert "items" not in cursor
     assert video["raw_metadata_uri"] == result["raw_videos_uri"]

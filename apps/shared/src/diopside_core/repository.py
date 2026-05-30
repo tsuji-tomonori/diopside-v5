@@ -23,6 +23,7 @@ ITEM_TYPES = {
     "AppConfig",
     "Channel",
     "ChannelRef",
+    "ChannelSyncCursor",
     "ChannelCursor",
     "Video",
     "VideoIndex",
@@ -110,6 +111,27 @@ def channel_ref_item(channel: dict[str, Any]) -> dict[str, Any]:
         "metadata_interval_minutes": channel.get("metadata_interval_minutes"),
         "live_scan_interval_minutes": channel.get("live_scan_interval_minutes"),
         "updated_at": channel.get("updated_at") or stamp,
+    }
+
+
+def channel_sync_cursor_item(channel_id: str, cursor: dict[str, Any]) -> dict[str, Any]:
+    next_page_token = cursor.get("next_page_token")
+    return {
+        **cursor,
+        "item_type": "ChannelSyncCursor",
+        "pk": f"CH#{channel_id}",
+        "sk": "CURSOR#uploads",
+        "channel_id": channel_id,
+        "uploads_playlist_id": cursor.get("uploads_playlist_id", ""),
+        "last_seen_video_id": cursor.get("last_seen_video_id") or cursor.get("last_video_id"),
+        "last_seen_published_at": cursor.get("last_seen_published_at"),
+        "backfill_until": cursor.get("backfill_until"),
+        "next_page_token": next_page_token,
+        "next_page_token_hash": stable_id("page", next_page_token) if next_page_token else None,
+        "last_success_at": cursor.get("last_success_at") or now_iso(),
+        "last_error_at": cursor.get("last_error_at"),
+        "last_error_code": cursor.get("last_error_code"),
+        "updated_at": now_iso(),
     }
 
 
@@ -569,6 +591,8 @@ class Repository(Protocol):
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]: ...
     def get_app_config(self) -> dict[str, Any] | None: ...
+    def put_channel_sync_cursor(self, channel_id: str, cursor: dict[str, Any]) -> dict[str, Any]: ...
+    def get_channel_sync_cursor(self, channel_id: str) -> dict[str, Any] | None: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_chat_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]: ...
@@ -902,6 +926,12 @@ class MemoryRepository:
 
     def get_app_config(self) -> dict[str, Any] | None:
         return self.get_item("APP#CONFIG", "META") or self.get_item("CONFIG#app", "META")
+
+    def put_channel_sync_cursor(self, channel_id: str, cursor: dict[str, Any]) -> dict[str, Any]:
+        return self.put_item(channel_sync_cursor_item(channel_id, cursor))
+
+    def get_channel_sync_cursor(self, channel_id: str) -> dict[str, Any] | None:
+        return self.get_item(f"CH#{channel_id}", "CURSOR#uploads") or self.get_item(f"CHANNEL#{channel_id}", "CURSOR#metadata")
 
     def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None:
         existing = self.get_item(f"LOCK#{lock_key}", "META")
