@@ -44,7 +44,7 @@
       <section class="tag-nav" aria-labelledby="tagNavTitle">
         <div class="section-title">
           <h2 id="tagNavTitle">タグから探す</h2>
-          <button type="button" id="clearTagButton">タグ解除</button>
+          <button type="button" id="clearTagButton" aria-label="タグ選択を解除">タグ解除</button>
         </div>
         <div id="tagFilters" class="chips tag-chips" aria-label="タグ"></div>
       </section>
@@ -78,15 +78,15 @@
       </section>
     </main>
     <nav class="bottom-nav" aria-label="主要操作">
-      <button type="button" data-action="latest">最新</button>
-      <button type="button" data-action="filter">絞込</button>
-      <button type="button" data-action="clear">解除</button>
-      <button type="button" data-action="admin">管理</button>
+      <button type="button" data-action="latest" aria-label="最新アーカイブを表示">最新</button>
+      <button type="button" data-action="filter" aria-label="絞り込みを開く">絞込</button>
+      <button type="button" data-action="clear" aria-label="検索と絞り込みを解除">解除</button>
+      <button type="button" data-action="admin" aria-label="管理パネルを開く">管理</button>
     </nav>
-    <dialog id="filterSheet" class="bottom-sheet">
+    <dialog id="filterSheet" class="bottom-sheet" aria-labelledby="filterSheetTitle">
       <form id="filterForm" method="dialog">
         <div class="sheet-head">
-          <h2>絞り込み</h2>
+          <h2 id="filterSheetTitle">絞り込み</h2>
           <button type="submit" aria-label="閉じる">閉じる</button>
         </div>
         <label>タグ
@@ -124,15 +124,15 @@
           </select>
         </label>
         <div class="sheet-actions">
-          <button type="button" id="clearFilterButton">条件を解除</button>
-          <button type="submit">適用して閉じる</button>
+          <button type="button" id="clearFilterButton" aria-label="絞り込み条件を解除">条件を解除</button>
+          <button type="submit" aria-label="絞り込みを適用して閉じる">適用して閉じる</button>
         </div>
       </form>
     </dialog>
-    <dialog id="adminPanel" class="bottom-sheet">
+    <dialog id="adminPanel" class="bottom-sheet" aria-labelledby="adminPanelTitle">
       <form id="adminJobForm">
         <div class="sheet-head">
-          <h2>管理 job</h2>
+          <h2 id="adminPanelTitle">管理 job</h2>
           <button type="button" onclick="document.querySelector('#adminPanel').close()" aria-label="閉じる">閉じる</button>
         </div>
         <label>Token <input name="token" type="password" autocomplete="off"></label>
@@ -148,13 +148,13 @@
           </select>
         </label>
         <label>video_id <input name="videoId" autocomplete="off"></label>
-        <button type="submit">起動</button>
+        <button type="submit" aria-label="管理 job を起動">起動</button>
         <div class="admin-actions">
-          <button type="button" id="loadJobsButton">job一覧</button>
-          <button type="button" id="loadQuotaButton">quota</button>
+          <button type="button" id="loadJobsButton" aria-label="job 一覧を読み込む">job一覧</button>
+          <button type="button" id="loadQuotaButton" aria-label="quota usage を読み込む">quota</button>
         </div>
         <label>job_id <input name="jobId" id="adminJobId" autocomplete="off"></label>
-        <button type="button" id="loadJobDetailButton">job詳細</button>
+        <button type="button" id="loadJobDetailButton" aria-label="job 詳細を読み込む">job詳細</button>
         <p id="adminResult" class="admin-result" aria-live="polite"></p>
         <div id="adminData" class="admin-data" aria-live="polite"></div>
       </form>
