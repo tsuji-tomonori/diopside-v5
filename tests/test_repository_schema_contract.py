@@ -208,6 +208,46 @@ def test_repository_keeps_quota_daily_summary_out_of_call_record_list():
     assert repo.list_quota_usage() == [call]
 
 
+def test_repository_records_static_export_history_v04_item_shape():
+    repo = MemoryRepository()
+    manifest = {
+        "schema_version": "public-manifest/v1",
+        "generated_at": "2026-05-30T13:15:00Z",
+        "export_version": "unit-export",
+        "static_paths": {
+            "STATIC-003": {"items": {"vid001": {"path": "/data/videos/vid001.json"}}},
+            "STATIC-006": {"checksum_sha256": "a" * 64},
+        },
+    }
+
+    export = repo.record_static_export(
+        manifest,
+        reason="manual",
+        manifest_s3_uri="s3://public-data/data/latest-manifest.json",
+        public_prefix="data/v/unit-export/public",
+        tag_count=3,
+        generated_job_id="job001",
+        uploaded_object_count=12,
+    )
+
+    assert export["item_type"] == "StaticExport"
+    assert export["pk"] == "EXPORT#public"
+    assert export["sk"] == "VERSION#2026-05-30T13:15:00Z"
+    assert export["export_id"].startswith("export_")
+    assert export["export_version"] == "unit-export"
+    assert export["reason"] == "manual"
+    assert export["manifest_s3_uri"] == "s3://public-data/data/latest-manifest.json"
+    assert export["public_prefix"] == "data/v/unit-export/public"
+    assert export["video_count"] == 1
+    assert export["tag_count"] == 3
+    assert export["schema_versions"]["manifest"] == "public-manifest/v1"
+    assert export["content_hash"] == "a" * 64
+    assert export["publish_state"] == "published"
+    assert export["generated_job_id"] == "job001"
+    assert export["uploaded_object_count"] == 12
+    assert repo.list_static_exports() == [export]
+
+
 def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
     repo = MemoryRepository()
 
@@ -216,6 +256,7 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
     assert {"ChannelRef", "VideoMonthIndex", "TagSummary"} <= unsupported_v04_types
     assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
+    assert "StaticExport" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

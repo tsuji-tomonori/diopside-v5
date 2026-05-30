@@ -284,6 +284,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         else:
             manifest = export_public_data(repository, out, params.get("export_version"))
         uploaded = _upload_directory(out) if os.environ.get("DIOPSIDE_PUBLIC_DATA_BUCKET") else 0
+        repository.record_static_export(
+            manifest,
+            reason=params.get("reason", "manual"),
+            manifest_s3_uri=_manifest_s3_uri(),
+            public_prefix=_public_data_prefix(manifest["export_version"]),
+            generated_job_id=job_id,
+            uploaded_object_count=uploaded,
+            tag_count=_export_tag_count(out),
+        )
         result = {
             "status": "succeeded",
             "manifest_path": str(out / "latest-manifest.json"),
@@ -301,6 +310,28 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _manifest_s3_uri() -> str:
+    bucket = os.environ.get("DIOPSIDE_PUBLIC_DATA_BUCKET")
+    if not bucket:
+        return "local://latest-manifest.json"
+    prefix = os.environ.get("DIOPSIDE_PUBLIC_DATA_PREFIX", "data").strip("/")
+    key = f"{prefix}/latest-manifest.json" if prefix else "latest-manifest.json"
+    return f"s3://{bucket}/{key}"
+
+
+def _public_data_prefix(export_version: str) -> str:
+    prefix = os.environ.get("DIOPSIDE_PUBLIC_DATA_PREFIX", "data").strip("/")
+    base = f"data/v/{export_version}/public"
+    return f"{prefix}/{base}" if prefix and prefix != "data" else base
+
+
+def _export_tag_count(out_dir: pathlib.Path) -> int:
+    path = out_dir / "data" / "tags.json"
+    if not path.exists():
+        return 0
+    return len(json.loads(path.read_text(encoding="utf-8")).get("items", []))
 
 
 def _repository_from_env() -> Any:

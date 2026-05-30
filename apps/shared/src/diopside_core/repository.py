@@ -30,6 +30,7 @@ ITEM_TYPES = {
     "ChatAggregate",
     "Artifact",
     "NotificationPlan",
+    "StaticExport",
     "Job",
     "JobEvent",
     "QuotaUsage",
@@ -86,6 +87,65 @@ def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def static_export_item(
+    manifest: dict[str, Any],
+    *,
+    reason: str = "manual",
+    manifest_s3_uri: str | None = None,
+    public_prefix: str | None = None,
+    video_count: int | None = None,
+    tag_count: int | None = None,
+    generated_job_id: str | None = None,
+    uploaded_object_count: int | None = None,
+    publish_state: str = "published",
+) -> dict[str, Any]:
+    exported_at = manifest["generated_at"]
+    export_version = manifest["export_version"]
+    static_paths = manifest.get("static_paths", {})
+    content_hash = static_paths.get("STATIC-006", {}).get("checksum_sha256") or hashlib.sha256(
+        repr(manifest).encode("utf-8")
+    ).hexdigest()
+    item = {
+        "item_type": "StaticExport",
+        "pk": "EXPORT#public",
+        "sk": f"VERSION#{exported_at}",
+        "export_id": stable_id("export", export_version),
+        "export_version": export_version,
+        "exported_at": exported_at,
+        "reason": reason,
+        "manifest_s3_uri": manifest_s3_uri or "local://latest-manifest.json",
+        "public_prefix": public_prefix or f"data/v/{export_version}/public",
+        "video_count": video_count if video_count is not None else len(static_paths.get("STATIC-003", {}).get("items", {})),
+        "tag_count": tag_count if tag_count is not None else int(manifest.get("tag_count", 0)),
+        "schema_versions": _static_export_schema_versions(manifest),
+        "content_hash": content_hash,
+        "publish_state": publish_state,
+        "updated_at": now_iso(),
+    }
+    if generated_job_id:
+        item["generated_job_id"] = generated_job_id
+    if uploaded_object_count is not None:
+        item["uploaded_object_count"] = uploaded_object_count
+    return item
+
+
+def _static_export_schema_versions(manifest: dict[str, Any]) -> dict[str, str]:
+    versions = {"manifest": manifest.get("schema_version", "public-manifest/v1")}
+    versions.update(
+        {
+            "home": "public-home/v1",
+            "video_list": "public-video-list/v1",
+            "tag_list": "public-tag-list/v1",
+            "video_search": "public-video-search/v1",
+            "archive_calendar": "public-archive-calendar/v1",
+            "video_detail": "public-video-detail/v1",
+            "wordcloud": "public-wordcloud/v1",
+            "timestamps": "public-timestamp-list/v1",
+        }
+    )
+    return versions
+
+
 def derive_job_state(events: list[dict[str, Any]]) -> str:
     if not events:
         return "queued"
@@ -101,6 +161,8 @@ class Repository(Protocol):
     def get_video(self, video_id: str) -> dict[str, Any] | None: ...
     def list_tags(self) -> list[dict[str, Any]]: ...
     def list_random_videos(self, limit: int = 1000) -> list[dict[str, Any]]: ...
+    def record_static_export(self, manifest: dict[str, Any], **kwargs: Any) -> dict[str, Any]: ...
+    def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
@@ -192,6 +254,15 @@ class MemoryRepository:
         items = [item for (pk, sk), item in self.items.items() if pk == "RANDOM#DEFAULT" and sk.startswith("VID#") and item.get("item_type") == "RandomBucket"]
         items.sort(key=lambda item: item.get("sk", ""))
         return deepcopy(items[:limit])
+
+    def record_static_export(self, manifest: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        item = static_export_item(manifest, **kwargs)
+        return self.put_item(item)
+
+    def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]:
+        exports = [item for (pk, sk), item in self.items.items() if pk == "EXPORT#public" and sk.startswith("VERSION#") and item.get("item_type") == "StaticExport"]
+        exports.sort(key=lambda item: item.get("exported_at", ""), reverse=True)
+        return deepcopy(exports[:limit])
 
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]:
         video = self.get_video(video_id)
@@ -442,6 +513,18 @@ class DynamoRepository(MemoryRepository):
         )
         items = [item for item in items if item.get("item_type") == "RandomBucket"]
         items.sort(key=lambda item: item.get("sk", ""))
+        return deepcopy(items[:limit])
+
+    def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]:
+        if Key is None:
+            raise RuntimeError("boto3.dynamodb.conditions.Key is required")
+        items = self._query_all(
+            KeyConditionExpression=Key("pk").eq("EXPORT#public") & Key("sk").begins_with("VERSION#"),
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        items = [item for item in items if item.get("item_type") == "StaticExport"]
+        items.sort(key=lambda item: item.get("exported_at", ""), reverse=True)
         return deepcopy(items[:limit])
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:

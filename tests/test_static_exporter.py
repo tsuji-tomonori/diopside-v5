@@ -176,6 +176,17 @@ def test_static_export_job_records_completion(monkeypatch, tmp_path):
     assert result["status"] == "succeeded"
     assert repo.get_job(job["job_id"])["derived_state"] == "succeeded"
     assert (tmp_path / "latest-manifest.json").exists()
+    export = repo.list_static_exports()[0]
+    assert export["item_type"] == "StaticExport"
+    assert export["pk"] == "EXPORT#public"
+    assert export["sk"].startswith("VERSION#")
+    assert export["export_version"] == "job-unit"
+    assert export["generated_job_id"] == job["job_id"]
+    assert export["uploaded_object_count"] == 0
+    assert export["publish_state"] == "published"
+    assert export["manifest_s3_uri"] == "local://latest-manifest.json"
+    assert export["video_count"] == 1
+    assert export["schema_versions"]["manifest"] == "public-manifest/v1"
 
 
 def test_upload_directory_publishes_manifest_last(monkeypatch, tmp_path):
