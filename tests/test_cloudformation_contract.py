@@ -19,6 +19,22 @@ def _unknown_constructor(loader, tag_suffix, node):
 CfnLoader.add_multi_constructor("!", _unknown_constructor)
 
 
+COST_GUARD_DISALLOWED_RESOURCE_PREFIXES = {
+    "AWS::RDS::": "SQL database / RDS",
+    "AWS::DocDB::": "DocumentDB",
+    "AWS::Neptune::": "Neptune",
+    "AWS::Redshift::": "Redshift",
+    "AWS::OpenSearchService::": "OpenSearch",
+    "AWS::Elasticsearch::": "Elasticsearch",
+    "AWS::ECS::": "ECS",
+    "AWS::EKS::": "EKS",
+    "AWS::EC2::": "EC2 / VPC / NAT",
+    "AWS::ElasticLoadBalancing::": "Load Balancer",
+    "AWS::ElasticLoadBalancingV2::": "Load Balancer",
+    "AWS::ElastiCache::": "ElastiCache",
+}
+
+
 def _template():
     return yaml.load(Path("infra/cloudformation/diopside.yaml").read_text(encoding="utf-8"), Loader=CfnLoader)
 
@@ -34,6 +50,18 @@ def _policy_statements(resources, role_name):
         for policy in policies
         for statement in policy["PolicyDocument"]["Statement"]
     ]
+
+
+def test_cost_guard_excludes_high_fixed_cost_services():
+    resources = _template()["Resources"]
+    violations = []
+    for logical_id, resource in resources.items():
+        resource_type = resource["Type"]
+        for prefix, reason in COST_GUARD_DISALLOWED_RESOURCE_PREFIXES.items():
+            if resource_type.startswith(prefix):
+                violations.append({"logical_id": logical_id, "type": resource_type, "reason": reason})
+
+    assert violations == []
 
 
 def test_cloudfront_oac_and_outputs_are_defined():
