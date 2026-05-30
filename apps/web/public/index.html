@@ -173,6 +173,21 @@
           <button type="submit" aria-label="チャンネル設定を保存">チャンネル保存</button>
           <div id="adminChannelList" class="admin-data" aria-live="polite"></div>
         </form>
+        <form id="adminTagForm">
+          <h3>タグ補正</h3>
+          <label>video_id <input name="tagVideoId" autocomplete="off" required></label>
+          <label>mode
+            <select name="tagMode">
+              <option value="add-remove">追加・削除</option>
+              <option value="replace">置換</option>
+            </select>
+          </label>
+          <label>add_tags <input name="addTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <label>remove_tags <input name="removeTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <label>replace_tags <input name="replaceTags" autocomplete="off" placeholder="タグをカンマ区切りで入力"></label>
+          <button type="submit" aria-label="動画タグを保存">タグ保存</button>
+          <div id="adminTagResult" class="admin-data" aria-live="polite"></div>
+        </form>
         <div id="adminData" class="admin-data" aria-live="polite"></div>
       </div>
     </dialog>

@@ -49,7 +49,9 @@ const els = {
   adminResult: document.querySelector("#adminResult"),
   adminData: document.querySelector("#adminData"),
   adminChannelForm: document.querySelector("#adminChannelForm"),
-  adminChannelList: document.querySelector("#adminChannelList")
+  adminChannelList: document.querySelector("#adminChannelList"),
+  adminTagForm: document.querySelector("#adminTagForm"),
+  adminTagResult: document.querySelector("#adminTagResult")
 };
 
 const json = async (path, options = {}) => {
@@ -618,6 +620,48 @@ const saveChannel = async () => {
   }
 };
 
+const parseTagsInput = (value) => String(value || "")
+  .split(",")
+  .map((tag) => tag.trim())
+  .filter(Boolean)
+  .filter((tag, index, tags) => tags.indexOf(tag) === index);
+
+const tagBodyFromForm = () => {
+  const form = els.adminTagForm;
+  const mode = String(form.elements.tagMode.value || "add-remove");
+  if (mode === "replace") {
+    return { replace_tags: parseTagsInput(form.elements.replaceTags.value) };
+  }
+  return {
+    add_tags: parseTagsInput(form.elements.addTags.value),
+    remove_tags: parseTagsInput(form.elements.removeTags.value)
+  };
+};
+
+const saveVideoTags = async () => {
+  const form = els.adminTagForm;
+  const videoId = form.elements.tagVideoId.value.trim();
+  if (!videoId) {
+    els.adminTagResult.replaceChildren(el("p", { class: "empty-state", text: "video_id を入力してください。" }));
+    return;
+  }
+  try {
+    await ensureAdminSession();
+    const result = await json(`/api/admin/videos/${encodeURIComponent(videoId)}/tags`, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: adminHeaders({ csrf: true }),
+      body: JSON.stringify(tagBodyFromForm())
+    });
+    els.adminTagResult.replaceChildren(
+      el("p", { text: `${result.video_id || videoId} のタグを保存しました。` }),
+      el("div", { class: "tag-row" }, (result.tags || []).map((tag) => el("span", { class: "tag-pill", text: tag })))
+    );
+  } catch (error) {
+    els.adminTagResult.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
 const loadJobDetail = async (jobId) => {
   if (!jobId) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: "job_id を入力してください。" }));
@@ -638,6 +682,10 @@ document.querySelector("#loadChannelsButton").addEventListener("click", loadChan
 els.adminChannelForm.addEventListener("submit", (event) => {
   event.preventDefault();
   saveChannel();
+});
+els.adminTagForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveVideoTags();
 });
 document.querySelector("#loadJobDetailButton").addEventListener("click", () => {
   const data = new FormData(document.querySelector("#adminJobForm"));

@@ -180,6 +180,16 @@ async function checkBrowserFlows(url) {
           });
         click("#loadChannelsButton");
         await waitFor(() => text("#adminChannelList").includes("UUlocalE2E"));
+
+        setInput('#adminTagForm input[name="tagVideoId"]', "fixture001");
+        setSelect('#adminTagForm select[name="tagMode"]', "add-remove");
+        setInput('#adminTagForm input[name="addTags"]', "手動E2E");
+        setInput('#adminTagForm input[name="removeTags"]', "雑談");
+        document.querySelector("#adminTagForm").requestSubmit();
+        await waitFor(() => text("#adminTagResult").includes("fixture001") && text("#adminTagResult").includes("手動E2E") && !text("#adminTagResult").includes("雑談"))
+          .catch(() => {
+            throw new Error("video tag flow failed: " + text("#adminTagResult"));
+          });
       })()`);
     } finally {
       client.close();

@@ -41,7 +41,7 @@
 | priority | 項目 | 判定 | 補足 |
 |---|---|---|---|
 | P1 | チャンネル設定管理 | 部分対応 | `GET /api/admin/channels` と `PUT /api/admin/channels/{channel_id}` を追加し、`ChannelRef` read model を保存・優先利用。管理 UI から channel list 読み込みと channel config 更新が可能。既存 data backfill と AppConfig 統合は後続 |
-| P1 | タグ補正 | 部分対応 | `PUT /api/admin/videos/{video_id}/tags` で手動タグ追加・削除と static export 反映経路を追加。管理 UI は未対応 |
+| P1 | タグ補正 | 部分対応 | `PUT /api/admin/videos/{video_id}/tags` で手動タグ追加・削除と static export 反映経路を追加。管理 UI から add/remove/replace を実行可能。tag category/sort order 編集と自動 static export enqueue は未対応 |
 | P1 | Archive calendar | 部分対応 | `/data/calendar/{year}.json` と `GET /api/archive-calendar` を追加。UI は未対応 |
 | P1 | Presigned URL | 対応 | `POST /api/admin/artifacts/presigned-url` を追加。private S3 artifact のみ署名対象 |
 | P1 | NotificationPlan | 部分対応 | 配信 30 分前・開始時刻・archive_available の `NotificationPlan` item を保存。外部通知 delivery は未対応 |
