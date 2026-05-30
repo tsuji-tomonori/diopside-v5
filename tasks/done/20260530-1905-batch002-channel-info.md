@@ -1,6 +1,6 @@
 # BATCH-002 channel info fetch
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -34,3 +34,10 @@ metadata sync 経路で channel 情報取得・保存の証跡を明確にし、
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 完了結果
+
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py::test_metadata_sync_paginates_saves_raw_and_cursor tests/test_core_pipeline.py::test_metadata_sync_resumes_from_channel_cursor tests/test_repository_schema_contract.py::test_repository_writes_channel_ref_and_lists_channels_from_read_model`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（135 tests、build、package:deploy、local e2e）
