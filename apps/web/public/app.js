@@ -67,6 +67,7 @@ const el = (tag, attrs = {}, children = []) => {
 
 const fmtDate = (value) => value ? new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "日時未設定";
 const fmtNumber = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("ja-JP") : "未設定";
+const fmtBoolean = (value) => value === true ? "yes" : value === false ? "no" : "未設定";
 const fmtDuration = (seconds) => {
   if (!Number.isFinite(Number(seconds))) return "時間未設定";
   const h = Math.floor(Number(seconds) / 3600);
@@ -401,7 +402,8 @@ document.querySelector("#adminJobForm").addEventListener("submit", async (event)
       headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-csrf-token": csrf },
       body: JSON.stringify(body)
     });
-    els.adminResult.textContent = `queued: ${result.job_id}`;
+    document.querySelector("#adminJobId").value = result.job_id || "";
+    renderAdminJobResult(result);
     await loadAdminData("jobs");
   } catch (error) {
     els.adminResult.textContent = error.message;
@@ -411,6 +413,14 @@ document.querySelector("#adminJobForm").addEventListener("submit", async (event)
 const adminHeaders = () => {
   const data = new FormData(document.querySelector("#adminJobForm"));
   return { authorization: `Bearer ${String(data.get("token") || "")}` };
+};
+
+const renderAdminJobResult = (result) => {
+  els.adminResult.replaceChildren(
+    el("strong", { text: result.job_id || "job_id未設定" }),
+    el("span", { text: ` / ${result.job_type || "job_type未設定"} / ${result.derived_state || "state未設定"}` }),
+    el("span", { text: ` / dry_run ${fmtBoolean(result.dry_run)} / deduplicated ${fmtBoolean(result.deduplicated)}` })
+  );
 };
 
 const quotaUsageText = (item) => {
@@ -424,14 +434,76 @@ const quotaUsageText = (item) => {
   return parts.join(" / ");
 };
 
+const jobSummaryText = (item) => [
+  item.job_id || "job_id未設定",
+  item.job_type || "job_type未設定",
+  item.derived_state || "state未設定",
+  fmtDate(item.updated_at || item.created_at)
+].join(" / ");
+
+const renderJobList = (items) => items.length
+  ? el("div", { class: "admin-list" }, items.slice(0, 12).map((item) => {
+    const button = el("button", { type: "button", text: jobSummaryText(item) });
+    button.addEventListener("click", async () => {
+      document.querySelector("#adminJobId").value = item.job_id || "";
+      await loadJobDetail(item.job_id);
+    });
+    return button;
+  }))
+  : el("p", { class: "empty-state", text: "表示できる job はありません。" });
+
+const renderQuotaUsage = (items) => items.length
+  ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
+  : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" });
+
+const renderJobDetail = (item) => {
+  const events = item.events || [];
+  const summaryRows = [
+    ["job_id", item.job_id || "未設定"],
+    ["job_type", item.job_type || "未設定"],
+    ["state", item.derived_state || "未設定"],
+    ["created_at", fmtDate(item.created_at)],
+    ["updated_at", fmtDate(item.updated_at)],
+    ["idempotency_key", item.idempotency_key || "未設定"]
+  ];
+  return el("section", { class: "admin-detail" }, [
+    el("h3", { text: "job詳細" }),
+    el("dl", { class: "metadata-grid" }, summaryRows.flatMap(([name, value]) => [
+      el("dt", { text: name }),
+      el("dd", { text: value })
+    ])),
+    el("h3", { text: "JobEvent" }),
+    events.length
+      ? el("ol", { class: "admin-events" }, events.map((event) => el("li", {}, [
+        el("strong", { text: event.event_type || "event_type未設定" }),
+        el("span", { text: ` / ${fmtDate(event.created_at)}` }),
+        el("p", { class: "detail-meta", text: event.message || event.result || event.reason || "message未設定" })
+      ])))
+      : el("p", { class: "empty-state", text: "JobEvent はありません。" })
+  ]);
+};
+
 const loadAdminData = async (kind) => {
   try {
     const result = await json(kind === "quota" ? "/api/admin/quota-usage" : "/api/admin/jobs", { headers: adminHeaders() });
     const items = result.items || [];
     els.adminData.replaceChildren(
       el("h3", { text: kind === "quota" ? "quota usage" : "jobs" }),
-      items.length ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: kind === "quota" ? quotaUsageText(item) : `${item.job_id} / ${item.job_type} / ${item.derived_state}` }))) : el("p", { class: "empty-state", text: "表示できる項目はありません。" })
+      kind === "quota" ? renderQuotaUsage(items) : renderJobList(items)
     );
+  } catch (error) {
+    els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
+  }
+};
+
+const loadJobDetail = async (jobId) => {
+  if (!jobId) {
+    els.adminData.replaceChildren(el("p", { class: "empty-state", text: "job_id を入力してください。" }));
+    return;
+  }
+  try {
+    const result = await json(`/api/admin/jobs/${jobId}`, { headers: adminHeaders() });
+    els.adminData.replaceChildren(renderJobDetail(result.item || {}));
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
   }
@@ -439,6 +511,10 @@ const loadAdminData = async (kind) => {
 
 document.querySelector("#loadJobsButton").addEventListener("click", () => loadAdminData("jobs"));
 document.querySelector("#loadQuotaButton").addEventListener("click", () => loadAdminData("quota"));
+document.querySelector("#loadJobDetailButton").addEventListener("click", () => {
+  const data = new FormData(document.querySelector("#adminJobForm"));
+  loadJobDetail(String(data.get("jobId") || ""));
+});
 
 init().catch((error) => {
   els.list.textContent = "公開データを読み込めませんでした。";
