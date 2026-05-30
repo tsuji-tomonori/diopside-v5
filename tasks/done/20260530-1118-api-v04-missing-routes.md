@@ -1,6 +1,6 @@
 # api v0.4 missing routes
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -51,12 +51,20 @@ README の実装済み API 表に API-007/API-022/API-023 を追加する。`doc
 
 ## 受け入れ条件
 
-- [ ] `GET /api/archive-calendar` が 200 を返し、year/month query の validation と年/月/日別集計がテストされている。
-- [ ] `PUT /api/admin/channels/{channel_id}` が管理認証 + CSRF を要求し、channel config を保存して返す。
-- [ ] `POST /api/admin/artifacts/presigned-url` が管理認証 + CSRF を要求し、許可された private artifact だけに短時間 presigned URL を返す。
-- [ ] unauthorized / CSRF invalid / validation error / not found または forbidden のテストがある。
-- [ ] README、traceability、audit report が更新されている。
-- [ ] `git diff --check`、`npm test`、`npm run verify` が pass する。
+- [x] `GET /api/archive-calendar` が 200 を返し、year/month query の validation と年/月/日別集計がテストされている。
+- [x] `PUT /api/admin/channels/{channel_id}` が管理認証 + CSRF を要求し、channel config を保存して返す。
+- [x] `POST /api/admin/artifacts/presigned-url` が管理認証 + CSRF を要求し、許可された private artifact だけに短時間 presigned URL を返す。
+- [x] unauthorized / CSRF invalid / validation error / not found または forbidden のテストがある。
+- [x] README、traceability、audit report が更新されている。
+- [x] `git diff --check`、`npm test`、`npm run verify` が pass する。
+
+## 完了メモ
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/40
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581346608
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581347797
+- 検証: `py_compile` pass、`tests/test_api_handler.py` pass、`node tools/check-docs-consistency.mjs` pass、`git diff --check` pass、`npm test` pass、`npm run verify` pass
+- 残差分: FastAPI/OpenAPI 化、HttpOnly cookie session 化、dev deploy rehearsal は未対応
 
 ## 検証計画
 
