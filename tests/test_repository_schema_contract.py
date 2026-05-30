@@ -88,6 +88,7 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     )
     quota = repo.record_quota_usage("videos.list", 1, {}, channel_id="ch001", video_count=1, job_id="job001")
     job, deduplicated = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")
+    idempotency = repo.get_item("IDEMP#metadata:ch001", "META")
 
     assert video["pk"] == "VIDEO#vid001"
     assert tag_index["item_type"] == "VideoTagIndex"
@@ -100,8 +101,35 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert quota["record_type"] == "call"
     assert job["pk"] == f"JOB#{job['job_id']}"
     assert job["gsi3pk"] == "JOB#ALL"
+    assert idempotency["item_type"] == "Idempotency"
+    assert idempotency["dedupe_key"] == "metadata:ch001"
+    assert idempotency["first_job_id"] == job["job_id"]
+    assert len(idempotency["request_hash"]) == 64
     assert deduplicated is False
     assert repo.get_job(job["job_id"])["events"][0]["event_name"] == "job.queued"
+
+
+def test_repository_writes_idempotency_item_and_uses_it_for_dedupe_lookup():
+    repo = MemoryRepository()
+    first, deduplicated = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")
+    repo.idempotency_index.clear()
+    second, duplicate = repo.create_job("metadata_sync", {"channel_id": "ch001"}, "metadata:ch001")
+    item = repo.get_item("IDEMP#metadata:ch001", "META")
+
+    assert deduplicated is False
+    assert duplicate is True
+    assert second["job_id"] == first["job_id"]
+    assert item["item_type"] == "Idempotency"
+    assert item["pk"] == "IDEMP#metadata:ch001"
+    assert item["sk"] == "META"
+    assert item["dedupe_key"] == "metadata:ch001"
+    assert item["idempotency_key"] == "metadata:ch001"
+    assert item["first_job_id"] == first["job_id"]
+    assert item["job_id"] == first["job_id"]
+    assert item["job_type"] == "metadata_sync"
+    assert len(item["request_hash"]) == 64
+    assert item["schema_version"] == "ddb-Idempotency-v1"
+    assert item["entity_id"] == "metadata:ch001"
 
 
 def test_repository_writes_job_events_with_v04_shape_and_legacy_aliases():
@@ -502,6 +530,7 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
     assert "TagSummary" not in unsupported_v04_types
     assert "VideoMonthIndex" not in unsupported_v04_types
     assert "ChannelRef" not in unsupported_v04_types
+    assert "Idempotency" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

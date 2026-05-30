@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 import uuid
@@ -38,6 +39,7 @@ ITEM_TYPES = {
     "JobEvent",
     "QuotaUsage",
     "Lock",
+    "Idempotency",
     "RandomBucket",
 }
 
@@ -210,6 +212,26 @@ def _static_export_schema_versions(manifest: dict[str, Any]) -> dict[str, str]:
         }
     )
     return versions
+
+
+def request_hash(job_type: str, payload: dict[str, Any]) -> str:
+    body = json.dumps({"job_type": job_type, "payload": payload}, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def idempotency_item(idempotency_key: str, job_id: str, job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "item_type": "Idempotency",
+        "pk": f"IDEMP#{idempotency_key}",
+        "sk": "META",
+        "dedupe_key": idempotency_key,
+        "idempotency_key": idempotency_key,
+        "entity_id": idempotency_key,
+        "first_job_id": job_id,
+        "job_id": job_id,
+        "job_type": job_type,
+        "request_hash": request_hash(job_type, payload),
+    }
 
 
 def item_schema_version(item_type: str) -> str:
@@ -634,6 +656,12 @@ class MemoryRepository:
             existing = self.get_job(self.idempotency_index[idempotency_key])
             if existing:
                 return existing, True
+        idempotency = self.get_item(f"IDEMP#{idempotency_key}", "META")
+        if idempotency:
+            existing = self.get_job(str(idempotency.get("first_job_id") or idempotency.get("job_id")))
+            if existing:
+                self.idempotency_index[idempotency_key] = existing["job_id"]
+                return existing, True
         stamp = now_iso()
         job_id = stable_id("job", idempotency_key)
         item = {
@@ -651,6 +679,7 @@ class MemoryRepository:
             "gsi3sk": f"{stamp}#{job_type}#{job_id}",
         }
         self.put_item(item)
+        self.put_item(idempotency_item(idempotency_key, job_id, job_type, payload))
         self.idempotency_index[idempotency_key] = job_id
         self.append_job_event(job_id, "queued", {"job_type": job_type})
         return self.get_job(job_id) or item, False
@@ -782,8 +811,10 @@ class DynamoRepository(MemoryRepository):
                 raise
             existing = self.get_job(job_id)
             if existing:
+                self.put_item(idempotency_item(idempotency_key, job_id, job_type, payload))
                 return existing, True
             raise
+        self.put_item(idempotency_item(idempotency_key, job_id, job_type, payload))
         self.append_job_event(job_id, "queued", {"job_type": job_type})
         return self.get_job(job_id) or item, False
 

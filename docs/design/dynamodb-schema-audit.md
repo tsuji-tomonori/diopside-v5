@@ -27,7 +27,7 @@
 | `Job` | `JOB#{job_id}` / `META` | `create_job` が同 key を保存 | 部分実装 | `dedupe_key` ではなく `idempotency_key`、`latest_state` ではなく `derived_state` |
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` が `EVT#{seq}` と `event_name` / `state_after` / `occurred_at` / `payload` を保存。`event_type` / `details` は互換 alias として保持 | 部分実装 | 既存 `EVENT#...` item の backfill、同一 job への高並列 append 時の条件付き seq 採番は未対応 |
 | `Lock` | `LOCK#{lock_key}` / `META` | `ITEM_TYPES` で許可 | 部分実装 | 取得/解放 helper と TTL contract は未実装 |
-| `Idempotency` | `IDEMP#{dedupe_key}` / `META` | Memory は `idempotency_index`、DynamoDB は Job conditional put | 差分あり | 独立 item は未保存 |
+| `Idempotency` | `IDEMP#{dedupe_key}` / `META` | `create_job` が `Idempotency` item を保存し、Memory は `idempotency_index` が空でも item lookup で dedupe 可能。DynamoDB は現行の Job conditional put も維持 | 部分実装 | 既存 job への backfill、`Idempotency` item 単独の conditional write への切替は未対応 |
 | `QuotaUsage` | `QUOTA#{yyyyMMdd}` / `METHOD#{method}` | `record_quota_usage` は `QUOTA#{yyyy-mm-dd}` / `{time}#{method}#{uuid}` の call record、`quota_rollup` は `QUOTA#{yyyyMMdd}` / `METHOD#{method}` の daily summary を保存 | 部分実装 | call record 互換は維持。quota threshold warning event は未実装 |
 | `RandomBucket` | `RANDOM#DEFAULT` / `VID#{bucket_no}#{video_id}` | `put_video` が公開動画の `RandomBucket` を v0.4 key shape で保存し、random API が seed/count/tag/year 条件で参照 | 部分実装 | 専用 rebuild job と既存データ backfill は未対応 |
 
@@ -35,11 +35,12 @@
 
 現 repository は次を現在の互換 contract として持つ。
 
-- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`Job`、`JobEvent`、`QuotaUsage`、`Lock` を許可する。
+- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
+- `Idempotency` は `IDEMP#{dedupe_key}` / `META` に保存し、MemoryRepository は item lookup でも job 重複起動を抑止する。DynamoRepository は現行の Job conditional put を主な重複抑止として維持する。
 - `QuotaUsage` call record は `gsi3pk=QUOTA#ALL` を持ち、一覧は `by_work_queue` で Query する。daily summary は `record_type=daily_method_summary`、`pk=QUOTA#{yyyyMMdd}`、`sk=METHOD#{method}` として保存し、call record 一覧には混在させない。
 - チャット本文、raw response、大きな集計・成果物本体は DynamoDB に保存せず、S3 URI / public path / summary のみを保持する。
 
