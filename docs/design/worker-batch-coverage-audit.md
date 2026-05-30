@@ -20,7 +20,7 @@
 | BATCH-010 | チャット正規化 | `chat_normalize` | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | streaming normalize と summary 更新を検証 |
 | BATCH-011 | チャット集計 | `chat_normalize` 内 aggregate | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | summary JSON、timeline、author / paid / emoji 統計を生成。物理 aggregate worker 分割は `WORKER-SPLIT` 差分として後続管理 |
 | BATCH-012 | ワードクラウド生成 | `rebuild_artifacts` / `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | PNG/JSON と互換 SVG を出力。専用 wordcloud worker 分割は未実装 |
-| BATCH-013 | タイムスタンプ候補生成 | `rebuild_artifacts` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | chapters_suggestion.md は未実装 |
+| BATCH-013 | タイムスタンプ候補生成 | `rebuild_artifacts` / `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 実装済 | timestamp JSON と `chapters_suggestion.md` を出力。物理 timestamp worker 分割は `WORKER-SPLIT` 差分として後続管理 |
 | BATCH-014 | ファイル出力サービス | `file_output`, `static_export` | `DIOPSIDE_AGGREGATE_QUEUE_URL`, `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | `file_output` job は public/private artifact body と `Artifact` item を記録。物理的な専用 worker 分割は未実装 |
 | BATCH-015 | 静的JSON export | `static_export` / `static_exporter.handler` | `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 | v0.4 alias と versioned manifest を検証 |
 | BATCH-016 | quota使用量ロールアップ | `quota_rollup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_repository_schema_contract.py` | 部分実装 | call record から v0.4 key shape の daily method summary item を保存。quota threshold warning event は未実装 |
@@ -45,7 +45,7 @@
 
 1. BATCH-006 の外部通知 delivery / DLQ / sent/skipped/failed 更新を実装する。
 2. `archive_finalize` の遅延 Scheduler 連携を実装し、archive_available の通知時刻を運用要件に合わせる。
-3. BATCH-011 / 012 / 013 の物理 worker 分割を進め、BATCH-012 / 013 は wordcloud / timestamp の job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
+3. BATCH-011 / 012 / 013 の物理 worker 分割を進め、BATCH-012 / 013 は wordcloud / timestamp 専用 job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
 4. replay continuation の dev rehearsal を行い、実 YouTube 応答で BATCH-008 / 009 の parser coverage を確認する。
 5. BATCH-016 は quota threshold warning event、上限接近時の通知、管理 UI での summary 表示へ接続する。
 6. GitHub Actions workflow_dispatch の実 AWS dispatch rehearsal を行い、role/queue secret と job event 証跡を確認する。

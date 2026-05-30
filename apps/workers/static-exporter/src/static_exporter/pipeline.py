@@ -21,6 +21,7 @@ from diopside_core import (
     extract_replay_continuations_from_initial_data,
     fetch_public_replay_actions,
     fetch_public_replay_continuation,
+    generate_chapters_suggestion_markdown,
     normalize_live_chat_items,
     normalize_channel_resource,
     normalize_replay_actions,
@@ -746,11 +747,18 @@ def rebuild_artifacts(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     video = repo.get_video(video_id) or {"description": ""}
     aggregate = repo.get_chat_aggregate(video_id) or summarize_chat_messages([])
     timestamps = build_timestamp_candidates(aggregate, video.get("description", ""))
+    chapters = generate_chapters_suggestion_markdown(video_id, timestamps).encode("utf-8")
     repo.put_video({**video, "video_id": video_id, "timestamps": timestamps})
+    timestamp_key = f"processed/timestamps/video_id={video_id}/timestamp_candidates.json"
+    chapters_key = f"processed/timestamps/video_id={video_id}/chapters_suggestion.md"
+    timestamp_body = json.dumps({"video_id": video_id, "items": timestamps}, ensure_ascii=False, indent=2).encode("utf-8")
+    _write_blob(timestamp_key, timestamp_body, "application/json", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
+    chapters_uri = _write_blob(chapters_key, chapters, "text/markdown; charset=utf-8", bucket_env="DIOPSIDE_PROCESSED_BUCKET")
     repo.put_artifact(video_id, {"artifact_type": "timestamp", "public_url_path": f"/data/latest-video/{video_id}", "content_type": "application/json"})
+    repo.put_artifact(video_id, {"artifact_type": "timestamp_chapters", "public_url_path": f"/data/artifacts/timestamps/{video_id}.md", "s3_uri": chapters_uri, "content_type": "text/markdown; charset=utf-8", "byte_size": len(chapters)})
     if aggregate.get("top_terms"):
         repo.put_artifact(video_id, {"artifact_type": "wordcloud", "public_url_path": f"/data/artifacts/wordcloud/{video_id}.png", "content_type": "image/png"})
-    return {"video_id": video_id, "timestamp_count": len(timestamps), "wordcloud_available": bool(aggregate.get("top_terms"))}
+    return {"video_id": video_id, "timestamp_count": len(timestamps), "chapters_suggestion_uri": chapters_uri, "wordcloud_available": bool(aggregate.get("top_terms"))}
 
 
 def file_output(repo: Any, params: dict[str, Any]) -> dict[str, Any]:

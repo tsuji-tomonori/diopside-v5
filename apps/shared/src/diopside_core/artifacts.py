@@ -99,6 +99,19 @@ def build_timestamp_candidates(summary: dict[str, Any], description: str = "") -
     return _dedupe_timestamp_candidates(candidates)[:20]
 
 
+def generate_chapters_suggestion_markdown(video_id: str, candidates: list[dict[str, Any]]) -> str:
+    lines = [f"# chapters_suggestion for {video_id}", "", "```text"]
+    ordered = sorted(candidates, key=lambda item: (int(item.get("offset_sec") or 0), -float(item.get("score") or 0), str(item.get("label") or "")))
+    if not ordered:
+        lines.append("候補なし")
+    for candidate in ordered:
+        offset_sec = max(0, int(candidate.get("offset_sec") or 0))
+        label = _chapter_label(str(candidate.get("label") or "チャプター候補"))
+        lines.append(f"{_format_chapter_offset(offset_sec)} {label}")
+    lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _timestamp_candidate(*, offset_sec: int, label: str, score: float, source: str, evidence_terms: list[str], message_count: int) -> dict[str, Any]:
     return {
         "offset_sec": offset_sec,
@@ -131,6 +144,19 @@ def _dedupe_timestamp_candidates(candidates: list[dict[str, Any]], window_sec: i
         target["evidence_terms"] = sorted(set(target.get("evidence_terms", [])) | set(candidate.get("evidence_terms", [])))
         target["message_count"] = max(int(target.get("message_count", 0)), int(candidate.get("message_count", 0)))
     return sorted(merged, key=lambda item: (-item["score"], item["offset_sec"], item["source"]))
+
+
+def _format_chapter_offset(offset_sec: int) -> str:
+    hours, remainder = divmod(offset_sec, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def _chapter_label(label: str) -> str:
+    cleaned = re.sub(r"\s+", " ", label).strip()
+    return cleaned or "チャプター候補"
 
 
 def generate_wordcloud_svg(top_terms: list[dict[str, Any]], width: int = 960, height: int = 540) -> str:

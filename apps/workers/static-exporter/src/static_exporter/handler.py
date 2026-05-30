@@ -8,7 +8,7 @@ import time
 import hashlib
 from typing import Any
 
-from diopside_core import DynamoRepository, MemoryRepository, build_timestamp_candidates, generate_wordcloud_png, generate_wordcloud_svg, now_iso
+from diopside_core import DynamoRepository, MemoryRepository, build_timestamp_candidates, generate_chapters_suggestion_markdown, generate_wordcloud_png, generate_wordcloud_svg, now_iso
 
 try:
     import boto3
@@ -47,6 +47,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
     static_wordcloud_entries: dict[str, dict[str, str]] = {}
     static_wordcloud_png_entries: dict[str, dict[str, str]] = {}
     static_timestamp_entries: dict[str, dict[str, str]] = {}
+    static_timestamp_chapter_entries: dict[str, dict[str, str]] = {}
 
     for video in videos:
         video_id = video["video_id"]
@@ -95,6 +96,8 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             static_wordcloud_png_entries[video_id] = _static_entry(root, alias_wordcloud_png_path, versioned_wordcloud_png_path)
         versioned_timestamp_path = f"/data/v/{version}/public/artifacts/timestamps/{video_id}.json"
         alias_timestamp_path = f"/data/artifacts/timestamps/{video_id}.json"
+        versioned_chapters_path = f"/data/v/{version}/public/artifacts/timestamps/{video_id}.md"
+        alias_chapters_path = f"/data/artifacts/timestamps/{video_id}.md"
         timestamp_payload = {
             "schema_version": "public-timestamp-list/v1",
             "video_id": video_id,
@@ -103,8 +106,13 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
         }
         _write_public_json(root, versioned_timestamp_path, timestamp_payload)
         _write_public_json(root, alias_timestamp_path, timestamp_payload)
+        chapters_suggestion = generate_chapters_suggestion_markdown(video_id, timestamps).encode("utf-8")
+        _write_public_bytes(root, versioned_chapters_path, chapters_suggestion)
+        _write_public_bytes(root, alias_chapters_path, chapters_suggestion)
         static_timestamp_entries[video_id] = _static_entry(root, alias_timestamp_path, versioned_timestamp_path)
+        static_timestamp_chapter_entries[video_id] = _static_entry(root, alias_chapters_path, versioned_chapters_path)
         repository.put_artifact(video_id, {"artifact_type": "timestamp", "public_url_path": alias_timestamp_path, "content_type": "application/json"})
+        repository.put_artifact(video_id, {"artifact_type": "timestamp_chapters", "public_url_path": alias_chapters_path, "content_type": "text/markdown; charset=utf-8", "byte_size": len(chapters_suggestion)})
         detail_path = f"/data/v/{version}/public/videos/{video_id}.json"
         alias_detail_path = f"/data/videos/{video_id}.json"
         public_video = {
@@ -125,7 +133,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             "schema_version": "public-video-detail/v1",
             "video": public_video,
             "chat_summary": {**aggregate, "wordcloud_url": wordcloud_url, "wordcloud_json_url": wordcloud_json_url},
-            "artifacts": {"wordcloud": wordcloud_artifact, "wordcloud_svg": wordcloud_svg_artifact, "wordcloud_json": wordcloud_json_artifact, "timestamps": {"path": alias_timestamp_path, "versioned_path": versioned_timestamp_path, "content_type": "application/json"}},
+            "artifacts": {"wordcloud": wordcloud_artifact, "wordcloud_svg": wordcloud_svg_artifact, "wordcloud_json": wordcloud_json_artifact, "timestamps": {"path": alias_timestamp_path, "versioned_path": versioned_timestamp_path, "content_type": "application/json"}, "timestamp_chapters": {"path": alias_chapters_path, "versioned_path": versioned_chapters_path, "content_type": "text/markdown; charset=utf-8"}},
             "timestamps": timestamps,
         }
         _write_public_json(root, detail_path, detail_payload)
@@ -240,7 +248,7 @@ def export_public_data(repository: Any, out_dir: pathlib.Path, export_version: s
             "STATIC-005": {"path_pattern": "/data/calendar/{year}.json", "items": static_calendar_entries},
             "STATIC-006": {"path": "/data/latest-manifest.json", "versioned_path": None, "checksum_sha256": None},
             "STATIC-007": {"path_pattern": "/data/artifacts/wordcloud/{video_id}.{png|json}", "items": static_wordcloud_entries, "image_items": static_wordcloud_png_entries},
-            "STATIC-008": {"path_pattern": "/data/artifacts/timestamps/{video_id}.json", "items": static_timestamp_entries},
+            "STATIC-008": {"path_pattern": "/data/artifacts/timestamps/{video_id}.json", "items": static_timestamp_entries, "chapter_path_pattern": "/data/artifacts/timestamps/{video_id}.md", "chapter_items": static_timestamp_chapter_entries},
         },
     }
     manifest["static_paths"]["STATIC-006"]["checksum_sha256"] = _manifest_payload_checksum(manifest)

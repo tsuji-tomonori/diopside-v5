@@ -8,7 +8,7 @@ import pytest
 
 from botocore.exceptions import ClientError
 
-from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
+from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, generate_chapters_suggestion_markdown, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
 from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, file_output, metadata_sync, notification_plan, quota_rollup, rebuild_artifacts, retry_job
 
@@ -1034,6 +1034,7 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
     assert collect["message_count"] == 1
     assert normalized["message_count"] == 1
     assert rebuilt["timestamp_count"] >= 1
+    assert rebuilt["chapters_suggestion_uri"].endswith("processed/timestamps/video_id=vid-int/chapters_suggestion.md")
     assert rebuilt["wordcloud_available"] is True
     assert {item["term"] for item in repo.get_chat_aggregate("vid-int")["top_terms"]} >= {"統合テスト", "ありがとう"}
     assert repo.get_job(collect_job["job_id"])["derived_state"] == "succeeded"
@@ -1043,6 +1044,9 @@ def test_worker_pipeline_integration_uses_local_fakes(tmp_path, monkeypatch):
     assert list((tmp_path / "raw/youtube/chat/video_id=vid-int").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-normalized/video_id=vid-int").rglob("*.jsonl"))
     assert list((tmp_path / "processed/chat-aggregate/video_id=vid-int").rglob("summary.json"))
+    chapters = tmp_path / "processed/timestamps/video_id=vid-int/chapters_suggestion.md"
+    assert "0:00 チャット盛り上がり候補" in chapters.read_text(encoding="utf-8")
+    assert any(item["artifact_type"] == "timestamp_chapters" for item in repo.list_artifacts("vid-int"))
 
 
 def test_chat_normalize_reads_s3_jsonl_manifest_not_dynamodb_messages(tmp_path, monkeypatch):
@@ -1203,6 +1207,26 @@ def test_timestamp_candidates_merge_sources_and_sort_by_score():
     assert merged["message_count"] == 10
     assert [candidate["offset_sec"] for candidate in candidates].count(125) == 1
     assert any(candidate["source"] == "description" and candidate["offset_sec"] == 300 for candidate in candidates)
+
+
+def test_generate_chapters_suggestion_markdown_orders_by_offset():
+    markdown = generate_chapters_suggestion_markdown(
+        "vid001",
+        [
+            {"offset_sec": 125, "label": "二つ目\n候補", "score": 0.5},
+            {"offset_sec": 30, "label": "最初の候補", "score": 0.9},
+            {"offset_sec": 3723, "label": "長時間候補", "score": 0.4},
+        ],
+    )
+    assert markdown.splitlines() == [
+        "# chapters_suggestion for vid001",
+        "",
+        "```text",
+        "0:30 最初の候補",
+        "2:05 二つ目 候補",
+        "1:02:03 長時間候補",
+        "```",
+    ]
 
 
 def test_repository_job_idempotency_and_lists():

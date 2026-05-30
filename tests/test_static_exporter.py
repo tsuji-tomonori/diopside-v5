@@ -75,12 +75,16 @@ def test_export_public_data_from_repository(tmp_path):
     assert manifest["static_paths"]["STATIC-007"]["items"]["vid001"]["path"] == "/data/artifacts/wordcloud/vid001.json"
     assert manifest["static_paths"]["STATIC-007"]["image_items"]["vid001"]["path"] == "/data/artifacts/wordcloud/vid001.png"
     assert manifest["static_paths"]["STATIC-008"]["items"]["vid001"]["path"] == "/data/artifacts/timestamps/vid001.json"
+    assert manifest["static_paths"]["STATIC-008"]["chapter_path_pattern"] == "/data/artifacts/timestamps/{video_id}.md"
+    assert manifest["static_paths"]["STATIC-008"]["chapter_items"]["vid001"]["path"] == "/data/artifacts/timestamps/vid001.md"
     detail = json.loads((tmp_path / "data/v/unit/public/videos/vid001.json").read_text(encoding="utf-8"))
     alias_detail = json.loads((tmp_path / "data/videos/vid001.json").read_text(encoding="utf-8"))
     home = json.loads((tmp_path / "data/home.json").read_text(encoding="utf-8"))
     calendar = json.loads((tmp_path / "data/calendar/2026.json").read_text(encoding="utf-8"))
     wordcloud_json = json.loads((tmp_path / "data/artifacts/wordcloud/vid001.json").read_text(encoding="utf-8"))
     timestamps_json = json.loads((tmp_path / "data/artifacts/timestamps/vid001.json").read_text(encoding="utf-8"))
+    chapters_md = (tmp_path / "data/artifacts/timestamps/vid001.md").read_text(encoding="utf-8")
+    versioned_chapters_md = (tmp_path / "data/v/unit/public/artifacts/timestamps/vid001.md").read_text(encoding="utf-8")
     empty_detail = json.loads((tmp_path / "data/v/unit/public/videos/vid002.json").read_text(encoding="utf-8"))
     png_path = tmp_path / "data/artifacts/wordcloud/vid001.png"
     versioned_png_path = tmp_path / "data/v/unit/public/artifacts/wordcloud/vid001.png"
@@ -89,6 +93,7 @@ def test_export_public_data_from_repository(tmp_path):
     assert detail["artifacts"]["wordcloud"] == {"path": "/data/artifacts/wordcloud/vid001.png", "versioned_path": "/data/v/unit/public/artifacts/wordcloud/vid001.png", "content_type": "image/png"}
     assert detail["artifacts"]["wordcloud_svg"] == {"path": "/data/v/unit/public/artifacts/wordcloud/vid001.svg", "content_type": "image/svg+xml"}
     assert detail["timestamps"][0]["offset_sec"] == 30
+    assert detail["artifacts"]["timestamp_chapters"] == {"path": "/data/artifacts/timestamps/vid001.md", "versioned_path": "/data/v/unit/public/artifacts/timestamps/vid001.md", "content_type": "text/markdown; charset=utf-8"}
     assert alias_detail["video"]["video_id"] == "vid001"
     assert home["schema_version"] == "public-home/v1"
     assert home["latest_videos"][0]["detail_path"] == "/data/videos/vid001.json"
@@ -98,6 +103,9 @@ def test_export_public_data_from_repository(tmp_path):
     assert wordcloud_json["top_terms"][0]["term"] == "ありがとう"
     assert wordcloud_json["source_png_path"] == "/data/artifacts/wordcloud/vid001.png"
     assert timestamps_json["items"][0]["offset_sec"] == 30
+    assert chapters_md.startswith("# chapters_suggestion for vid001\n")
+    assert "0:30 見どころ" in chapters_md
+    assert versioned_chapters_md == chapters_md
     assert png_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert versioned_png_path.read_bytes() == png_path.read_bytes()
     assert svg_path.exists()
