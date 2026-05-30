@@ -1,6 +1,6 @@
 # JobMessage v0.4 schema alignment
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -63,3 +63,10 @@
 
 - 既存外部 producer が旧 `input` 形式で投入している可能性があるため、dispatch 互換を維持する。
 - worker 起点の downstream job は親 job の idempotency key がない場合があるため、安定した fallback key を使う。
+
+## 完了結果
+
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582176142
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582176140
+- 作業レポート: `reports/working/20260530-1647-job-message-v04-schema.md`
+- 検証: `npm run verify` pass（132 tests + build/package/local e2e）
