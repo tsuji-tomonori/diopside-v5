@@ -174,7 +174,8 @@ input[type="checkbox"] {
   color: #ffffff;
 }
 
-.tag-nav {
+.tag-nav,
+.archive-nav {
   border-bottom: 1px solid #d6dfda;
   display: grid;
   gap: 10px;
@@ -182,7 +183,8 @@ input[type="checkbox"] {
   padding: 0 0 18px;
 }
 
-.tag-nav .section-title {
+.tag-nav .section-title,
+.archive-nav .section-title {
   align-items: center;
 }
 
@@ -192,7 +194,8 @@ input[type="checkbox"] {
   min-height: 44px;
 }
 
-.tag-chips button {
+.tag-chips button,
+.archive-chips button {
   min-height: 44px;
 }
 

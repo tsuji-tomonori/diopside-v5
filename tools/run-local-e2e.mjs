@@ -149,6 +149,10 @@ async function checkBrowserFlows(url) {
         if (!document.querySelector('#videoDetail .timestamp-list a[href*="t=120s"]')) throw new Error("timestamp link missing");
         if (!document.querySelector('#videoDetail .wordcloud')) throw new Error("wordcloud missing");
 
+        await waitFor(() => text("#archiveCalendar").includes("2026/05 2件"));
+        click('#archiveCalendar button[data-year="2026"][data-month="05"]');
+        await waitFor(() => text("#resultCount").includes("2件") && document.querySelector('#archiveCalendar button[data-year="2026"][data-month="05"]')?.getAttribute("aria-pressed") === "true");
+
         setInput("#searchInput", "検索");
         await waitFor(() => text("#resultCount").includes("1件") && text("#videoList").includes("検索とタグ確認用アーカイブ"));
 

@@ -22,7 +22,7 @@
 | design_id | category | requirement | implementation_files | tests | status |
 |---|---|---|---|---|---|
 | FR-GEN-001 | Functional | 閲覧者は動画アーカイブを一覧できる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py`, `tools/run-local-e2e.mjs` | 部分実装 |
-| FR-GEN-002 | Functional | 閲覧者はタグ・キーワード・期間で動画を探せる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 部分実装 |
+| FR-GEN-002 | Functional | 閲覧者はタグ・キーワード・期間で動画を探せる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py`, `tools/run-local-e2e.mjs` | 部分実装 |
 | FR-GEN-003 | Functional | 閲覧者は動画詳細を確認できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_api_handler.py`, `tests/test_static_exporter.py` | 実装済 |
 | FR-GEN-004 | Functional | システムは YouTube 主要情報を定期取得する。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 |
 | FR-GEN-005 | Functional | システムは低 quota で動画発見する。 | `apps/shared/src/diopside_core/youtube.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 実装済 |
@@ -30,7 +30,7 @@
 | FR-GEN-007 | Functional | システムは取得不能を安全に扱う。 | `apps/shared/src/diopside_core/youtube.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_core_pipeline.py` | 部分実装 |
 | FR-GEN-008 | Functional | システムは静的成果物を生成する。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |
 | FR-GEN-009 | Functional | システムは手動再実行できる。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py` | `tests/test_api_handler.py`, `tests/test_core_pipeline.py` | 部分実装 |
-| FR-U-001 | UI | ホームに検索ハブを表示する。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py` | `tools/run-local-e2e.mjs`, `tests/test_api_handler.py` | 部分実装 |
+| FR-U-001 | UI | ホームに検索ハブを表示する。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/handler.py` | `tools/run-local-e2e.mjs`, `tests/test_api_handler.py`, `tests/test_static_exporter.py` | 部分実装 |
 | FR-U-002 | UI | 片手操作しやすいフィードを表示する。 | `apps/web/public` | `tools/run-local-e2e.mjs`, `tools/check-web-dom-safety.mjs` | 部分実装 |
 | FR-U-003 | UI | 動画詳細から YouTube へ遷移できる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py` | `tools/run-local-e2e.mjs`, `tests/test_api_handler.py` | 部分実装 |
 | FR-U-004 | UI | タグから関連動画を探索できる。 | `apps/web/public`, `apps/api/src/diopside_api/handler.py` | `tools/run-local-e2e.mjs`, `tests/test_api_handler.py` | 部分実装 |
@@ -115,7 +115,7 @@
 | STATIC-002 | Static data | `/data/videos/index.json` 動画一覧 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 | STATIC-003 | Static data | `/data/videos/{video_id}.json` 動画詳細 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 | STATIC-004 | Static data | `/data/tags.json` タグ JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
-| STATIC-005 | Static data | `/data/calendar/{year}.json` 年/月カレンダー JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
+| STATIC-005 | Static data | `/data/calendar/{year}.json` 年/月カレンダー JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py`, `apps/web/public` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs`, `tools/run-local-e2e.mjs` | 実装済 |
 | STATIC-006 | Static data | `/data/latest-manifest.json` export manifest。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |
 | STATIC-007 | Static data | `/data/artifacts/wordcloud/{video_id}.{png\|json}` ワードクラウド画像/JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` が PNG/JSON alias と versioned path を生成し、既存 SVG を互換 artifact として維持 | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 対応 |
 | STATIC-008 | Static data | `/data/artifacts/timestamps/{video_id}.json` タイムスタンプ候補 JSON。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 |

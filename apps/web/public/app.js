@@ -14,9 +14,11 @@ const store = {
 const state = {
   videos: [],
   tags: [],
+  calendarMonths: [],
   selectedTag: null,
   query: "",
   year: "",
+  month: "",
   duration: "",
   sort: "published_desc",
   wordcloud: "",
@@ -39,9 +41,11 @@ const els = {
   filterSheet: document.querySelector("#filterSheet"),
   filterForm: document.querySelector("#filterForm"),
   filterTag: document.querySelector("#filterTagSelect"),
+  filterMonth: document.querySelector("#filterMonthSelect"),
   clearFilter: document.querySelector("#clearFilterButton"),
   quick: document.querySelector("#quickChips"),
   recent: document.querySelector("#recentSearches"),
+  archiveCalendar: document.querySelector("#archiveCalendar"),
   favorites: document.querySelector("#favoriteVideos"),
   history: document.querySelector("#historyVideos"),
   clearTag: document.querySelector("#clearTagButton"),
@@ -88,11 +92,13 @@ const filtered = () => {
   const list = state.videos.filter((video) => {
     const tagOk = !state.selectedTag || video.tags.includes(state.selectedTag);
     const text = `${video.title} ${video.tags.join(" ")}`.toLowerCase();
-    const yearOk = !state.year || String(video.published_at || "").startsWith(state.year);
+    const publishedAt = String(video.published_at || "");
+    const yearOk = !state.year || publishedAt.startsWith(state.year);
+    const monthOk = !state.month || publishedAt.slice(5, 7) === state.month.padStart(2, "0");
     const durationOk = !state.duration || durationMatch(video.duration_sec, state.duration);
     const wordcloudOk = availabilityMatch(video.wordcloud_available, state.wordcloud);
     const timestampOk = availabilityMatch(video.timestamp_available, state.timestamp);
-    return tagOk && yearOk && durationOk && wordcloudOk && timestampOk && (!q || text.includes(q));
+    return tagOk && yearOk && monthOk && durationOk && wordcloudOk && timestampOk && (!q || text.includes(q));
   });
   return list.sort((a, b) => state.sort === "duration_desc" ? Number(b.duration_sec || 0) - Number(a.duration_sec || 0) : String(b.published_at || "").localeCompare(String(a.published_at || "")));
 };
@@ -175,11 +181,18 @@ const renderFilterOptions = () => {
     els.filterTag.append(el("option", { value: tag.label, text: `${tag.label} ${tag.video_count}` }));
   }
   els.filterTag.value = current;
+  els.filterMonth.replaceChildren(el("option", { value: "", text: "すべて" }));
+  const monthOptions = new Set(state.calendarMonths.map((item) => item.month));
+  for (const month of [...monthOptions].sort()) {
+    els.filterMonth.append(el("option", { value: month, text: `${Number(month)}月` }));
+  }
+  els.filterMonth.value = state.month;
 };
 
 const syncFilterForm = () => {
   els.filterForm.elements.tag.value = state.selectedTag || "";
   els.filterForm.elements.year.value = state.year;
+  els.filterForm.elements.month.value = state.month;
   els.filterForm.elements.duration.value = state.duration;
   els.filterForm.elements.sort.value = state.sort;
   els.filterForm.elements.wordcloud.value = state.wordcloud;
@@ -190,6 +203,7 @@ const applyFilterForm = () => {
   const data = new FormData(els.filterForm);
   state.selectedTag = String(data.get("tag") || "") || null;
   state.year = String(data.get("year") || "");
+  state.month = String(data.get("month") || "");
   state.duration = String(data.get("duration") || "");
   state.sort = String(data.get("sort") || "published_desc");
   state.wordcloud = String(data.get("wordcloud") || "");
@@ -219,6 +233,27 @@ const renderList = () => {
       el("button", { type: "button", class: "icon-button", "aria-pressed": String(favorite), "aria-label": favorite ? "お気に入り解除" : "お気に入り追加", text: favorite ? "★" : "☆", onclick: () => toggleFavorite(video.video_id) })
     ]);
     els.list.append(card);
+  }
+};
+
+const renderArchiveCalendar = () => {
+  els.archiveCalendar.replaceChildren();
+  if (!state.calendarMonths.length) {
+    els.archiveCalendar.append(el("p", { class: "empty-state", text: "月別アーカイブはまだありません。" }));
+    return;
+  }
+  for (const item of state.calendarMonths) {
+    const active = state.year === item.year && state.month === item.month;
+    const button = el("button", {
+      type: "button",
+      text: `${item.year}/${item.month} ${item.video_count}件`,
+      "aria-label": `${item.year}年${Number(item.month)}月のアーカイブを表示`,
+      "aria-pressed": String(active),
+      "data-year": item.year,
+      "data-month": item.month
+    });
+    button.addEventListener("click", () => selectArchiveMonth(item.year, item.month));
+    els.archiveCalendar.append(button);
   }
 };
 
@@ -319,11 +354,20 @@ const selectTag = (tag) => {
 };
 
 const clearFilters = ({ includeQuery = false } = {}) => {
-  Object.assign(state, { selectedTag: null, year: "", duration: "", sort: "published_desc", wordcloud: "", timestamp: "" });
+  Object.assign(state, { selectedTag: null, year: "", month: "", duration: "", sort: "published_desc", wordcloud: "", timestamp: "" });
   if (includeQuery) {
     state.query = "";
     els.search.value = "";
   }
+  render();
+};
+
+const selectArchiveMonth = (year, month) => {
+  state.year = year;
+  state.month = month;
+  state.query = "";
+  state.selectedTag = null;
+  els.search.value = "";
   render();
 };
 
@@ -345,6 +389,7 @@ const render = () => {
   syncFilterForm();
   renderQuick();
   renderTags();
+  renderArchiveCalendar();
   renderRecent();
   renderSaved();
   renderList();
@@ -352,11 +397,26 @@ const render = () => {
 
 const init = async () => {
   const manifest = await json("/data/latest-manifest.json");
-  const [videos, tags] = await Promise.all([json(manifest.indexes.videos_latest), json(manifest.indexes.tags)]);
+  const [videos, tags, calendarMonths] = await Promise.all([json(manifest.indexes.videos_latest), json(manifest.indexes.tags), loadArchiveCalendarMonths(manifest)]);
   state.videos = videos.items;
   state.tags = tags.items;
+  state.calendarMonths = calendarMonths;
   render();
   if (state.videos[0]) await showDetail(state.videos[0]);
+};
+
+const loadArchiveCalendarMonths = async (manifest) => {
+  const calendarItems = Object.values(manifest.static_paths?.["STATIC-005"]?.items || {});
+  const calendars = await Promise.all(calendarItems.map((item) => json(item.path).catch(() => null)));
+  return calendars
+    .filter(Boolean)
+    .flatMap((calendar) => (calendar.months || []).map((month) => ({
+      year: String(calendar.year || month.year || ""),
+      month: String(month.month || "").padStart(2, "0"),
+      video_count: Number(month.video_count || 0)
+    })))
+    .filter((item) => item.year && item.month)
+    .sort((a, b) => `${b.year}${b.month}`.localeCompare(`${a.year}${a.month}`));
 };
 
 els.search.addEventListener("input", (event) => {

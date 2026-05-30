@@ -48,6 +48,12 @@
         </div>
         <div id="tagFilters" class="chips tag-chips" aria-label="タグ"></div>
       </section>
+      <section class="archive-nav" aria-labelledby="archiveNavTitle">
+        <div class="section-title">
+          <h2 id="archiveNavTitle">月別アーカイブ</h2>
+        </div>
+        <div id="archiveCalendar" class="chips archive-chips" aria-label="月別アーカイブ"></div>
+      </section>
       <section class="saved-nav" aria-labelledby="savedNavTitle">
         <div class="section-title">
           <h2 id="savedNavTitle">保存したアーカイブ</h2>
@@ -95,6 +101,11 @@
           </select>
         </label>
         <label>年 <input name="year" inputmode="numeric" placeholder="2026"></label>
+        <label>月
+          <select name="month" id="filterMonthSelect">
+            <option value="">すべて</option>
+          </select>
+        </label>
         <label>長さ
           <select name="duration">
             <option value="">すべて</option>
