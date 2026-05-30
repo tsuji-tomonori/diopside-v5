@@ -28,13 +28,13 @@ static export 実行時に `StaticExport` history item を保存し、export_ver
 
 ## 受け入れ条件
 
-- [ ] `StaticExport` item が `pk=EXPORT#public`, `sk=VERSION#{exported_at}` で保存される。
-- [ ] item に `export_id`、`exported_at`、`reason`、`manifest_s3_uri`、`public_prefix`、`video_count`、`tag_count`、`schema_versions`、`content_hash`、`publish_state` が含まれる。
-- [ ] static export job 実行時は `generated_job_id` と `uploaded_object_count` が記録される。
-- [ ] repository から最新順で `StaticExport` を list できる。
-- [ ] README、traceability、DDB schema audit が更新される。
-- [ ] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
-- [ ] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
+- [x] `StaticExport` item が `pk=EXPORT#public`, `sk=VERSION#{exported_at}` で保存される。
+- [x] item に `export_id`、`exported_at`、`reason`、`manifest_s3_uri`、`public_prefix`、`video_count`、`tag_count`、`schema_versions`、`content_hash`、`publish_state` が含まれる。
+- [x] static export job 実行時は `generated_job_id` と `uploaded_object_count` が記録される。
+- [x] repository から最新順で `StaticExport` を list できる。
+- [x] README、traceability、DDB schema audit が更新される。
+- [x] targeted tests、docs consistency、whitespace check、必要に応じて `npm run verify` が pass する。
+- [x] PR #40 に受け入れ条件確認コメントとセルフレビューコメントを追加する。
 
 ## 実装計画
 
@@ -63,6 +63,29 @@ static export 実行時に `StaticExport` history item を保存し、export_ver
 - 既存 export 履歴の backfill は行わない。
 - 過去 export の `superseded` 更新は後続対象。
 
+## 完了結果
+
+- 実装 commit: `35af7af` (`✨ feat(worker): StaticExport履歴を記録`)
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/40
+- PR 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581626169
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581626167
+- 作業レポート: `reports/working/20260530-1315-static-export-history-item-report.md`
+
+### 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py apps/workers/static-exporter/src/static_exporter/handler.py`: pass
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_static_exporter.py tests/test_repository_schema_contract.py`: pass（16 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（105 tests + build/package/local e2e）
+
+### 後続対象
+
+- 既存 export 履歴の backfill。
+- StaticExport 履歴の管理 API / UI 表示。
+- 過去 export を `superseded` に更新する処理。
+- 実 S3 upload / 実 DynamoDB 書き込み経路確認。
+
 ## 状態
 
-in_progress
+done
