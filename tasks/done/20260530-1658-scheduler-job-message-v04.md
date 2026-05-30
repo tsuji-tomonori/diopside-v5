@@ -1,6 +1,6 @@
 # Scheduler JobMessage v0.4 schema alignment
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -56,3 +56,10 @@ EventBridge Scheduler が SQS へ送る定期 job message を v0.4 `JobMessage` 
 ## リスク
 
 - 既存 worker は新 `payload` field を受け付けるため互換は維持されるが、deploy 済みの旧 worker と新 scheduler template を混在させる場合は旧 worker が `payload` を読めない可能性がある。
+
+## 完了結果
+
+- PR 受け入れ条件コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582204853
+- PR セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4582204867
+- 作業レポート: `reports/working/20260530-1658-scheduler-job-message-v04.md`
+- 検証: `npm run verify` pass（132 tests + build/package/local e2e）
