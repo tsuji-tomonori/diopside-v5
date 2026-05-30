@@ -21,7 +21,7 @@
 | `ChatManifest` | `VID#{video_id}` / `CHAT#MANIFEST` | `ITEM_TYPES` で許可、現 key は `VIDEO#...` 系 | 差分あり | required state fields の contract が未固定 |
 | `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `ChatMessageChunkManifest`、`CHAT#RAW#...` | 差分あり | raw page manifest 名と key が異なる |
 | `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` は `VIDEO#...` / `CHAT#AGGREGATE` | 差分あり | heatmap / source uri など required fields が未整合 |
-| `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` は `VIDEO#...` / `ARTIFACT#{artifact_type}` | 差分あり | artifact_version と content_hash required 化が必要 |
+| `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` が versioned key で保存し、`artifact_version` / `content_hash` / `generated_at` を付与。旧 `VIDEO#...` item は list/get fallback | 部分実装 | 既存データ backfill と artifact payload schema の完全固定は未対応 |
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
 | `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存 | 部分実装 | 管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
 | `Job` | `JOB#{job_id}` / `META` | `create_job` が同 key を保存 | 部分実装 | `dedupe_key` ではなく `idempotency_key`、`latest_state` ではなく `derived_state` |
@@ -38,6 +38,7 @@
 - `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
+- `Artifact` は `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` に保存し、`artifact_version` と `content_hash` を必ず持つ。旧 `VIDEO#{video_id}` artifact は読み取り fallback で扱う。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
 - `Lock` は `LOCK#{lock_key}` / `META` に保存し、未期限切れ lock は別 owner から取得できず、同 owner または期限切れ lock は取得・更新できる。TTL は UNIX epoch seconds の `expires_at` に保存する。

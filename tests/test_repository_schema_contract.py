@@ -95,7 +95,9 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert tag_index["gsi2pk"] == "TAG#歌枠"
     assert aggregate["pk"] == "VIDEO#vid001"
     assert aggregate["sk"] == "CHAT#AGGREGATE"
-    assert artifact["sk"] == "ARTIFACT#wordcloud"
+    assert artifact["sk"] == "ARTIFACT#wordcloud#v1"
+    assert artifact["artifact_version"] == "v1"
+    assert artifact["content_hash"].startswith("sha256:")
     assert quota["pk"].startswith("QUOTA#")
     assert quota["gsi3pk"] == "QUOTA#ALL"
     assert quota["record_type"] == "call"
@@ -523,6 +525,52 @@ def test_repository_keeps_quota_daily_summary_out_of_call_record_list():
 
     assert repo.get_item("QUOTA#20260530", "METHOD#videos.list") == summary
     assert repo.list_quota_usage() == [call]
+
+
+def test_repository_writes_artifact_with_v04_versioned_key_and_required_hash():
+    repo = MemoryRepository()
+
+    artifact = repo.put_artifact(
+        "vid001",
+        {
+            "artifact_type": "wordcloud",
+            "artifact_version": "v2",
+            "public_url_path": "/data/artifacts/wordcloud/vid001.png",
+            "content_type": "image/png",
+            "summary": {"width": 1200, "height": 630},
+        },
+    )
+
+    assert artifact["item_type"] == "Artifact"
+    assert artifact["pk"] == "VID#vid001"
+    assert artifact["sk"] == "ARTIFACT#wordcloud#v2"
+    assert artifact["video_id"] == "vid001"
+    assert artifact["artifact_id"] == "vid001:wordcloud"
+    assert artifact["artifact_type"] == "wordcloud"
+    assert artifact["artifact_version"] == "v2"
+    assert artifact["content_hash"].startswith("sha256:")
+    assert len(artifact["content_hash"]) == len("sha256:") + 64
+    assert artifact["generated_at"]
+    assert repo.get_artifact_by_id("vid001:wordcloud") == artifact
+    assert repo.list_artifacts("vid001") == [artifact]
+
+
+def test_repository_lists_legacy_artifact_shape_as_fallback():
+    repo = MemoryRepository()
+    legacy = repo.put_item(
+        {
+            "item_type": "Artifact",
+            "pk": "VIDEO#vid001",
+            "sk": "ARTIFACT#timestamp",
+            "video_id": "vid001",
+            "artifact_type": "timestamp",
+            "public_url_path": "/data/artifacts/timestamps/vid001.json",
+            "content_hash": "sha256:" + ("a" * 64),
+        }
+    )
+
+    assert repo.get_artifact_by_id("vid001:timestamp") == legacy
+    assert repo.list_artifacts("vid001") == [legacy]
 
 
 def test_repository_records_static_export_history_v04_item_shape():

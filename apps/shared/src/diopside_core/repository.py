@@ -155,6 +155,38 @@ def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def artifact_content_hash(artifact: dict[str, Any]) -> str:
+    if artifact.get("content_hash"):
+        return str(artifact["content_hash"])
+    source = {
+        key: value
+        for key, value in artifact.items()
+        if key not in {"created_at", "updated_at", "generated_at", "content_hash"}
+    }
+    body = json.dumps(source, ensure_ascii=False, sort_keys=True, default=str)
+    return f"sha256:{hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+
+
+def artifact_item(video_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
+    artifact_type = artifact["artifact_type"]
+    artifact_version = str(artifact.get("artifact_version") or "v1")
+    generated_at = artifact.get("generated_at") or now_iso()
+    item = {
+        **artifact,
+        "item_type": "Artifact",
+        "pk": f"VID#{video_id}",
+        "sk": f"ARTIFACT#{artifact_type}#{artifact_version}",
+        "video_id": video_id,
+        "artifact_id": artifact.get("artifact_id") or f"{video_id}:{artifact_type}",
+        "artifact_type": artifact_type,
+        "artifact_version": artifact_version,
+        "generated_at": generated_at,
+        "updated_at": now_iso(),
+    }
+    item["content_hash"] = artifact_content_hash(item)
+    return item
+
+
 def static_export_item(
     manifest: dict[str, Any],
     *,
@@ -629,12 +661,16 @@ class MemoryRepository:
         return self.get_item(f"VIDEO#{video_id}", "CHAT#AGGREGATE")
 
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
-        artifact_type = artifact["artifact_type"]
-        return self.put_item({"item_type": "Artifact", "pk": f"VIDEO#{video_id}", "sk": f"ARTIFACT#{artifact_type}", "video_id": video_id, **artifact, "updated_at": now_iso()})
+        return self.put_item(artifact_item(video_id, artifact))
 
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]:
-        prefix = f"VIDEO#{video_id}"
-        artifacts = [item for (pk, sk), item in self.items.items() if pk == prefix and sk.startswith("ARTIFACT#")]
+        prefixes = [f"VID#{video_id}", f"VIDEO#{video_id}"]
+        artifacts = [
+            item
+            for (pk, sk), item in self.items.items()
+            if pk in prefixes and sk.startswith("ARTIFACT#") and item.get("item_type") == "Artifact"
+        ]
+        artifacts.sort(key=lambda item: (item.get("artifact_type", ""), item.get("artifact_version", ""), item.get("generated_at", "")))
         return deepcopy(artifacts)
 
     def record_quota_usage(
@@ -778,6 +814,10 @@ class MemoryRepository:
     def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None:
         if ":" in artifact_id:
             video_id, artifact_type = artifact_id.split(":", 1)
+            matches = [item for item in self.list_artifacts(video_id) if item.get("artifact_type") == artifact_type]
+            if matches:
+                matches.sort(key=lambda item: item.get("generated_at", ""), reverse=True)
+                return deepcopy(matches[0])
             return self.get_item(f"VIDEO#{video_id}", f"ARTIFACT#{artifact_type}")
         for item in self.items.values():
             if item.get("item_type") == "Artifact" and item.get("artifact_id") == artifact_id:
@@ -991,8 +1031,12 @@ class DynamoRepository(MemoryRepository):
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]:
         if Key is None:
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
-        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VIDEO#{video_id}"))
-        return [item for item in response.get("Items", []) if item.get("item_type") == "Artifact"]
+        items = []
+        for pk in [f"VID#{video_id}", f"VIDEO#{video_id}"]:
+            response = self.table.query(KeyConditionExpression=Key("pk").eq(pk))
+            items.extend(item for item in response.get("Items", []) if item.get("item_type") == "Artifact")
+        items.sort(key=lambda item: (item.get("artifact_type", ""), item.get("artifact_version", ""), item.get("generated_at", "")))
+        return deepcopy(items)
 
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
         if Key is None:
