@@ -64,6 +64,7 @@ const el = (tag, attrs = {}, children = []) => {
 };
 
 const fmtDate = (value) => value ? new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "日時未設定";
+const fmtNumber = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("ja-JP") : "未設定";
 const fmtDuration = (seconds) => {
   if (!Number.isFinite(Number(seconds))) return "時間未設定";
   const h = Math.floor(Number(seconds) / 3600);
@@ -214,18 +215,51 @@ const showDetail = async (video) => {
   els.detail.replaceChildren(el("p", { text: "読み込み中" }));
   const detail = await json(video.detail_path);
   rememberHistory(video.video_id);
-  const terms = (detail.chat_summary?.top_terms || []).map((item) => el("li", { text: `${item.term}: ${item.score}` }));
-  const timestamps = (detail.timestamps || []).map((item) => el("li", {}, [
-    el("a", { href: `${detail.video.youtube_url}&t=${item.offset_sec}s`, target: "_blank", rel: "noreferrer", text: `${fmtDuration(item.offset_sec)} ${item.label} (${item.source})` })
-  ]));
+  const detailVideo = detail.video || {};
+  const live = detailVideo.live_details || {};
+  const statistics = detailVideo.statistics || {};
+  const tags = detailVideo.tags || video.tags || [];
+  const terms = (detail.chat_summary?.top_terms || []).map((item) => el("li", { text: `${item.term}: ${fmtNumber(item.score)}` }));
+  const timestamps = (detail.timestamps || []).map((item) => {
+    const offset = Number(item.offset_sec || 0);
+    const href = detailVideo.youtube_url ? `${detailVideo.youtube_url}&t=${offset}s` : null;
+    const evidence = (item.evidence_terms || []).join(" / ") || "根拠語なし";
+    return el("li", { class: "timestamp-item" }, [
+      href
+        ? el("a", { href, target: "_blank", rel: "noreferrer", text: `${fmtDuration(offset)} ${item.label}` })
+        : el("span", { text: `${fmtDuration(offset)} ${item.label}` }),
+      el("p", { class: "detail-meta", text: `${item.source || "source未設定"} / score ${fmtNumber(item.score)} / messages ${fmtNumber(item.message_count)}` }),
+      el("p", { class: "detail-meta", text: evidence })
+    ]);
+  });
+  const metadataRows = [
+    ["video_id", detailVideo.video_id || video.video_id || "未設定"],
+    ["公開日時", fmtDate(detailVideo.published_at || video.published_at)],
+    ["予定開始", fmtDate(live.scheduled_start_time || video.scheduled_start_time)],
+    ["実開始", fmtDate(live.actual_start_time)],
+    ["実終了", fmtDate(live.actual_end_time)],
+    ["再生数", fmtNumber(statistics.view_count)],
+    ["高評価", fmtNumber(statistics.like_count)]
+  ];
   els.detail.replaceChildren(
-    el("img", { src: video.thumbnail_url || "/assets/placeholder-thumbnail.svg", alt: "" }),
-    el("h3", { text: detail.video.title }),
-    el("p", { class: "detail-meta", text: fmtDate(detail.video.published_at) }),
-    el("p", { text: detail.video.description || "説明は未設定です。" }),
-    el("p", {}, [el("a", { href: detail.video.youtube_url, rel: "noreferrer", target: "_blank", text: "YouTubeで開く" })]),
+    el("img", { class: "detail-thumbnail", src: video.thumbnail_url || "/assets/placeholder-thumbnail.svg", alt: "" }),
+    el("div", { class: "detail-title-row" }, [
+      el("h3", { text: detailVideo.title || video.title || "タイトル未設定" }),
+      detailVideo.youtube_url ? el("a", { class: "primary-link", href: detailVideo.youtube_url, rel: "noreferrer", target: "_blank", text: "YouTube" }) : el("span", { class: "empty-state", text: "YouTube URL未設定" })
+    ]),
+    el("p", { class: "detail-description", text: detailVideo.description || "説明は未設定です。" }),
+    el("div", { class: "tag-row detail-tags" }, tags.length ? tags.map((tag) => el("button", { type: "button", class: "tag-pill", text: tag, onclick: () => selectTag(tag) })) : [el("span", { class: "empty-state", text: "タグ未設定" })]),
+    el("h3", { text: "metadata" }),
+    el("dl", { class: "metadata-grid" }, metadataRows.flatMap(([name, value]) => [
+      el("dt", { text: name }),
+      el("dd", { text: value })
+    ])),
     el("h3", { text: "チャット集計" }),
-    el("p", { text: `${Number(detail.chat_summary?.message_count || 0).toLocaleString("ja-JP")}件 / 投稿者 ${Number(detail.chat_summary?.unique_author_count || 0).toLocaleString("ja-JP")}人` }),
+    el("div", { class: "detail-stats" }, [
+      el("div", {}, [el("strong", { text: fmtNumber(detail.chat_summary?.message_count) }), el("span", { text: "messages" })]),
+      el("div", {}, [el("strong", { text: fmtNumber(detail.chat_summary?.unique_author_count) }), el("span", { text: "authors" })]),
+      el("div", {}, [el("strong", { text: terms.length ? String(terms.length) : "0" }), el("span", { text: "top terms" })])
+    ]),
     detail.chat_summary?.wordcloud_url ? el("img", { class: "wordcloud", src: detail.chat_summary.wordcloud_url, alt: "ワードクラウド" }) : el("p", { class: "empty-state", text: "ワードクラウドは未生成です。" }),
     el("ul", { class: "term-list" }, terms.length ? terms : [el("li", { text: "集計語なし" })]),
     el("h3", { text: "タイムスタンプ候補" }),
