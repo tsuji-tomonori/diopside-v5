@@ -27,14 +27,14 @@
 | BATCH-017 | アーカイブ確定処理 | `archive_finalize` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | live ended 検知から replay collect / static export を後続投入。遅延 Scheduler と NotificationPlan 連携は未実装 |
 | BATCH-018 | 失敗ジョブ再投入/Redrive | `retry_job` | target job queue | `tests/test_core_pipeline.py`, `tests/test_api_handler.py` | 部分実装 | DLQ redrive report は手順中心 |
 | BATCH-019 | 古いraw/中間成果物クリーンアップ | `cleanup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | 現状は dry-run report のみで削除しない |
-| BATCH-020 | 管理手動ジョブディスパッチ | admin job API | 各 queue | `tests/test_api_handler.py`, `tests/test_core_pipeline.py`, `tools/run-local-e2e.mjs` | 部分実装 | 管理 API と worker 後続投入は v0.4 `JobMessage` field を送信。EventBridge Scheduler template と GitHub Actions dispatch は未整合 |
+| BATCH-020 | 管理手動ジョブディスパッチ | admin job API / EventBridge Scheduler | 各 queue | `tests/test_api_handler.py`, `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py`, `tools/run-local-e2e.mjs` | 部分実装 | 管理 API、Scheduler template、worker 後続投入は v0.4 `JobMessage` field を送信。GitHub Actions dispatch は未整合 |
 
 ## 現 worker contract
 
 - `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`file_output`、`archive_finalize`、`notification_plan`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
 - `static_export` は `static_exporter.handler` が担当する。
 - queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `file_output` / `archive_finalize` / `notification_plan` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
-- 管理 API と worker の後続投入は v0.4 `JobMessage` field として `job_id`、`job_type`、`idempotency_key`、`requested_by`、`attempt`、`trace_id`、`payload` を送る。`dispatch_job` は既存外部 producer 互換のため旧 `input` field も受け付ける。
+- 管理 API、EventBridge Scheduler template、worker の後続投入は v0.4 `JobMessage` field として `job_id`、`job_type`、`idempotency_key`、`requested_by`、`attempt`、`trace_id`、`payload` を送る。`dispatch_job` は既存外部 producer 互換のため旧 `input` field も受け付ける。
 - `file_output` は BATCH-014 の worker job として、入力 payload 由来の body / json_body / body_base64 を public/private artifact key へ出力し、`Artifact` item に `artifact_version`、`content_hash`、`byte_size`、`generated_at` を保存する。
 - `notification_plan` は `before_30min`、`at_start`、`archive_available` の `NotificationPlan` item を v0.4 key shape で冪等作成する。
 - `quota_rollup` は `QuotaUsage` call record を日別・method別に集計し、`pk=QUOTA#{yyyyMMdd}` / `sk=METHOD#{method}` の daily summary item を upsert する。
@@ -48,4 +48,4 @@
 3. BATCH-011 / 012 / 013 を aggregate 統合処理から分離し、wordcloud / timestamp の job_type と queue contract を追加する。BATCH-014 は `file_output` job_type を追加済みだが、物理 worker 分割は後続で行う。
 4. BATCH-008 / 009 は replay 初期化と page collector を分け、continuation の自己再投入 contract を明確にする。
 5. BATCH-016 は quota threshold warning event、上限接近時の通知、管理 UI での summary 表示へ接続する。
-6. EventBridge Scheduler template と GitHub Actions workflow_dispatch 由来の message fields を v0.4 `JobMessage` 共通 schema へ統一する。
+6. GitHub Actions workflow_dispatch 由来の message fields を v0.4 `JobMessage` 共通 schema へ統一する。

@@ -216,7 +216,7 @@ CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS
 
 worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`file_output`、`archive_finalize`、`notification_plan`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。管理 API と worker の後続投入は v0.4 `JobMessage` に合わせ、`job_id`、`job_type`、`idempotency_key`、`requested_by`、`attempt`、`trace_id`、`payload` を持つ message を送ります。worker dispatch は旧 `input` message も読み取り互換として受け付けます。`file_output` は BATCH-014 の public/private artifact 出力を担当し、`Artifact` item に `artifact_version`、`content_hash`、`generated_at` を記録します。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
-BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、外部通知 delivery、file-output の物理 worker 分割、Scheduler 側 JobMessage 統一、worker 分割責務には未対応または差分があります。
+BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、外部通知 delivery、file-output の物理 worker 分割、GitHub Actions workflow_dispatch の JobMessage 統一、worker 分割責務には未対応または差分があります。
 
 ## DLQ運用手順
 

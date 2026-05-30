@@ -969,7 +969,7 @@ Resources:
           Fn::GetAtt: [SchedulerRole, Arn]
         Input:
           Fn::Sub: |
-            {"job_type":"metadata_sync","job_id":"scheduler-metadata-sync-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"metadata-sync-<aws.scheduler.scheduled-time>","max_results":25}}
+            {"job_type":"metadata_sync","job_id":"scheduler-metadata-sync-<aws.scheduler.execution-id>","idempotency_key":"metadata-sync-<aws.scheduler.scheduled-time>","requested_by":"scheduler","attempt":0,"trace_id":"scheduler-metadata-sync-<aws.scheduler.execution-id>","payload":{"requested_by":"scheduler","max_results":25}}
 
   LiveStatusScanSchedule:
     Type: AWS::Scheduler::Schedule
@@ -988,7 +988,7 @@ Resources:
           Fn::GetAtt: [SchedulerRole, Arn]
         Input:
           Fn::Sub: |
-            {"job_type":"live_status_scan","job_id":"scheduler-live-status-scan-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"live-status-scan-<aws.scheduler.scheduled-time>"}}
+            {"job_type":"live_status_scan","job_id":"scheduler-live-status-scan-<aws.scheduler.execution-id>","idempotency_key":"live-status-scan-<aws.scheduler.scheduled-time>","requested_by":"scheduler","attempt":0,"trace_id":"scheduler-live-status-scan-<aws.scheduler.execution-id>","payload":{"requested_by":"scheduler"}}
 
   QuotaRollupSchedule:
     Type: AWS::Scheduler::Schedule
@@ -1007,7 +1007,7 @@ Resources:
           Fn::GetAtt: [SchedulerRole, Arn]
         Input:
           Fn::Sub: |
-            {"job_type":"quota_rollup","job_id":"scheduler-quota-rollup-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"quota-rollup-<aws.scheduler.scheduled-time>"}}
+            {"job_type":"quota_rollup","job_id":"scheduler-quota-rollup-<aws.scheduler.execution-id>","idempotency_key":"quota-rollup-<aws.scheduler.scheduled-time>","requested_by":"scheduler","attempt":0,"trace_id":"scheduler-quota-rollup-<aws.scheduler.execution-id>","payload":{"requested_by":"scheduler"}}
 
   CleanupSchedule:
     Type: AWS::Scheduler::Schedule
@@ -1026,7 +1026,7 @@ Resources:
           Fn::GetAtt: [SchedulerRole, Arn]
         Input:
           Fn::Sub: |
-            {"job_type":"cleanup","job_id":"scheduler-cleanup-<aws.scheduler.execution-id>","input":{"requested_by":"scheduler","idempotency_key":"cleanup-<aws.scheduler.scheduled-time>","dry_run":true}}
+            {"job_type":"cleanup","job_id":"scheduler-cleanup-<aws.scheduler.execution-id>","idempotency_key":"cleanup-<aws.scheduler.scheduled-time>","requested_by":"scheduler","attempt":0,"trace_id":"scheduler-cleanup-<aws.scheduler.execution-id>","payload":{"requested_by":"scheduler","dry_run":true}}
 
 Outputs:
   CloudFrontDomainName:
