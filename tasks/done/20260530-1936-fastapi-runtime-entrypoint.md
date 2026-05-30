@@ -1,6 +1,6 @@
 # FastAPI runtime entrypoint
 
-状態: in_progress
+状態: done
 
 タスク種別: 機能追加
 
@@ -89,3 +89,9 @@ API Lambda の deploy 経路を FastAPI + Mangum entrypoint に寄せ、`api.zip
 
 - FastAPI / Mangum dependency install に network access が必要になる可能性がある。
 - 今回は FastAPI runtime 化であり、各 route の Pydantic schema 完全化は後続。
+
+## Done 条件
+
+- 実装、テスト、docs 更新、作業レポート作成、PR 本文更新を完了した。
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583022346
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4583022609
