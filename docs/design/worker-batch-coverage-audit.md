@@ -1,0 +1,46 @@
+# Worker batch v0.4 coverage audit
+
+## 位置づけ
+
+`docs/design/diopside_basic_design_v0.4.md` の 9.6 / 9.8 を正本とし、現 worker 実装は移行中の実装候補として扱う。現状は `apps/workers/static-exporter/src/static_exporter/pipeline.py` に metadata / chat / normalize / aggregate / maintenance 系の複数責務が統合され、`apps/workers/static-exporter/src/static_exporter/handler.py` が static export を担う。v0.4 が求める worker 分割、batch ごとの handler / job_type / queue / idempotency test は一部のみ満たす。
+
+## BATCH-001〜020 対応表
+
+| ID | v0.4 batch | 現 job_type / handler | queue / trigger | test evidence | 状態 | 備考 |
+|---|---|---|---|---|---|---|
+| BATCH-001 | 定期メタデータ同期ディスパッチ | `metadata_sync` message を Scheduler/API が作成 | `MetadataQueue` / 管理 API | `tests/test_cloudformation_contract.py`, `tests/test_api_handler.py` | 部分実装 | 専用 dispatcher Lambda ではなく Scheduler/API 直投入 |
+| BATCH-002 | チャンネル情報取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | channel resource 専用 branch は未分離 |
+| BATCH-003 | uploads playlist差分取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | page token cursor と次 page 再投入を検証 |
+| BATCH-004 | 動画詳細取得 | `metadata_sync` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | 状態変化 event item は v0.4 未整合 |
+| BATCH-005 | ライブ状態監視 | `live_status_scan` | `DIOPSIDE_METADATA_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | chat collect 開始はあるが NotificationPlan は未対応 |
+| BATCH-006 | 配信予定通知生成 | なし | なし | なし | 未対応 | NotificationPlan / SNS optional payload 未実装 |
+| BATCH-007 | 公式Live Chat取得 | `chat_collect` mode=`live` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | Live Chat page 取得と requeue はあるが専用 worker 分離なし |
+| BATCH-008 | リプレイチャット初期化 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | initial data 解析はあるが初期化 worker と page collector は未分離 |
+| BATCH-009 | リプレイチャットページ取得 | `chat_collect` mode=`replay` | `DIOPSIDE_CHAT_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | continuation 自己再投入の専用 contract は不足 |
+| BATCH-010 | チャット正規化 | `chat_normalize` | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 実装済 | streaming normalize と summary 更新を検証 |
+| BATCH-011 | チャット集計 | `chat_normalize` 内 aggregate | `DIOPSIDE_NORMALIZE_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | aggregate worker は未分離 |
+| BATCH-012 | ワードクラウド生成 | `rebuild_artifacts` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 差分あり | SVG/JSON 中心。PNG worker は未実装 |
+| BATCH-013 | タイムスタンプ候補生成 | `rebuild_artifacts` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | chapters_suggestion.md は未実装 |
+| BATCH-014 | ファイル出力サービス | `rebuild_artifacts`, `static_export` 内で直接出力 | aggregate/static queues | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | 専用 file-output queue / worker は未実装 |
+| BATCH-015 | 静的JSON export | `static_export` / `static_exporter.handler` | `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 | v0.4 alias と versioned manifest を検証 |
+| BATCH-016 | quota使用量ロールアップ | `quota_rollup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | dry summary で、DDB daily aggregate item は未保存 |
+| BATCH-017 | アーカイブ確定処理 | なし | なし | なし | 未対応 | live ended 後の遅延 metadata/replay/export 投入が未実装 |
+| BATCH-018 | 失敗ジョブ再投入/Redrive | `retry_job` | target job queue | `tests/test_core_pipeline.py`, `tests/test_api_handler.py` | 部分実装 | DLQ redrive report は手順中心 |
+| BATCH-019 | 古いraw/中間成果物クリーンアップ | `cleanup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | 現状は dry-run report のみで削除しない |
+| BATCH-020 | 管理手動ジョブディスパッチ | admin job API | 各 queue | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 部分実装 | v0.4 JobMessage 共通 schema には未整合 |
+
+## 現 worker contract
+
+- `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
+- `static_export` は `static_exporter.handler` が担当する。
+- queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
+- `cleanup` は削除を実行せず、常に dry-run report を返す。
+- `retry_job` は対象 job の job_type から queue env を引き、`retry_requested` event を残して再投入する。
+
+## 後続修正方針
+
+1. BATCH-006 `NotificationPlan` と BATCH-017 `archive-finalizer` を先に実装し、配信予定・開始・archive_available の状態遷移を DDB item と job chain へ落とす。
+2. BATCH-011 / 012 / 013 / 014 を aggregate 統合処理から分離し、wordcloud / timestamp / file-output の job_type と queue contract を追加する。
+3. BATCH-008 / 009 は replay 初期化と page collector を分け、continuation の自己再投入 contract を明確にする。
+4. BATCH-016 は `QuotaUsage` call record から daily summary item を保存する形へ寄せる。
+5. v0.4 `JobMessage` 共通 schema に合わせ、API / Scheduler / worker 再投入の message fields を統一する。

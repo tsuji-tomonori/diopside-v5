@@ -198,6 +198,8 @@ CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS
 
 worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
+BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、BATCH-006 配信予定通知生成、BATCH-017 アーカイブ確定処理、専用 file-output worker、worker 分割責務には未対応または差分があります。
+
 ## DLQ運用手順
 
 CloudFormation では各 worker queue に `maxReceiveCount=3` の redrive policy を設定し、3 回処理に失敗した message を対応する DLQ へ移動します。

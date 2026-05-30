@@ -25,6 +25,31 @@ from diopside_core import (
     summarize_chat_messages,
 )
 
+PIPELINE_JOB_HANDLERS = {
+    "metadata_sync": "metadata_sync",
+    "live_status_scan": "live_status_scan",
+    "chat_collect": "chat_collect",
+    "chat_normalize": "chat_normalize",
+    "rebuild_artifacts": "rebuild_artifacts",
+    "retry_job": "retry_job",
+    "cancel_job": "cancel_job",
+    "quota_rollup": "quota_rollup",
+    "cleanup": "cleanup",
+}
+
+JOB_QUEUE_ENVS = {
+    "metadata_sync": "DIOPSIDE_METADATA_QUEUE_URL",
+    "live_status_scan": "DIOPSIDE_METADATA_QUEUE_URL",
+    "chat_collect": "DIOPSIDE_CHAT_QUEUE_URL",
+    "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
+    "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
+    "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
+    "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
+    "quota_rollup": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "cleanup": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+}
+
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     repo = _repository()
@@ -602,16 +627,7 @@ def _chat_terms(text: str) -> list[str]:
 
 
 def _queue_env_for_job_type(job_type: str) -> str:
-    return {
-        "metadata_sync": "DIOPSIDE_METADATA_QUEUE_URL",
-        "live_status_scan": "DIOPSIDE_METADATA_QUEUE_URL",
-        "chat_collect": "DIOPSIDE_CHAT_QUEUE_URL",
-        "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
-        "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
-        "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
-        "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
-        "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
-    }[job_type]
+    return JOB_QUEUE_ENVS[job_type]
 
 
 def _enqueue_job(queue_env: str, payload: dict[str, Any], delay_seconds: int = 0) -> str | None:

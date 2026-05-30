@@ -6,6 +6,7 @@ const root = process.cwd();
 const files = {
   readme: "README.md",
   ddbAudit: "docs/design/dynamodb-schema-audit.md",
+  batchAudit: "docs/design/worker-batch-coverage-audit.md",
   api: "apps/api/src/diopside_api/handler.py",
   worker: "apps/workers/static-exporter/src/static_exporter/pipeline.py",
   staticExporter: "apps/workers/static-exporter/src/static_exporter/handler.py",
@@ -131,6 +132,7 @@ const exists = async (path) => access(path).then(() => true, () => false);
 
 const readme = await read(files.readme);
 const ddbAudit = await read(files.ddbAudit);
+const batchAudit = await read(files.batchAudit);
 const api = await read(files.api);
 const worker = await read(files.worker);
 const staticExporter = await read(files.staticExporter);
@@ -207,6 +209,26 @@ for (const itemType of [
   "ChatMessageChunkManifest",
 ]) {
   assert(ddbAudit.includes(`\`${itemType}\``), `DDB audit missing current item type: ${itemType}`);
+}
+
+for (let index = 1; index <= 20; index += 1) {
+  const batchId = `BATCH-${String(index).padStart(3, "0")}`;
+  assert(batchAudit.includes(batchId), `worker batch audit missing ${batchId}`);
+}
+
+for (const jobType of [
+  "metadata_sync",
+  "live_status_scan",
+  "chat_collect",
+  "chat_normalize",
+  "rebuild_artifacts",
+  "static_export",
+  "retry_job",
+  "cancel_job",
+  "quota_rollup",
+  "cleanup",
+]) {
+  assert(batchAudit.includes(`\`${jobType}\``), `worker batch audit missing job type: ${jobType}`);
 }
 
 assert(staticExporter.includes("latest-manifest.json"), "static exporter missing latest-manifest.json");

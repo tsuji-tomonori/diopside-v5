@@ -156,7 +156,7 @@
 | API-FASTAPI | Backend | FastAPI on Lambda を API 正本にする。 | なし。現 main は Python Lambda handler 中心 | なし | 差分あり |
 | WEB-NEXT | Frontend | Next.js static export + React client components。 | なし。現 main は `apps/web/public` の静的 SPA 中心 | `tools/run-local-e2e.mjs`, `tools/check-web-dom-safety.mjs` | 差分あり |
 | ADMIN-SESSION | Security | 管理 UI/API は HttpOnly cookie + CSRF で保護する。 | `apps/api/src/diopside_api/handler.py`, `apps/web/public/app.js` | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 実装済 |
-| WORKER-SPLIT | Worker | metadata/chat/normalize/aggregate/wordcloud/timestamp/export の責務分離。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` に統合実装 | `tests/test_core_pipeline.py` | 差分あり |
+| WORKER-SPLIT | Worker | metadata/chat/normalize/aggregate/wordcloud/timestamp/export の責務分離。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` に統合実装、`docs/design/worker-batch-coverage-audit.md` に差分監査 | `tests/test_worker_batch_coverage_contract.py`, `tests/test_core_pipeline.py` | 監査済み・差分あり |
 | TEST-UNIT | Test | parser、repository、S3 path、static schema の unit test。 | `tests/` | `npm test` | 部分実装 |
 | TEST-INTEGRATION | Test | SQS message -> Lambda -> S3/DynamoDB の代表経路。 | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | `npm test` | 部分実装 |
 | TEST-E2E | Test | 公開 UI、管理 UI、CloudFront 経路の E2E/smoke。 | `tools/run-local-e2e.mjs`, `tools/run-post-deploy-smoke.mjs` | `npm run e2e:local`, `npm run smoke:post-deploy` | 部分実装 |
