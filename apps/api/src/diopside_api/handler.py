@@ -80,6 +80,8 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
         return _videos(request.query)
     if request.method == "GET" and request.path == "/api/tags":
         return _tags()
+    if request.method == "GET" and request.path == "/api/archive-calendar":
+        return _archive_calendar(request.query)
     if request.method == "GET" and request.path == "/api/random-videos":
         return _random_videos(request.query)
     if request.method == "GET" and request.path.startswith("/api/videos/"):
@@ -103,6 +105,15 @@ def route(request: Request, trace_id: str) -> dict[str, Any]:
             return {"schema_version": "admin-channel-list/v1", "items": _list_channels(), "trace_id": trace_id}
         if request.method == "GET" and request.path == "/api/admin/quota-usage":
             return {"schema_version": "admin-quota-usage/v1", "items": _list_quota_usage(), "trace_id": trace_id}
+        if request.method == "PUT" and request.path.startswith("/api/admin/channels/"):
+            _require_csrf(request)
+            parts = request.path.strip("/").split("/")
+            if len(parts) != 4:
+                raise ApiError(404, "NOT_FOUND", "指定された channel API は存在しません。")
+            return _update_channel(parts[3], request.body or {}, trace_id)
+        if request.method == "POST" and request.path == "/api/admin/artifacts/presigned-url":
+            _require_csrf(request)
+            return _issue_artifact_presigned_url(request.body or {}, trace_id)
         if request.method == "POST":
             return _start_job(request, trace_id)
     raise ApiError(404, "NOT_FOUND", "指定された API は存在しません。")
@@ -232,6 +243,147 @@ def _random_videos(query: dict[str, str]) -> dict[str, Any]:
     offset = int(time.time()) % max(len(items), 1)
     rotated = items[offset:] + items[:offset]
     return {"schema_version": "public-random-videos/v1", "items": rotated[:limit], "generated_at": _now()}
+
+
+def _archive_calendar(query: dict[str, str]) -> dict[str, Any]:
+    year_filter = _optional_int_query(query, "year", minimum=1970, maximum=9999)
+    month_filter = _optional_int_query(query, "month", minimum=1, maximum=12)
+    if month_filter is not None and year_filter is None:
+        raise ApiError(400, "INVALID_REQUEST", "month を指定する場合は year も必要です。")
+    videos = _calendar_video_items()
+    years: dict[str, int] = {}
+    months: dict[tuple[str, str], int] = {}
+    days: dict[str, list[str]] = {}
+    for video in videos:
+        published_at = str(video.get("published_at") or "")
+        if len(published_at) < 10:
+            continue
+        year = published_at[:4]
+        month = published_at[5:7]
+        day = published_at[:10]
+        if year_filter is not None and year != f"{year_filter:04d}":
+            continue
+        if month_filter is not None and month != f"{month_filter:02d}":
+            continue
+        years[year] = years.get(year, 0) + 1
+        months[(year, month)] = months.get((year, month), 0) + 1
+        days.setdefault(day, []).append(video["video_id"])
+    return {
+        "schema_version": "public-archive-calendar/v1",
+        "generated_at": _now(),
+        "years": [{"year": int(year), "video_count": count} for year, count in sorted(years.items(), reverse=True)],
+        "months": [
+            {"year": int(year), "month": int(month), "video_count": count}
+            for (year, month), count in sorted(months.items(), reverse=True)
+        ],
+        **(
+            {
+                "days": [
+                    {"date": day, "video_count": len(video_ids), "video_ids": sorted(video_ids)}
+                    for day, video_ids in sorted(days.items(), reverse=True)
+                ]
+            }
+            if month_filter is not None
+            else {}
+        ),
+    }
+
+
+def _calendar_video_items() -> list[dict[str, Any]]:
+    if os.environ.get("DIOPSIDE_TABLE_NAME"):
+        return [
+            {"video_id": video["video_id"], "published_at": video.get("published_at")}
+            for video in _repository().list_videos(limit=10000)
+            if video.get("video_id")
+        ]
+    return [
+        {"video_id": item["video_id"], "published_at": item.get("published_at")}
+        for item in _load_manifest_index("videos_latest").get("items", [])
+        if item.get("video_id")
+    ]
+
+
+def _optional_int_query(query: dict[str, str], name: str, *, minimum: int, maximum: int) -> int | None:
+    raw = query.get(name)
+    if raw in {None, ""}:
+        return None
+    try:
+        value = int(str(raw))
+    except ValueError as exc:
+        raise ApiError(400, "INVALID_REQUEST", f"{name} は整数で指定してください。") from exc
+    if value < minimum or value > maximum:
+        raise ApiError(400, "INVALID_REQUEST", f"{name} は {minimum} から {maximum} の範囲で指定してください。")
+    return value
+
+
+def _update_channel(channel_id: str, body: dict[str, Any], trace_id: str) -> dict[str, Any]:
+    if not channel_id:
+        raise ApiError(400, "INVALID_REQUEST", "channel_id が必要です。")
+    if not isinstance(body, dict):
+        raise ApiError(400, "INVALID_JSON_BODY", "JSON object body が必要です。")
+    allowed = {"enabled", "uploads_playlist_id", "display_name", "metadata_interval_minutes", "live_scan_interval_minutes", "notification_enabled"}
+    unknown = set(body) - allowed
+    if unknown:
+        raise ApiError(400, "INVALID_REQUEST", "未対応の body field があります。", {"fields": sorted(unknown)})
+    required = {"enabled", "metadata_interval_minutes", "live_scan_interval_minutes", "notification_enabled"}
+    missing = sorted(key for key in required if key not in body)
+    if missing:
+        raise ApiError(400, "INVALID_REQUEST", "必須 field が不足しています。", {"fields": missing})
+    for key in ["enabled", "notification_enabled"]:
+        if not isinstance(body.get(key), bool):
+            raise ApiError(400, "INVALID_REQUEST", f"{key} は boolean で指定してください。")
+    for key in ["metadata_interval_minutes", "live_scan_interval_minutes"]:
+        if not isinstance(body.get(key), int) or body[key] <= 0 or body[key] > 1440:
+            raise ApiError(400, "INVALID_REQUEST", f"{key} は 1 から 1440 の整数で指定してください。")
+    for key in ["uploads_playlist_id", "display_name"]:
+        if key in body and body[key] is not None and not isinstance(body[key], str):
+            raise ApiError(400, "INVALID_REQUEST", f"{key} は string で指定してください。")
+    item = _repository().put_channel(
+        {
+            "channel_id": channel_id,
+            "enabled": body["enabled"],
+            "uploads_playlist_id": body.get("uploads_playlist_id"),
+            "display_name": body.get("display_name"),
+            "metadata_interval_minutes": body["metadata_interval_minutes"],
+            "live_scan_interval_minutes": body["live_scan_interval_minutes"],
+            "notification_enabled": body["notification_enabled"],
+        }
+    )
+    return {"schema_version": "admin-channel-config/v1", "item": _channel_response(item), "trace_id": trace_id}
+
+
+def _issue_artifact_presigned_url(body: dict[str, Any], trace_id: str) -> dict[str, Any]:
+    if not isinstance(body, dict):
+        raise ApiError(400, "INVALID_JSON_BODY", "JSON object body が必要です。")
+    allowed = {"artifact_id", "purpose", "expires_in_seconds"}
+    unknown = set(body) - allowed
+    if unknown:
+        raise ApiError(400, "INVALID_REQUEST", "未対応の body field があります。", {"fields": sorted(unknown)})
+    artifact_id = body.get("artifact_id")
+    purpose = body.get("purpose")
+    if not isinstance(artifact_id, str) or not artifact_id:
+        raise ApiError(400, "INVALID_REQUEST", "artifact_id が必要です。")
+    if purpose not in {"download", "inspect"}:
+        raise ApiError(400, "INVALID_REQUEST", "purpose は download または inspect を指定してください。")
+    expires = body.get("expires_in_seconds", 300)
+    if not isinstance(expires, int) or expires < 1 or expires > 900:
+        raise ApiError(400, "INVALID_REQUEST", "expires_in_seconds は 1 から 900 の整数で指定してください。")
+    artifact = _repository().get_artifact_by_id(artifact_id)
+    if not artifact:
+        raise ApiError(404, "ARTIFACT_NOT_FOUND", "指定された artifact は存在しません。")
+    s3_uri = artifact.get("s3_uri") or artifact.get("private_s3_uri")
+    bucket, key = _private_artifact_s3_location(s3_uri)
+    if boto3 is None:
+        raise ApiError(503, "BOTO3_UNAVAILABLE", "boto3 が利用できません。")
+    url = boto3.client("s3").generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=expires)
+    return {
+        "schema_version": "admin-artifact-presigned-url/v1",
+        "artifact_id": artifact_id,
+        "purpose": purpose,
+        "url": url,
+        "expires_at": _iso_after_seconds(expires),
+        "trace_id": trace_id,
+    }
 
 
 def _start_job(request: Request, trace_id: str) -> dict[str, Any]:
@@ -413,7 +565,44 @@ def _public_video_item(video: dict[str, Any]) -> dict[str, Any]:
 
 
 def _list_channels() -> list[dict[str, Any]]:
-    return _repository().list_channels()
+    return [_channel_response(item) for item in _repository().list_channels()]
+
+
+def _channel_response(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "channel_id": item["channel_id"],
+        "enabled": bool(item.get("enabled", True)),
+        "uploads_playlist_id": item.get("uploads_playlist_id"),
+        "display_name": item.get("display_name"),
+        "metadata_interval_minutes": item.get("metadata_interval_minutes"),
+        "live_scan_interval_minutes": item.get("live_scan_interval_minutes"),
+        "notification_enabled": bool(item.get("notification_enabled", False)),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def _private_artifact_s3_location(s3_uri: Any) -> tuple[str, str]:
+    if not isinstance(s3_uri, str) or not s3_uri.startswith("s3://"):
+        raise ApiError(403, "ARTIFACT_NOT_SIGNABLE", "署名 URL を発行できる private S3 artifact ではありません。")
+    rest = s3_uri[5:]
+    if "/" not in rest:
+        raise ApiError(403, "ARTIFACT_NOT_SIGNABLE", "artifact の S3 URI が不正です。")
+    bucket, key = rest.split("/", 1)
+    if not bucket or not key or ".." in pathlib.PurePosixPath(key).parts:
+        raise ApiError(403, "ARTIFACT_NOT_SIGNABLE", "artifact の S3 URI が不正です。")
+    allowed_buckets = {value for value in [os.environ.get("DIOPSIDE_RAW_BUCKET"), os.environ.get("DIOPSIDE_PROCESSED_BUCKET")] if value}
+    if not allowed_buckets:
+        raise ApiError(503, "PRIVATE_ARTIFACT_BUCKET_NOT_CONFIGURED", "private artifact bucket が設定されていません。")
+    if bucket not in allowed_buckets:
+        raise ApiError(403, "ARTIFACT_NOT_SIGNABLE", "許可されていない S3 bucket の artifact です。")
+    allowed_prefixes = ("raw/", "processed/", "failed/")
+    if not key.startswith(allowed_prefixes):
+        raise ApiError(403, "ARTIFACT_NOT_SIGNABLE", "許可されていない S3 prefix の artifact です。")
+    return bucket, key
+
+
+def _iso_after_seconds(seconds: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + seconds))
 
 
 def _list_quota_usage() -> list[dict[str, Any]]:

@@ -68,6 +68,26 @@ def test_public_video_search_and_detail():
     assert detail["chat_summary"]["wordcloud_url"]
 
 
+def test_archive_calendar_filters_year_month():
+    status, body = call("GET", "/api/archive-calendar", query={"year": "2026", "month": "5"})
+
+    assert status == 200
+    assert body["schema_version"] == "public-archive-calendar/v1"
+    assert body["years"] == [{"year": 2026, "video_count": 2}]
+    assert body["months"] == [{"year": 2026, "month": 5, "video_count": 2}]
+    assert {day["date"]: day["video_ids"] for day in body["days"]} == {
+        "2026-05-27": ["fixture001"],
+        "2026-05-20": ["fixture002"],
+    }
+
+
+def test_archive_calendar_rejects_invalid_query():
+    status, body = call("GET", "/api/archive-calendar", query={"month": "5"})
+
+    assert status == 400
+    assert body["code"] == "INVALID_REQUEST"
+
+
 def test_home_uses_repository_when_table_name_is_configured(monkeypatch):
     repo = MemoryRepository()
     repo.put_video(
@@ -166,6 +186,136 @@ def test_admin_quota_usage_returns_visible_fields(monkeypatch):
     assert body["items"][0]["video_count"] == 3
     assert body["items"][0]["channel_id"] == "ch"
     assert body["items"][0]["job_id"] == "job-1"
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
+def test_admin_channel_update_requires_csrf_and_persists(monkeypatch):
+    repo = MemoryRepository()
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, csrf_error = call(
+        "PUT",
+        "/api/admin/channels/ch-1",
+        body={"enabled": True, "metadata_interval_minutes": 720, "live_scan_interval_minutes": 30, "notification_enabled": False},
+        headers={"authorization": "Bearer secret"},
+    )
+    assert status == 403
+    assert csrf_error["code"] == "CSRF_INVALID"
+
+    status, body = call(
+        "PUT",
+        "/api/admin/channels/ch-1",
+        body={
+            "enabled": True,
+            "uploads_playlist_id": "UUuploads",
+            "display_name": "白雪巴",
+            "metadata_interval_minutes": 720,
+            "live_scan_interval_minutes": 30,
+            "notification_enabled": True,
+        },
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 200
+    assert body["schema_version"] == "admin-channel-config/v1"
+    assert body["item"]["channel_id"] == "ch-1"
+    assert body["item"]["uploads_playlist_id"] == "UUuploads"
+    assert body["item"]["notification_enabled"] is True
+    assert repo.get_item("CHANNEL#ch-1", "META")["item_type"] == "Channel"
+
+    status, channels = call("GET", "/api/admin/channels", headers={"authorization": "Bearer secret"})
+    assert status == 200
+    assert channels["items"][0]["channel_id"] == "ch-1"
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+
+
+def test_admin_channel_update_validates_body(monkeypatch):
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+
+    status, body = call(
+        "PUT",
+        "/api/admin/channels/ch-1",
+        body={"enabled": "yes", "metadata_interval_minutes": 0, "live_scan_interval_minutes": 30, "notification_enabled": True},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 400
+    assert body["code"] == "INVALID_REQUEST"
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+
+
+def test_admin_presigned_url_restricts_private_artifacts(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_artifact("vid001", {"artifact_type": "raw-chat", "s3_uri": "s3://raw-bucket/raw/youtube/chat/vid001.jsonl", "content_type": "application/jsonl"})
+
+    class FakeS3:
+        def generate_presigned_url(self, operation, Params, ExpiresIn):
+            assert operation == "get_object"
+            assert Params == {"Bucket": "raw-bucket", "Key": "raw/youtube/chat/vid001.jsonl"}
+            assert ExpiresIn == 120
+            return "https://signed.example/raw"
+
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setenv("DIOPSIDE_RAW_BUCKET", "raw-bucket")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+    monkeypatch.setattr(handler, "boto3", type("FakeBoto3", (), {"client": staticmethod(lambda name: FakeS3())}))
+
+    status, body = call(
+        "POST",
+        "/api/admin/artifacts/presigned-url",
+        body={"artifact_id": "vid001:raw-chat", "purpose": "inspect", "expires_in_seconds": 120},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 200
+    assert body["schema_version"] == "admin-artifact-presigned-url/v1"
+    assert body["url"] == "https://signed.example/raw"
+    assert body["artifact_id"] == "vid001:raw-chat"
+    assert body["purpose"] == "inspect"
+
+    os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
+    os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
+    os.environ.pop("DIOPSIDE_RAW_BUCKET", None)
+    monkeypatch.setattr(handler, "_REPOSITORY", None)
+    monkeypatch.setattr(handler, "boto3", None)
+
+
+def test_admin_presigned_url_rejects_public_or_unknown_artifacts(monkeypatch):
+    repo = MemoryRepository()
+    repo.put_artifact("vid001", {"artifact_type": "wordcloud", "public_url_path": "/data/artifacts/wordcloud/vid001.json", "content_type": "application/json"})
+    monkeypatch.setenv("DIOPSIDE_ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("DIOPSIDE_ADMIN_CSRF_TOKEN", "csrf")
+    monkeypatch.setattr(handler, "_REPOSITORY", repo)
+
+    status, body = call(
+        "POST",
+        "/api/admin/artifacts/presigned-url",
+        body={"artifact_id": "vid001:wordcloud", "purpose": "download"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+
+    assert status == 403
+    assert body["code"] == "ARTIFACT_NOT_SIGNABLE"
+
+    status, missing = call(
+        "POST",
+        "/api/admin/artifacts/presigned-url",
+        body={"artifact_id": "vid001:missing", "purpose": "download"},
+        headers={"authorization": "Bearer secret", "x-csrf-token": "csrf"},
+    )
+    assert status == 404
+    assert missing["code"] == "ARTIFACT_NOT_FOUND"
+
     os.environ.pop("DIOPSIDE_ADMIN_TOKEN", None)
     os.environ.pop("DIOPSIDE_ADMIN_CSRF_TOKEN", None)
     monkeypatch.setattr(handler, "_REPOSITORY", None)

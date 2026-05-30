@@ -132,6 +132,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `GET /api/home` | `public-home/v1` | latest videos と popular tags |
 | `GET /api/videos` | `public-video-list/v1` | public video list。`q` / `tag` / `limit` で絞り込み |
 | `GET /api/tags` | `public-tag-list/v1` | tag list |
+| `GET /api/archive-calendar` | `public-archive-calendar/v1` | year/month query による archive calendar |
 | `GET /api/random-videos` | `public-random-videos/v1` | rotate した random video list |
 | `GET /api/videos/{video_id}` | `public-video-detail/v1` | video detail と chat summary |
 | `GET /api/videos/{video_id}/artifacts` | `public-video-artifacts/v1` | video artifact list |
@@ -139,6 +140,8 @@ Lambda の実行 role は職務ごとに分離します。
 | `GET /api/admin/jobs/{job_id}` | `admin-job-detail/v1` | 管理 job detail と events |
 | `GET /api/admin/channels` | `admin-channel-list/v1` | channel list |
 | `GET /api/admin/quota-usage` | `admin-quota-usage/v1` | quota usage list |
+| `PUT /api/admin/channels/{channel_id}` | `admin-channel-config/v1` | channel config を更新 |
+| `POST /api/admin/artifacts/presigned-url` | `admin-artifact-presigned-url/v1` | private S3 artifact の短時間署名 URL を発行 |
 | `POST /api/admin/jobs/metadata-sync` | job accepted response | `metadata_sync` を enqueue |
 | `POST /api/admin/jobs/live-status-scan` | job accepted response | `live_status_scan` を enqueue |
 | `POST /api/admin/jobs/chat-collect` | job accepted response | `chat_collect` を enqueue |
@@ -148,7 +151,7 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/retry` | job accepted response | `retry_job` を enqueue |
 | `POST /api/admin/jobs/{job_id}/cancel` | job accepted response | `cancel_job` を enqueue |
 
-管理 API は `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を要求します。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。
+管理 API は `Authorization: Bearer <DIOPSIDE_ADMIN_TOKEN>` と `X-CSRF-Token: <DIOPSIDE_ADMIN_CSRF_TOKEN>` を要求します。管理 GET は CSRF 不要、管理 PUT/POST は CSRF 必須です。job 起動系 API は body または `X-Idempotency-Key` で `idempotency_key` を必須にし、同じ key の二重起動を repository で抑止します。`POST /api/admin/artifacts/presigned-url` は `s3://` の private artifact だけを対象にし、`raw/`、`processed/`、`failed/` prefix 以外や public path には署名 URL を発行しません。
 
 ## public data schema
 

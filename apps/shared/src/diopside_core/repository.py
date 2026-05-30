@@ -80,6 +80,8 @@ class Repository(Protocol):
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]: ...
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]: ...
+    def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None: ...
+    def put_channel(self, channel: dict[str, Any]) -> dict[str, Any]: ...
     def record_quota_usage(
         self,
         method: str,
@@ -249,6 +251,32 @@ class MemoryRepository:
         channels.sort(key=lambda item: item.get("channel_id", ""))
         return deepcopy(channels)
 
+    def put_channel(self, channel: dict[str, Any]) -> dict[str, Any]:
+        channel_id = channel["channel_id"]
+        stamp = now_iso()
+        existing = self.get_item(f"CHANNEL#{channel_id}", "META") or {}
+        item = {
+            **existing,
+            **channel,
+            "item_type": "Channel",
+            "pk": f"CHANNEL#{channel_id}",
+            "sk": "META",
+            "channel_id": channel_id,
+            "updated_at": stamp,
+        }
+        if not item.get("created_at"):
+            item["created_at"] = stamp
+        return self.put_item(item)
+
+    def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None:
+        if ":" in artifact_id:
+            video_id, artifact_type = artifact_id.split(":", 1)
+            return self.get_item(f"VIDEO#{video_id}", f"ARTIFACT#{artifact_type}")
+        for item in self.items.values():
+            if item.get("item_type") == "Artifact" and item.get("artifact_id") == artifact_id:
+                return deepcopy(item)
+        return None
+
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
         usage = [item for item in self.items.values() if item.get("item_type") == "QuotaUsage"]
         usage.sort(key=lambda item: item.get("created_at", ""), reverse=True)
@@ -369,6 +397,12 @@ class DynamoRepository(MemoryRepository):
         channels = [item for item in response.get("Items", []) if item.get("item_type") == "Channel"]
         channels.sort(key=lambda item: item.get("channel_id", ""))
         return deepcopy(channels)
+
+    def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None:
+        if ":" in artifact_id:
+            video_id, artifact_type = artifact_id.split(":", 1)
+            return self.get_item(f"VIDEO#{video_id}", f"ARTIFACT#{artifact_type}")
+        return None
 
     def list_quota_usage(self, limit: int = 100) -> list[dict[str, Any]]:
         if Key is None:
