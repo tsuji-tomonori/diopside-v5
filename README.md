@@ -194,11 +194,11 @@ Lambda の実行 role は職務ごとに分離します。
 | `POST /api/admin/jobs/{job_id}/retry` | `retry_job` | failed/retryable job に `retry_requested` event を追加し、元 job type の queue へ再投入 |
 | `POST /api/admin/jobs/{job_id}/cancel` | `cancel_job` | 未完了 job に `cancelled` event を追加。完了済み/失敗済み job は拒否 |
 
-CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
+CloudFormation では EventBridge Scheduler から低頻度の定期 job を SQS へ投入します。`metadata_sync` は 12 時間ごと、`live_status_scan` は 30 分ごとに `MetadataQueue` へ投入し、`quota_rollup` は 1 日ごと、`cleanup` は 7 日ごとに `AggregateQueue` へ投入します。`archive_finalize` は `live_status_scan` が `upcoming` / `live` から `archived` への遷移を検知したときに `AggregateQueue` へ投入し、replay `chat_collect` と `static_export` を後続投入します。Scheduler 用 IAM role は `MetadataQueue` / `AggregateQueue` への `sqs:SendMessage` のみに制限します。`cleanup` は現時点では常に dry-run report を返し、削除は実行しません。
 
-worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
+worker が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`static_export`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup` です。`static_export` は `static_exporter.handler` で public JSON/artifact を生成し、それ以外は `static_exporter.pipeline` で処理します。
 
-BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、BATCH-006 配信予定通知生成、BATCH-017 アーカイブ確定処理、専用 file-output worker、worker 分割責務には未対応または差分があります。
+BATCH-001〜020 と現 worker 実装の差分は `docs/design/worker-batch-coverage-audit.md` に整理しています。現状は統合 pipeline で主要経路を処理しており、BATCH-006 配信予定通知生成、専用 file-output worker、worker 分割責務には未対応または差分があります。
 
 ## DLQ運用手順
 

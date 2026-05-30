@@ -31,6 +31,7 @@ PIPELINE_JOB_HANDLERS = {
     "chat_collect": "chat_collect",
     "chat_normalize": "chat_normalize",
     "rebuild_artifacts": "rebuild_artifacts",
+    "archive_finalize": "archive_finalize",
     "retry_job": "retry_job",
     "cancel_job": "cancel_job",
     "quota_rollup": "quota_rollup",
@@ -43,6 +44,7 @@ JOB_QUEUE_ENVS = {
     "chat_collect": "DIOPSIDE_CHAT_QUEUE_URL",
     "chat_normalize": "DIOPSIDE_NORMALIZE_QUEUE_URL",
     "rebuild_artifacts": "DIOPSIDE_AGGREGATE_QUEUE_URL",
+    "archive_finalize": "DIOPSIDE_AGGREGATE_QUEUE_URL",
     "static_export": "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
     "retry_job": "DIOPSIDE_METADATA_QUEUE_URL",
     "cancel_job": "DIOPSIDE_METADATA_QUEUE_URL",
@@ -81,6 +83,8 @@ def dispatch_job(repo: Any, payload: dict[str, Any]) -> dict[str, Any]:
             result = chat_normalize(repo, params)
         elif job_type == "rebuild_artifacts":
             result = rebuild_artifacts(repo, params)
+        elif job_type == "archive_finalize":
+            result = archive_finalize(repo, params)
         elif job_type == "retry_job":
             result = retry_job(repo, params)
         elif job_type == "cancel_job":
@@ -241,7 +245,23 @@ def live_status_scan(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
             updated.append({"video_id": video["video_id"], "from": before, "to": video["live_state"]})
         if video["live_state"] == "live" and video.get("live_chat_id"):
             enqueued.append(_enqueue_job("DIOPSIDE_CHAT_QUEUE_URL", {"job_type": "chat_collect", "job_id": f"manual-live-{video['video_id']}", "input": {"video_id": video["video_id"], "mode": "live", "live_chat_id": video["live_chat_id"]}}))
-    return {"updated": updated, "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"], "enqueued": [item for item in enqueued if item]}
+        if before in {"upcoming", "live"} and video["live_state"] == "archived":
+            enqueued.append(
+                _enqueue_job(
+                    "DIOPSIDE_AGGREGATE_QUEUE_URL",
+                    {
+                        "job_type": "archive_finalize",
+                        "job_id": f"manual-archive-finalize-{video['video_id']}",
+                        "input": {"video_id": video["video_id"], "requested_by": "live_status_scan"},
+                    },
+                )
+            )
+    return {
+        "updated": updated,
+        "enqueue_chat_collect": [item["video_id"] for item in updated if item["to"] == "live"],
+        "enqueue_archive_finalize": [item["video_id"] for item in updated if item["to"] == "archived"],
+        "enqueued": [item for item in enqueued if item],
+    }
 
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:
@@ -470,6 +490,54 @@ def cleanup(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
         "dry_run": True,
         "deleted_count": 0,
         "policy_version": params.get("policy_version", "v1"),
+    }
+
+
+def archive_finalize(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
+    video_id = params["video_id"]
+    job_id = params.get("job_id")
+    video = repo.get_video(video_id)
+    if not video:
+        raise ValueError(f"video does not exist: {video_id}")
+    refreshed = False
+    if not params.get("skip_youtube_refresh"):
+        client = params.get("youtube_client") or YouTubeClient()
+        response = client.videos([video_id])
+        repo.record_quota_usage(
+            "videos.list",
+            1,
+            {"source": "archive_finalize"},
+            channel_id=video.get("channel_id") or params.get("channel_id"),
+            video_count=1,
+            job_id=job_id,
+        )
+        if response.get("items"):
+            video = {**video, **normalize_video_resource(response["items"][0])}
+            refreshed = True
+    finalized_at = now_iso()
+    repo.put_video({**video, "video_id": video_id, "live_state": "archived", "archive_finalized_at": finalized_at})
+    replay_enqueued = _enqueue_job(
+        "DIOPSIDE_CHAT_QUEUE_URL",
+        {
+            "job_type": "chat_collect",
+            "job_id": f"manual-replay-{video_id}",
+            "input": {"video_id": video_id, "mode": "replay", "requested_by": "archive_finalize"},
+        },
+    )
+    export_enqueued = _enqueue_job(
+        "DIOPSIDE_STATIC_EXPORT_QUEUE_URL",
+        {
+            "job_type": "static_export",
+            "job_id": f"manual-static-export-{video_id}",
+            "input": {"scope": "video", "video_id": video_id, "requested_by": "archive_finalize"},
+        },
+    )
+    return {
+        "video_id": video_id,
+        "refreshed": refreshed,
+        "archive_finalized_at": finalized_at,
+        "replay_enqueued": bool(replay_enqueued),
+        "static_export_enqueued": bool(export_enqueued),
     }
 
 

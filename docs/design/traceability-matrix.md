@@ -140,7 +140,7 @@
 | BATCH-014 | Batch | ファイル出力サービス。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py` | 部分実装 |
 | BATCH-015 | Batch | 静的 JSON export。 | `apps/workers/static-exporter/src/static_exporter/handler.py` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 部分実装 |
 | BATCH-016 | Batch | quota 使用量ロールアップ。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 |
-| BATCH-017 | Batch | アーカイブ確定処理。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py` | なし | 未対応 |
+| BATCH-017 | Batch | アーカイブ確定処理。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `docs/design/worker-batch-coverage-audit.md` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 |
 | BATCH-018 | Batch | 失敗ジョブ再投入/Redrive。 | `apps/api/src/diopside_api/handler.py`, `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `README.md` | `tests/test_api_handler.py` | 部分実装 |
 | BATCH-019 | Batch | 古い raw/中間成果物クリーンアップ。 | `apps/workers/static-exporter/src/static_exporter/pipeline.py`, `infra/cloudformation/diopside.yaml` | `tests/test_cloudformation_contract.py` | 部分実装 |
 | BATCH-020 | Batch | 管理手動ジョブディスパッチ。 | `apps/api/src/diopside_api/handler.py` | `tests/test_api_handler.py` | 部分実装 |

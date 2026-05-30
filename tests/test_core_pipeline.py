@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 
 from diopside_core import CHAT_MESSAGE_REQUIRED_KEYS, CHAT_MESSAGE_SCHEMA_VERSION, DynamoRepository, MemoryRepository, YouTubeClient, YouTubeClientError, build_timestamp_candidates, extract_initial_data_from_watch_html, extract_replay_continuations_from_initial_data, normalize_live_chat_items, normalize_replay_actions, normalize_video_resource, parse_iso8601_duration, summarize_chat_messages
 import static_exporter.pipeline as pipeline
-from static_exporter.pipeline import cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
+from static_exporter.pipeline import archive_finalize, cancel_job, chat_collect, chat_normalize, cleanup, dispatch_job, metadata_sync, quota_rollup, rebuild_artifacts, retry_job
 
 
 def test_youtube_video_normalization():
@@ -241,6 +241,10 @@ def test_live_status_scan_records_quota_and_refreshes_state(monkeypatch):
     assert client.video_calls == [["vid-live"]]
     assert repo.get_video("vid-live")["live_state"] == "archived"
     assert result["updated"] == [{"video_id": "vid-live", "from": "upcoming", "to": "archived"}]
+    assert result["enqueue_archive_finalize"] == ["vid-live"]
+    assert enqueued[0]["queue_env"] == "DIOPSIDE_AGGREGATE_QUEUE_URL"
+    assert enqueued[0]["payload"]["job_type"] == "archive_finalize"
+    assert enqueued[0]["payload"]["input"]["video_id"] == "vid-live"
 
 
 def test_replay_parser_normalizes_known_and_unknown_renderer():
@@ -1035,6 +1039,37 @@ def test_cleanup_returns_safe_dry_run_report_without_deleting():
 
     assert result == {"requested_by": "scheduler", "dry_run": True, "deleted_count": 0, "policy_version": "test"}
     assert repo.get_video("vid001")["title"] == "keep"
+
+
+def test_archive_finalize_refreshes_metadata_and_enqueues_replay_and_export(monkeypatch):
+    enqueued = []
+    monkeypatch.setattr(
+        pipeline,
+        "_enqueue_job",
+        lambda queue_env, payload, delay_seconds=0: enqueued.append({"queue_env": queue_env, "payload": payload, "delay_seconds": delay_seconds}) or "queued",
+    )
+    repo = MemoryRepository()
+    repo.put_video({"video_id": "vid-final", "title": "old", "published_at": "2026-05-29T00:00:00Z", "channel_id": "ch", "live_state": "live"})
+    client = FakeYouTubeMetadataClient()
+
+    result = archive_finalize(repo, {"video_id": "vid-final", "youtube_client": client, "job_id": "job-finalize"})
+
+    video = repo.get_video("vid-final")
+    quota = repo.list_quota_usage()[0]
+    assert result["video_id"] == "vid-final"
+    assert result["refreshed"] is True
+    assert result["replay_enqueued"] is True
+    assert result["static_export_enqueued"] is True
+    assert video["title"] == "vid-final"
+    assert video["live_state"] == "archived"
+    assert video["archive_finalized_at"]
+    assert quota["method"] == "videos.list"
+    assert quota["job_id"] == "job-finalize"
+    assert [item["queue_env"] for item in enqueued] == ["DIOPSIDE_CHAT_QUEUE_URL", "DIOPSIDE_STATIC_EXPORT_QUEUE_URL"]
+    assert enqueued[0]["payload"]["job_type"] == "chat_collect"
+    assert enqueued[0]["payload"]["input"]["mode"] == "replay"
+    assert enqueued[1]["payload"]["job_type"] == "static_export"
+    assert enqueued[1]["payload"]["input"]["scope"] == "video"
 
 
 def test_dispatch_job_supports_scheduled_maintenance_jobs():

@@ -24,22 +24,22 @@
 | BATCH-014 | ファイル出力サービス | `rebuild_artifacts`, `static_export` 内で直接出力 | aggregate/static queues | `tests/test_core_pipeline.py`, `tests/test_static_exporter.py` | 部分実装 | 専用 file-output queue / worker は未実装 |
 | BATCH-015 | 静的JSON export | `static_export` / `static_exporter.handler` | `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` | `tests/test_static_exporter.py`, `tools/check-public-contract.mjs` | 実装済 | v0.4 alias と versioned manifest を検証 |
 | BATCH-016 | quota使用量ロールアップ | `quota_rollup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py` | 部分実装 | dry summary で、DDB daily aggregate item は未保存 |
-| BATCH-017 | アーカイブ確定処理 | なし | なし | なし | 未対応 | live ended 後の遅延 metadata/replay/export 投入が未実装 |
+| BATCH-017 | アーカイブ確定処理 | `archive_finalize` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_worker_batch_coverage_contract.py` | 部分実装 | live ended 検知から replay collect / static export を後続投入。遅延 Scheduler と NotificationPlan 連携は未実装 |
 | BATCH-018 | 失敗ジョブ再投入/Redrive | `retry_job` | target job queue | `tests/test_core_pipeline.py`, `tests/test_api_handler.py` | 部分実装 | DLQ redrive report は手順中心 |
 | BATCH-019 | 古いraw/中間成果物クリーンアップ | `cleanup` | `DIOPSIDE_AGGREGATE_QUEUE_URL` | `tests/test_core_pipeline.py`, `tests/test_cloudformation_contract.py` | 部分実装 | 現状は dry-run report のみで削除しない |
 | BATCH-020 | 管理手動ジョブディスパッチ | admin job API | 各 queue | `tests/test_api_handler.py`, `tools/run-local-e2e.mjs` | 部分実装 | v0.4 JobMessage 共通 schema には未整合 |
 
 ## 現 worker contract
 
-- `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
+- `static_exporter.pipeline` が dispatch する job_type は `metadata_sync`、`live_status_scan`、`chat_collect`、`chat_normalize`、`rebuild_artifacts`、`archive_finalize`、`retry_job`、`cancel_job`、`quota_rollup`、`cleanup`。
 - `static_export` は `static_exporter.handler` が担当する。
-- queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
+- queue env mapping は `metadata_sync` / `live_status_scan` / `retry_job` / `cancel_job` を `DIOPSIDE_METADATA_QUEUE_URL`、`chat_collect` を `DIOPSIDE_CHAT_QUEUE_URL`、`chat_normalize` を `DIOPSIDE_NORMALIZE_QUEUE_URL`、`rebuild_artifacts` / `archive_finalize` / `quota_rollup` / `cleanup` を `DIOPSIDE_AGGREGATE_QUEUE_URL`、`static_export` を `DIOPSIDE_STATIC_EXPORT_QUEUE_URL` に割り当てる。
 - `cleanup` は削除を実行せず、常に dry-run report を返す。
 - `retry_job` は対象 job の job_type から queue env を引き、`retry_requested` event を残して再投入する。
 
 ## 後続修正方針
 
-1. BATCH-006 `NotificationPlan` と BATCH-017 `archive-finalizer` を先に実装し、配信予定・開始・archive_available の状態遷移を DDB item と job chain へ落とす。
+1. BATCH-006 `NotificationPlan` と `archive_finalize` の遅延 Scheduler 連携を実装し、配信予定・開始・archive_available の状態遷移を DDB item と job chain へ落とす。
 2. BATCH-011 / 012 / 013 / 014 を aggregate 統合処理から分離し、wordcloud / timestamp / file-output の job_type と queue contract を追加する。
 3. BATCH-008 / 009 は replay 初期化と page collector を分け、continuation の自己再投入 contract を明確にする。
 4. BATCH-016 は `QuotaUsage` call record から daily summary item を保存する形へ寄せる。
