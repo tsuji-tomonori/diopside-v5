@@ -1,6 +1,6 @@
 # design v0.4 compliance baseline
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -41,12 +41,19 @@
 
 ## 受け入れ条件
 
-- [ ] `docs/design/diopside_basic_design_v0.4.md` が存在し、v0.4 設計書の内容を保持している。
-- [ ] README の設計根拠が `.workspace/` ではなく `docs/design/diopside_basic_design_v0.4.md` を参照している。
-- [ ] `docs/design/traceability-matrix.md` に FR-GEN / FR-U / FR-A / FR-YT、NFR、API-001〜023、STATIC-001〜008、BATCH-001〜020、DynamoDB item schema、S3 bucket/path、CloudFront path、Worker、Frontend、Test/運用の行があり、各行に design_id / category / requirement / implementation_files / tests / status がある。
-- [ ] `reports/audit/design-v0.4-compliance-20260530.md` に v0.4 と現 main の差分、P0/P1/P2 の優先度、後続 PR 候補が記録されている。
-- [ ] 変更範囲に対して `git diff --check` と必要な npm 検証が実行され、未実施項目は理由を記録している。
-- [ ] PR 作成後、受け入れ条件確認コメントとセルフレビューコメントが日本語で投稿されている。
+- [x] `docs/design/diopside_basic_design_v0.4.md` が存在し、v0.4 設計書の内容を保持している。
+- [x] README の設計根拠が `.workspace/` ではなく `docs/design/diopside_basic_design_v0.4.md` を参照している。
+- [x] `docs/design/traceability-matrix.md` に FR-GEN / FR-U / FR-A / FR-YT、NFR、API-001〜023、STATIC-001〜008、BATCH-001〜020、DynamoDB item schema、S3 bucket/path、CloudFront path、Worker、Frontend、Test/運用の行があり、各行に design_id / category / requirement / implementation_files / tests / status がある。
+- [x] `reports/audit/design-v0.4-compliance-20260530.md` に v0.4 と現 main の差分、P0/P1/P2 の優先度、後続 PR 候補が記録されている。
+- [x] 変更範囲に対して `git diff --check` と必要な npm 検証が実行され、未実施項目は理由を記録している。
+- [x] PR 作成後、受け入れ条件確認コメントとセルフレビューコメントが日本語で投稿されている。
+
+## 完了メモ
+
+- PR: https://github.com/tsuji-tomonori/diopside-v5/pull/40
+- 受け入れ条件確認コメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581284855
+- セルフレビューコメント: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581285785
+- 検証: `git diff --check` pass、`npm test` pass、`npm run verify` pass
 
 ## 検証計画
 
