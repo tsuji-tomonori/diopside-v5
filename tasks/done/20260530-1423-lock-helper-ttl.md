@@ -40,13 +40,13 @@ Repository に v0.4 の短期排他 lock 取得/解放 helper を追加し、`lo
 
 ## 受け入れ条件
 
-- [ ] `acquire_lock` が `pk=LOCK#{lock_key}` / `sk=META` の `Lock` item を保存する。
-- [ ] `Lock` item が `lock_key`、`owner_job_id`、`owner_request_id`、`acquired_at`、`expires_at` を持つ。
-- [ ] 未期限切れ lock は別 owner から取得できず、同 owner または期限切れ lock は取得できる。
-- [ ] `release_lock` が owner 一致時だけ lock を削除する。
-- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
-- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
-- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+- [x] `acquire_lock` が `pk=LOCK#{lock_key}` / `sk=META` の `Lock` item を保存する。
+- [x] `Lock` item が `lock_key`、`owner_job_id`、`owner_request_id`、`acquired_at`、`expires_at` を持つ。
+- [x] 未期限切れ lock は別 owner から取得できず、同 owner または期限切れ lock は取得できる。
+- [x] `release_lock` が owner 一致時だけ lock を削除する。
+- [x] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [x] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [x] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
 
 ## 検証計画
 
@@ -55,6 +55,19 @@ Repository に v0.4 の短期排他 lock 取得/解放 helper を追加し、`lo
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 検証結果
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py`: pass
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`: pass（19 tests）
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（120 tests、build、package、local e2e）
+
+## PR コメント
+
+- 受け入れ条件確認: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581806539
+- セルフレビュー: https://github.com/tsuji-tomonori/diopside-v5/pull/40#issuecomment-4581807494
 
 ## PR レビュー観点
 
@@ -69,4 +82,4 @@ Repository に v0.4 の短期排他 lock 取得/解放 helper を追加し、`lo
 
 ## 状態
 
-in_progress
+done
