@@ -8,7 +8,7 @@
 
 | v0.4 item_type | v0.4 key | 現 repository / README | 状態 | 備考 |
 |---|---|---|---|---|
-| `AppConfig` | `APP#CONFIG` / `META` | `ITEM_TYPES` で許可。README は `CONFIG#app` | 差分あり | key prefix と required fields が未整合 |
+| `AppConfig` | `APP#CONFIG` / `META` | `put_app_config` が v0.4 key で保存し、旧 `CONFIG#app` は `get_app_config` fallback | 部分実装 | 既存データ backfill と API runtime の DDB 設定読み込み接続は未対応 |
 | `Channel` | `CH#{channel_id}` / `META` | `put_channel` は `CHANNEL#{channel_id}` / `META` | 差分あり | `collect_enabled` など v0.4 fields への移行が必要 |
 | `ChannelRef` | `APP#CHANNELS` / `CH#{channel_id}` | `put_channel` が `ChannelRef` を保存し、`list_channels` / 管理 API が read model を優先利用 | 部分実装 | 既存データ backfill と `Channel` 本体の v0.4 key prefix 移行は未対応 |
 | `ChannelSyncCursor` | `CH#{channel_id}` / `CURSOR#uploads` | `ChannelCursor`、`CHANNEL#{channel_id}` / `CURSOR#{name}` | 差分あり | item_type 名と key prefix が異なる |
@@ -36,6 +36,7 @@
 現 repository は次を現在の互換 contract として持つ。
 
 - `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoTagLink`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatPageManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
+- `AppConfig` は `APP#CONFIG` / `META` に保存し、`system_name`、`target_channel_ids`、`youtube_api_key_ssm_param`、collection/export flags、`default_locale`、`public_base_path` を持つ。旧 `CONFIG#app` / `META` は読み取り fallback で扱う。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。

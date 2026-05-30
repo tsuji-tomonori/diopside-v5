@@ -232,6 +232,50 @@ def test_repository_derives_job_state_from_legacy_job_event_shape():
     assert detail["events"][-1]["payload"] == {"message": "boom"}
 
 
+def test_repository_writes_app_config_v04_key_and_reads_legacy_fallback():
+    repo = MemoryRepository()
+
+    config = repo.put_app_config(
+        {
+            "system_name": "diopside",
+            "target_channel_ids": ["ch001"],
+            "youtube_api_key_ssm_param": "/diopside/youtube/api-key",
+            "youtube_api_key": "secret-value",
+            "collection_enabled": False,
+            "public_export_enabled": True,
+            "default_locale": "ja-JP",
+            "public_base_path": "data",
+            "maintenance_message": "paused",
+        }
+    )
+
+    assert config["item_type"] == "AppConfig"
+    assert config["pk"] == "APP#CONFIG"
+    assert config["sk"] == "META"
+    assert config["system_name"] == "diopside"
+    assert config["target_channel_ids"] == ["ch001"]
+    assert config["youtube_api_key_ssm_param"] == "/diopside/youtube/api-key"
+    assert config["collection_enabled"] is False
+    assert config["public_export_enabled"] is True
+    assert config["default_locale"] == "ja-JP"
+    assert config["public_base_path"] == "data"
+    assert config["maintenance_message"] == "paused"
+    assert "youtube_api_key" not in config
+    assert repo.get_app_config() == config
+
+    legacy_repo = MemoryRepository()
+    legacy = legacy_repo.put_item(
+        {
+            "item_type": "AppConfig",
+            "pk": "CONFIG#app",
+            "sk": "META",
+            "system_name": "legacy",
+        }
+    )
+
+    assert legacy_repo.get_app_config() == legacy
+
+
 def test_repository_adds_common_item_metadata_and_preserves_created_at():
     repo = MemoryRepository()
 

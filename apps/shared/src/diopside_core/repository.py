@@ -72,6 +72,23 @@ def video_month_key(published_at: str | None) -> str | None:
     return f"{year}{month}"
 
 
+def app_config_item(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **{key: value for key, value in config.items() if key != "youtube_api_key"},
+        "item_type": "AppConfig",
+        "pk": "APP#CONFIG",
+        "sk": "META",
+        "system_name": config.get("system_name", "diopside"),
+        "target_channel_ids": list(config.get("target_channel_ids", [])),
+        "youtube_api_key_ssm_param": config.get("youtube_api_key_ssm_param", ""),
+        "collection_enabled": bool(config.get("collection_enabled", True)),
+        "public_export_enabled": bool(config.get("public_export_enabled", True)),
+        "default_locale": config.get("default_locale", "ja-JP"),
+        "public_base_path": config.get("public_base_path", "data"),
+        "updated_at": now_iso(),
+    }
+
+
 def channel_ref_item(channel: dict[str, Any]) -> dict[str, Any]:
     channel_id = channel["channel_id"]
     collect_enabled = bool(channel.get("collect_enabled", channel.get("enabled", True)))
@@ -550,6 +567,8 @@ class Repository(Protocol):
     def list_static_exports(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def put_video(self, video: dict[str, Any]) -> dict[str, Any]: ...
     def update_video_tags(self, video_id: str, *, add_tags: list[str] | None = None, remove_tags: list[str] | None = None, replace_tags: list[str] | None = None) -> dict[str, Any]: ...
+    def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]: ...
+    def get_app_config(self) -> dict[str, Any] | None: ...
     def put_chat_aggregate(self, video_id: str, aggregate: dict[str, Any]) -> dict[str, Any]: ...
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_chat_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]: ...
@@ -877,6 +896,12 @@ class MemoryRepository:
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
         events = job_events_for_job(list(self.items.values()), job_id)
         return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+
+    def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        return self.put_item(app_config_item(config))
+
+    def get_app_config(self) -> dict[str, Any] | None:
+        return self.get_item("APP#CONFIG", "META") or self.get_item("CONFIG#app", "META")
 
     def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None:
         existing = self.get_item(f"LOCK#{lock_key}", "META")
