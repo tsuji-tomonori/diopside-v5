@@ -1326,7 +1326,11 @@ class FakeDynamoTable:
             items = [item for item in self.items.values() if item.get("gsi1pk") == "VIDEO#PUBLIC"]
             items.sort(key=lambda item: item.get("gsi1sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
         elif index_name == "by_work_queue":
-            items = [item for item in self.items.values() if item.get("gsi3pk") in {"JOB#ALL", "QUOTA#ALL"}]
+            items = [
+                item
+                for item in self.items.values()
+                if item.get("gsi3pk") in {"JOB#ALL", "QUOTA#ALL"} or str(item.get("gsi3pk", "")).startswith("JOB#STATE#")
+            ]
             items.sort(key=lambda item: item.get("gsi3sk", ""), reverse=not kwargs.get("ScanIndexForward", True))
         else:
             items = [item for item in self.items.values() if item["pk"].startswith("JOB#")]

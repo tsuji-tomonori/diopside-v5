@@ -176,7 +176,19 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert quota["gsi3pk"] == "QUOTA#ALL"
     assert quota["record_type"] == "call"
     assert job["pk"] == f"JOB#{job['job_id']}"
-    assert job["gsi3pk"] == "JOB#ALL"
+    assert job["dedupe_key"] == "metadata:ch001"
+    assert job["idempotency_key"] == "metadata:ch001"
+    assert job["target_type"] == "channel"
+    assert job["target_id"] == "ch001"
+    assert job["latest_state"] == "queued"
+    assert job["derived_state"] == "queued"
+    assert job["attempt"] == 0
+    assert job["max_attempts"] == 3
+    assert job["queued_at"]
+    assert job["next_run_at"]
+    assert job["gsi3pk"] == "JOB#STATE#queued"
+    assert job["gsi3sk"].startswith("NEXT#")
+    assert job["gsi3sk"].endswith(f"#{job['job_id']}")
     assert idempotency["item_type"] == "Idempotency"
     assert idempotency["dedupe_key"] == "metadata:ch001"
     assert idempotency["first_job_id"] == job["job_id"]
@@ -275,8 +287,13 @@ def test_repository_writes_job_events_with_v04_shape_and_legacy_aliases():
     assert completed["sk"] == "EVT#00000003"
     assert completed["event_name"] == "job.succeeded"
     assert completed["state_after"] == "succeeded"
+    assert detail["latest_state"] == "succeeded"
     assert detail["derived_state"] == "succeeded"
     assert [event["seq"] for event in detail["events"]] == [1, 2, 3]
+    stored_job = repo.get_item(f"JOB#{job['job_id']}", "META")
+    assert stored_job["latest_state"] == "succeeded"
+    assert stored_job["derived_state"] == "succeeded"
+    assert stored_job["gsi3pk"] == "JOB#STATE#succeeded"
 
 
 def test_repository_derives_job_state_from_legacy_job_event_shape():

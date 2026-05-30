@@ -583,6 +583,8 @@ JOB_STATE_BY_EVENT_TYPE = {
     "canceled": "cancelled",
 }
 
+JOB_LIST_STATES = ("queued", "running", "retryable", "succeeded", "failed", "cancelled", "canceled")
+
 
 def job_event_name(event_type: str) -> str:
     if "." in event_type:
@@ -683,6 +685,30 @@ def normalize_job_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def job_events_for_job(items: list[dict[str, Any]], job_id: str) -> list[dict[str, Any]]:
     return [item for item in items if item.get("pk") == f"JOB#{job_id}" and item.get("item_type") == "JobEvent"]
+
+
+def job_target(payload: dict[str, Any], job_type: str) -> tuple[str, str | None]:
+    if payload.get("video_id"):
+        return "video", str(payload["video_id"])
+    if payload.get("channel_id"):
+        return "channel", str(payload["channel_id"])
+    if payload.get("uploads_playlist_id"):
+        return "channel", str(payload["uploads_playlist_id"])
+    if job_type == "static_export" or payload.get("scope"):
+        return "export", str(payload.get("scope") or "public")
+    return "system", None
+
+
+def update_job_read_model(job: dict[str, Any], latest_state: str, *, next_run_at: str | None = None) -> dict[str, Any]:
+    updated = deepcopy(job)
+    run_at = next_run_at or updated.get("next_run_at") or updated.get("queued_at") or updated.get("created_at") or now_iso()
+    updated["latest_state"] = latest_state
+    updated["derived_state"] = latest_state
+    updated["next_run_at"] = run_at
+    updated["gsi3pk"] = f"JOB#STATE#{latest_state}"
+    updated["gsi3sk"] = f"NEXT#{run_at}#{updated['job_id']}"
+    updated["updated_at"] = now_iso()
+    return updated
 
 
 class Repository(Protocol):
@@ -1013,19 +1039,29 @@ class MemoryRepository:
                 return existing, True
         stamp = now_iso()
         job_id = stable_id("job", idempotency_key)
+        target_type, target_id = job_target(payload, job_type)
         item = {
             "item_type": "Job",
             "pk": f"JOB#{job_id}",
             "sk": "META",
             "job_id": job_id,
             "job_type": job_type,
+            "target_type": target_type,
+            "target_id": target_id,
+            "dedupe_key": idempotency_key,
             "idempotency_key": idempotency_key,
+            "input": payload,
             "payload": payload,
+            "latest_state": "queued",
             "derived_state": "queued",
+            "attempt": 0,
+            "max_attempts": int(payload.get("max_attempts") or 3),
+            "queued_at": stamp,
+            "next_run_at": payload.get("next_run_at") or stamp,
             "created_at": stamp,
             "updated_at": stamp,
-            "gsi3pk": "JOB#ALL",
-            "gsi3sk": f"{stamp}#{job_type}#{job_id}",
+            "gsi3pk": "JOB#STATE#queued",
+            "gsi3sk": f"NEXT#{payload.get('next_run_at') or stamp}#{job_id}",
         }
         self.put_item(item)
         self.put_item(idempotency_item(idempotency_key, job_id, job_type, payload))
@@ -1039,7 +1075,9 @@ class MemoryRepository:
             return None
         events = normalize_job_events(job_events_for_job(list(self.items.values()), job_id))
         job["events"] = deepcopy(events)
-        job["derived_state"] = derive_job_state(events)
+        latest_state = derive_job_state(events)
+        job["latest_state"] = latest_state
+        job["derived_state"] = latest_state
         return job
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -1050,7 +1088,12 @@ class MemoryRepository:
 
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
         events = job_events_for_job(list(self.items.values()), job_id)
-        return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+        event = self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+        job = self.get_item(f"JOB#{job_id}", "META")
+        if job:
+            updated_events = normalize_job_events([*events, event])
+            self.put_item(update_job_read_model(job, derive_job_state(updated_events)))
+        return event
 
     def put_app_config(self, config: dict[str, Any]) -> dict[str, Any]:
         return self.put_item(app_config_item(config))
@@ -1154,19 +1197,29 @@ class DynamoRepository(MemoryRepository):
     def create_job(self, job_type: str, payload: dict[str, Any], idempotency_key: str) -> tuple[dict[str, Any], bool]:
         job_id = stable_id("job", idempotency_key)
         stamp = now_iso()
+        target_type, target_id = job_target(payload, job_type)
         item = {
             "item_type": "Job",
             "pk": f"JOB#{job_id}",
             "sk": "META",
             "job_id": job_id,
             "job_type": job_type,
+            "target_type": target_type,
+            "target_id": target_id,
+            "dedupe_key": idempotency_key,
             "idempotency_key": idempotency_key,
+            "input": payload,
             "payload": payload,
+            "latest_state": "queued",
             "derived_state": "queued",
+            "attempt": 0,
+            "max_attempts": int(payload.get("max_attempts") or 3),
+            "queued_at": stamp,
+            "next_run_at": payload.get("next_run_at") or stamp,
             "created_at": stamp,
             "updated_at": stamp,
-            "gsi3pk": "JOB#ALL",
-            "gsi3sk": f"{stamp}#{job_type}#{job_id}",
+            "gsi3pk": "JOB#STATE#queued",
+            "gsi3sk": f"NEXT#{payload.get('next_run_at') or stamp}#{job_id}",
         }
         item = normalize_item_metadata(item)
         try:
@@ -1192,7 +1245,9 @@ class DynamoRepository(MemoryRepository):
         response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
         events = normalize_job_events([item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"])
         job["events"] = deepcopy(events)
-        job["derived_state"] = derive_job_state(events)
+        latest_state = derive_job_state(events)
+        job["latest_state"] = latest_state
+        job["derived_state"] = latest_state
         return job
 
     def append_job_event(self, job_id: str, event_type: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1200,7 +1255,12 @@ class DynamoRepository(MemoryRepository):
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
         response = self.table.query(KeyConditionExpression=Key("pk").eq(f"JOB#{job_id}"))
         events = [item for item in response.get("Items", []) if item.get("item_type") == "JobEvent"]
-        return self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+        event = self.put_item(job_event_item(job_id, event_type, details, next_job_event_seq(events)))
+        job = self.get_item(f"JOB#{job_id}", "META")
+        if job:
+            updated_events = normalize_job_events([*events, event])
+            self.put_item(update_job_read_model(job, derive_job_state(updated_events)))
+        return event
 
     def acquire_lock(self, lock_key: str, owner_job_id: str, ttl_seconds: int = 900, owner_request_id: str | None = None) -> dict[str, Any] | None:
         item = normalize_item_metadata(lock_item(lock_key, owner_job_id, ttl_seconds, owner_request_id))
@@ -1309,13 +1369,25 @@ class DynamoRepository(MemoryRepository):
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
         if Key is None:
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
-        job_items = self._query_all(
-            IndexName="by_work_queue",
-            KeyConditionExpression=Key("gsi3pk").eq("JOB#ALL"),
-            ScanIndexForward=False,
-            Limit=limit,
-        )
-        jobs = [self.get_job(item["job_id"]) for item in job_items if item.get("item_type") == "Job"]
+        job_items: list[dict[str, Any]] = []
+        for state in (*JOB_LIST_STATES, "ALL"):
+            key = f"JOB#STATE#{state}" if state != "ALL" else "JOB#ALL"
+            job_items.extend(
+                self._query_all(
+                    IndexName="by_work_queue",
+                    KeyConditionExpression=Key("gsi3pk").eq(key),
+                    ScanIndexForward=True,
+                    Limit=limit,
+                )
+            )
+        seen: set[str] = set()
+        unique_job_items: list[dict[str, Any]] = []
+        for item in job_items:
+            job_id = str(item.get("job_id") or "")
+            if job_id and job_id not in seen:
+                seen.add(job_id)
+                unique_job_items.append(item)
+        jobs = [self.get_job(item["job_id"]) for item in unique_job_items if item.get("item_type") == "Job"]
         jobs = [job for job in jobs if job]
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return deepcopy(jobs[:limit])

@@ -26,7 +26,7 @@
 | `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` が versioned key で保存し、`artifact_version` / `content_hash` / `generated_at` を付与。旧 `VIDEO#...` item は list/get fallback | 部分実装 | 既存データ backfill と artifact payload schema の完全固定は未対応 |
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
 | `StaticExport` | `EXPORT#public` / `VERSION#{exported_at}` | `static_export` job が manifest 生成・publish 成功後に history item を保存 | 部分実装 | 管理 API/UI 表示、既存履歴 backfill、superseded 更新は未対応 |
-| `Job` | `JOB#{job_id}` / `META` | `create_job` が同 key を保存 | 部分実装 | `dedupe_key` ではなく `idempotency_key`、`latest_state` ではなく `derived_state` |
+| `Job` | `JOB#{job_id}` / `META` | `create_job` が `dedupe_key` / `idempotency_key`、`latest_state` / `derived_state`、`target_type`、`next_run_at` を持つ read model を保存し、`append_job_event` 後に最新状態と state GSI を更新 | 部分実装 | 既存 job の backfill、高並列 event append 時の条件付き seq 採番、attempt 更新は未対応 |
 | `JobEvent` | `JOB#{job_id}` / `EVT#{seq}` | `append_job_event` が `EVT#{seq}` と `event_name` / `state_after` / `occurred_at` / `payload` を保存。`event_type` / `details` は互換 alias として保持 | 部分実装 | 既存 `EVENT#...` item の backfill、同一 job への高並列 append 時の条件付き seq 採番は未対応 |
 | `Lock` | `LOCK#{lock_key}` / `META` | `acquire_lock` / `release_lock` が `owner_job_id`、`owner_request_id`、`acquired_at`、`expires_at` 付き `Lock` item を保存・解放 | 部分実装 | worker job への適用と実 AWS 条件式の統合確認は未対応 |
 | `Idempotency` | `IDEMP#{dedupe_key}` / `META` | `create_job` が `Idempotency` item を保存し、Memory は `idempotency_index` が空でも item lookup で dedupe 可能。DynamoDB は現行の Job conditional put も維持 | 部分実装 | 既存 job への backfill、`Idempotency` item 単独の conditional write への切替は未対応 |
@@ -50,7 +50,7 @@
 - `ChatPageManifest` は `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` に保存し、`raw_s3_uri`、`item_count`、`checksum`、`job_id` を持つ。旧 `ChatMessageChunkManifest` / `VIDEO#{video_id}` / `CHAT#RAW#...` は読み取り fallback で扱う。
 - `ChatAggregate` は `VID#{video_id}` / `CHAT#AGG#v1` に保存し、`aggregate_version`、`message_count`、`computed_at` を持つ。旧 `VIDEO#{video_id}` / `CHAT#AGGREGATE` は読み取り fallback で扱う。
 - `Artifact` は `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` に保存し、`artifact_version` と `content_hash` を必ず持つ。旧 `VIDEO#{video_id}` artifact は読み取り fallback で扱う。
-- `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
+- `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#STATE#{latest_state}` を `by_work_queue` で state ごとに Query する。旧 `JOB#ALL` item は fallback として読み取る。
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。
 - `Lock` は `LOCK#{lock_key}` / `META` に保存し、未期限切れ lock は別 owner から取得できず、同 owner または期限切れ lock は取得・更新できる。TTL は UNIX epoch seconds の `expires_at` に保存する。
 - `Idempotency` は `IDEMP#{dedupe_key}` / `META` に保存し、MemoryRepository は item lookup でも job 重複起動を抑止する。DynamoRepository は現行の Job conditional put を主な重複抑止として維持する。
