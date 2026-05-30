@@ -72,6 +72,26 @@ def seed_local_fixture_repository() -> None:
         if detail_path.exists():
             detail = json.loads(detail_path.read_text(encoding="utf-8")).get("video", {})
         repo.put_video({**item, **detail, "public": True})
+    repo.record_quota_usage("videos.list", 1, {}, channel_id="fixture-channel", video_count=2, job_id="local-e2e-quota")
+    repo.put_item(
+        {
+            "item_type": "QuotaUsage",
+            "pk": "QUOTA#20260530",
+            "sk": "METHOD#videos.list",
+            "record_type": "daily_method_summary",
+            "quota_date": "20260530",
+            "method": "videos.list",
+            "call_count": 1,
+            "units_used": 9500,
+            "unit_per_call": 1,
+            "warning_emitted": True,
+            "warning_threshold_units": 9000,
+            "warning_total_units": 9500,
+            "updated_at": "2026-05-30T00:00:00Z",
+            "gsi3pk": "QUOTA#ROLLUP",
+            "gsi3sk": "20260530#videos.list",
+        }
+    )
     repo.record_static_export(manifest, reason="local_fixture")
     api_handler._REPOSITORY = repo
 

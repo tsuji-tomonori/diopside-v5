@@ -82,6 +82,10 @@ async function checkAdminDryRun(url) {
   if (!detail.item?.events?.length) throw new Error("admin job detail missing events");
   const quota = await json(`${url}/api/admin/quota-usage`, { headers: { Authorization: "Bearer local-secret" } });
   if (!Array.isArray(quota.items)) throw new Error("admin quota usage response must include items array");
+  if (!Array.isArray(quota.daily)) throw new Error("admin quota usage response must include daily array");
+  if (!Array.isArray(quota.by_method)) throw new Error("admin quota usage response must include by_method array");
+  if (typeof quota.limit_per_day !== "number") throw new Error("admin quota usage response must include limit_per_day");
+  if (!quota.warning) throw new Error("admin quota usage response must include warning when threshold is emitted");
   for (const item of quota.items) {
     for (const key of ["method", "units", "video_count", "channel_id", "job_id"]) {
       if (!(key in item)) throw new Error(`admin quota usage item missing ${key}`);
@@ -169,6 +173,8 @@ async function checkBrowserFlows(url) {
         await waitFor(() => text("#adminResult").includes("static_export") && document.querySelector('#adminJobId').value);
         click("#loadJobDetailButton");
         await waitFor(() => text("#adminData").includes("JobEvent") && text("#adminData").includes("queued"));
+        click("#loadQuotaButton");
+        await waitFor(() => text("#adminData").includes("daily summary") && text("#adminData").includes("method summary") && text("#adminData").includes("20260530") && text("#adminData").includes("warning"));
 
         setInput('#adminChannelForm input[name="channelId"]', "ch-local-e2e");
         setInput('#adminChannelForm input[name="uploadsPlaylistId"]', "UUlocalE2E");

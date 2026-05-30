@@ -533,6 +533,20 @@ const quotaUsageText = (item) => {
   return parts.join(" / ");
 };
 
+const quotaDailyText = (item, limitPerDay) => [
+  item.quota_date || "date未設定",
+  `${item.units_used ?? 0} / ${limitPerDay ?? "-"} units`,
+  `calls ${item.call_count ?? 0}`,
+  item.warning_emitted ? "warning" : "normal"
+].join(" / ");
+
+const quotaMethodText = (item) => [
+  item.method || "method未設定",
+  `${item.units_used ?? 0} units`,
+  `calls ${item.call_count ?? 0}`,
+  item.warning_emitted ? "warning" : "normal"
+].join(" / ");
+
 const jobSummaryText = (item) => [
   item.job_id || "job_id未設定",
   item.job_type || "job_type未設定",
@@ -551,9 +565,26 @@ const renderJobList = (items) => items.length
   }))
   : el("p", { class: "empty-state", text: "表示できる job はありません。" });
 
-const renderQuotaUsage = (items) => items.length
-  ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
-  : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" });
+const renderQuotaUsage = (payload) => {
+  const items = payload.items || [];
+  const daily = payload.daily || [];
+  const byMethod = payload.by_method || [];
+  return el("div", { class: "admin-quota" }, [
+    payload.warning ? el("p", { class: "admin-warning", text: payload.warning }) : el("p", { class: "detail-meta", text: `quota daily limit ${payload.limit_per_day ?? "-"} units` }),
+    el("h4", { text: "daily summary" }),
+    daily.length
+      ? el("ul", {}, daily.slice(0, 7).map((item) => el("li", { text: quotaDailyText(item, payload.limit_per_day) })))
+      : el("p", { class: "empty-state", text: "表示できる daily summary はありません。" }),
+    el("h4", { text: "method summary" }),
+    byMethod.length
+      ? el("ul", {}, byMethod.slice(0, 12).map((item) => el("li", { text: quotaMethodText(item) })))
+      : el("p", { class: "empty-state", text: "表示できる method summary はありません。" }),
+    el("h4", { text: "call records" }),
+    items.length
+      ? el("ul", {}, items.slice(0, 12).map((item) => el("li", { text: quotaUsageText(item) })))
+      : el("p", { class: "empty-state", text: "表示できる quota usage はありません。" })
+  ]);
+};
 
 const staticExportText = (item) => [
   item.export_version || "export_version未設定",
@@ -636,7 +667,7 @@ const loadAdminData = async (kind) => {
     const items = result.items || [];
     els.adminData.replaceChildren(
       el("h3", { text: kind === "quota" ? "quota usage" : kind === "static-exports" ? "static export履歴" : "jobs" }),
-      kind === "quota" ? renderQuotaUsage(items) : kind === "static-exports" ? renderStaticExports(items) : renderJobList(items)
+      kind === "quota" ? renderQuotaUsage(result) : kind === "static-exports" ? renderStaticExports(items) : renderJobList(items)
     );
   } catch (error) {
     els.adminData.replaceChildren(el("p", { class: "empty-state", text: error.message }));
