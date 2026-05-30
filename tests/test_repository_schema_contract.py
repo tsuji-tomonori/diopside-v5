@@ -77,6 +77,7 @@ def test_repository_writes_current_index_and_summary_item_shapes():
         }
     )
     tag_index = repo.get_item("TAG#歌枠", "VIDEO#vid001")
+    tag_link = repo.get_item("VID#vid001", f"TAG#{tag_id_for_label('歌枠')}")
     aggregate = repo.put_chat_aggregate("vid001", {"message_count": 10, "top_terms": [{"term": "ありがとう", "count": 3}]})
     artifact = repo.put_artifact(
         "vid001",
@@ -93,6 +94,8 @@ def test_repository_writes_current_index_and_summary_item_shapes():
     assert video["pk"] == "VIDEO#vid001"
     assert tag_index["item_type"] == "VideoTagIndex"
     assert tag_index["gsi2pk"] == "TAG#歌枠"
+    assert tag_link["item_type"] == "VideoTagLink"
+    assert tag_link["gsi2pk"] == f"TAG#{tag_id_for_label('歌枠')}"
     assert aggregate["pk"] == "VIDEO#vid001"
     assert aggregate["sk"] == "CHAT#AGGREGATE"
     assert artifact["sk"] == "ARTIFACT#wordcloud#v1"
@@ -432,7 +435,47 @@ def test_repository_updates_video_tags_and_removes_stale_tag_index():
     assert repo.get_item("TAG#歌枠", "VIDEO#vid001")
     assert repo.get_item("TAG#手動", "VIDEO#vid001")
     assert repo.get_item("TAG#雑談", "VIDEO#vid001") is None
+    assert repo.get_item("VID#vid001", f"TAG#{tag_id_for_label('歌枠')}")
+    manual_link = repo.get_item("VID#vid001", f"TAG#{tag_id_for_label('手動')}")
+    assert manual_link["tag_label"] == "手動"
+    assert manual_link["tag_type"] == "manual"
+    assert manual_link["source"] == "manual_admin"
+    assert repo.get_item("VID#vid001", f"TAG#{tag_id_for_label('雑談')}") is None
     assert [item["label"] for item in repo.list_tags()] == ["手動", "歌枠"]
+
+
+def test_repository_writes_video_tag_link_v04_item_shape():
+    repo = MemoryRepository()
+
+    repo.put_video(
+        {
+            "video_id": "vid001",
+            "title": "archive",
+            "published_at": "2026-05-30T00:00:00Z",
+            "thumbnail_url": "/thumb.jpg",
+            "duration_sec": 1200,
+            "tags": ["歌枠"],
+            "public": True,
+        }
+    )
+    tag_id = tag_id_for_label("歌枠")
+    link = repo.get_item("VID#vid001", f"TAG#{tag_id}")
+
+    assert link["item_type"] == "VideoTagLink"
+    assert link["pk"] == "VID#vid001"
+    assert link["sk"] == f"TAG#{tag_id}"
+    assert link["video_id"] == "vid001"
+    assert link["tag_id"] == tag_id
+    assert link["tag_label"] == "歌枠"
+    assert link["tag_type"] == "generated"
+    assert link["source"] == "repository"
+    assert link["published_at"] == "2026-05-30T00:00:00Z"
+    assert link["title"] == "archive"
+    assert link["thumbnail_url"] == "/thumb.jpg"
+    assert link["duration_sec"] == 1200
+    assert link["gsi2pk"] == f"TAG#{tag_id}"
+    assert link["gsi2sk"].endswith("#vid001")
+    assert link["schema_version"] == "ddb-VideoTagLink-v1"
 
 
 def test_repository_writes_tag_summary_and_hides_stale_tags():
@@ -618,7 +661,6 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
 
     unsupported_v04_types = V04_ITEM_TYPES - ITEM_TYPES
 
-    assert {"VideoTagLink"} <= unsupported_v04_types
     assert "RandomBucket" not in unsupported_v04_types
     assert "NotificationPlan" not in unsupported_v04_types
     assert "StaticExport" not in unsupported_v04_types
@@ -626,6 +668,7 @@ def test_repository_rejects_item_types_not_yet_supported_by_current_allowlist():
     assert "VideoMonthIndex" not in unsupported_v04_types
     assert "ChannelRef" not in unsupported_v04_types
     assert "Idempotency" not in unsupported_v04_types
+    assert "VideoTagLink" not in unsupported_v04_types
     for item_type in sorted(unsupported_v04_types):
         try:
             repo.put_item({"item_type": item_type, "pk": f"TEST#{item_type}", "sk": "META"})

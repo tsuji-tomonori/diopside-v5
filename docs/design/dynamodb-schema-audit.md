@@ -16,7 +16,7 @@
 | `VideoMonthIndex` | `VID#{video_id}` / `INDEX#MONTH#{yyyyMM}` | `put_video` が `VideoMonthIndex` を保存し、archive calendar API / static export が read model を優先利用 | 部分実装 | 既存データ backfill と v0.4 `Video` key prefix への全面移行は未対応 |
 | `VideoStateEvent` | `VID#{video_id}` / `EVT#STATE#...` | なし | 未対応 | live/archive 状態遷移履歴は未分離 |
 | `VideoStatSnapshot` | `VID#{video_id}` / `STAT#{yyyyMMddHH}` | なし | 未対応 | 統計 snapshot は Video read model に寄っている |
-| `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `VideoTagIndex`、`TAG#{tag}` / `VIDEO#{video_id}` | 差分あり | tag link と tag index の向き・属性が異なる |
+| `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `put_video` / `update_video_tags` が `VideoTagLink` を保存・削除し、既存 `VideoTagIndex` も互換維持 | 部分実装 | 既存データ backfill と tag search/list query の全面切替は未対応 |
 | `TagSummary` | `TAG#{tag_id}` / `META` | `put_video` / `update_video_tags` が `TagSummary` を保存し、`list_tags` / API / static export が read model を優先利用 | 部分実装 | category/sort order の管理 UI 編集と既存データ backfill は未対応 |
 | `ChatManifest` | `VID#{video_id}` / `CHAT#MANIFEST` | `ITEM_TYPES` で許可、現 key は `VIDEO#...` 系 | 差分あり | required state fields の contract が未固定 |
 | `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `ChatMessageChunkManifest`、`CHAT#RAW#...` | 差分あり | raw page manifest 名と key が異なる |
@@ -35,9 +35,10 @@
 
 現 repository は次を現在の互換 contract として持つ。
 
-- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
+- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoTagLink`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
+- `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。
 - `Artifact` は `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` に保存し、`artifact_version` と `content_hash` を必ず持つ。旧 `VIDEO#{video_id}` artifact は読み取り fallback で扱う。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。
 - `JobEvent` は `EVT#{seq}` の append-only item として保存され、現在状態は `state_after` または旧 `event_type` 互換 field の末尾 event から導出する。

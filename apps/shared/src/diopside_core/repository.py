@@ -27,6 +27,7 @@ ITEM_TYPES = {
     "Video",
     "VideoIndex",
     "VideoTagIndex",
+    "VideoTagLink",
     "VideoMonthIndex",
     "TagSummary",
     "ChatManifest",
@@ -133,6 +134,38 @@ def video_month_index_item(video: dict[str, Any]) -> dict[str, Any] | None:
         "tags": video.get("tags", []),
         "gsi1pk": f"VIDEO#MONTH#{yyyy_mm_key}",
         "gsi1sk": f"PUB#{published_at}#{video_id}",
+        "updated_at": now_iso(),
+    }
+
+
+def inverted_timestamp(value: str | None) -> str:
+    if not value:
+        return "99999999999999"
+    digits = "".join(ch for ch in value if ch.isdigit())[:14]
+    if len(digits) < 14:
+        digits = digits.ljust(14, "0")
+    return "".join(str(9 - int(ch)) for ch in digits)
+
+
+def video_tag_link_item(video: dict[str, Any], tag_label: str) -> dict[str, Any]:
+    video_id = video["video_id"]
+    tag_id = tag_id_for_label(tag_label)
+    published_at = video.get("published_at") or video.get("scheduled_start_time") or "1970-01-01T00:00:00Z"
+    return {
+        "item_type": "VideoTagLink",
+        "pk": f"VID#{video_id}",
+        "sk": f"TAG#{tag_id}",
+        "video_id": video_id,
+        "tag_id": tag_id,
+        "tag_label": tag_label,
+        "tag_type": "manual" if video.get("manual_tag_correction") else "generated",
+        "source": "manual_admin" if video.get("manual_tag_correction") else "repository",
+        "published_at": published_at,
+        "title": video.get("title", ""),
+        "thumbnail_url": video.get("thumbnail_url"),
+        "duration_sec": video.get("duration_sec"),
+        "gsi2pk": f"TAG#{tag_id}",
+        "gsi2sk": f"PUB#{inverted_timestamp(published_at)}#{video_id}",
         "updated_at": now_iso(),
     }
 
@@ -599,6 +632,7 @@ class MemoryRepository:
         current_tags = set(item.get("tags", []))
         for tag in previous_tags - current_tags:
             self.delete_item(f"TAG#{tag}", f"VIDEO#{item['video_id']}")
+            self.delete_item(f"VID#{item['video_id']}", f"TAG#{tag_id_for_label(tag)}")
         for tag in item.get("tags", []):
             self.put_item(
                 {
@@ -612,6 +646,7 @@ class MemoryRepository:
                     "updated_at": now_iso(),
                 }
             )
+            self.put_item(video_tag_link_item(item, tag))
         random_bucket = random_bucket_item(item)
         if item.get("public", True):
             self.put_item(random_bucket)
