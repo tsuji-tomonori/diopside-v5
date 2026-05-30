@@ -1,6 +1,6 @@
 # BATCH-009 replay continuation page
 
-状態: do
+状態: done
 
 ## 背景
 
@@ -35,3 +35,10 @@ BATCH-008 で replay initial data から continuation を抽出し、後続 `cha
 - `node tools/check-docs-consistency.mjs`
 - `git diff --check`
 - `npm run verify`
+
+## 完了結果
+
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py::test_replay_continuation_page_fetches_actions_and_requeues_next tests/test_core_pipeline.py::test_public_replay_initial_data_keeps_unknown_renderer_and_continuation`: pass
+- `node tools/check-docs-consistency.mjs`: pass
+- `git diff --check`: pass
+- `npm run verify`: pass（136 tests、build、package:deploy、local e2e）
