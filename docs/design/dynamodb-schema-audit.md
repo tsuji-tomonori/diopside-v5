@@ -19,7 +19,7 @@
 | `VideoTagLink` | `VID#{video_id}` / `TAG#{tag_id}` | `put_video` / `update_video_tags` が `VideoTagLink` を保存・削除し、既存 `VideoTagIndex` も互換維持 | 部分実装 | 既存データ backfill と tag search/list query の全面切替は未対応 |
 | `TagSummary` | `TAG#{tag_id}` / `META` | `put_video` / `update_video_tags` が `TagSummary` を保存し、`list_tags` / API / static export が read model を優先利用 | 部分実装 | category/sort order の管理 UI 編集と既存データ backfill は未対応 |
 | `ChatManifest` | `VID#{video_id}` / `CHAT#MANIFEST` | `put_chat_manifest` が v0.4 key で保存し、`chat_normalize` が repository method 経由で更新。旧 `VIDEO#...` は `get_chat_manifest` fallback | 部分実装 | 既存データ backfill、live/replay state machine 完全接続、ChatPageManifest 分離は未対応 |
-| `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `ChatMessageChunkManifest`、`CHAT#RAW#...` | 差分あり | raw page manifest 名と key が異なる |
+| `ChatPageManifest` | `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` | `put_chat_page_manifest` が v0.4 key で保存し、`chat_collect` が repository method 経由で更新。旧 `ChatMessageChunkManifest` / `VIDEO#...` は `list_chat_chunks` fallback | 部分実装 | 既存データ backfill、TTL 運用、複数 replay continuation page 巡回は未対応 |
 | `ChatAggregate` | `VID#{video_id}` / `CHAT#AGG#v1` | `put_chat_aggregate` が v0.4 key で保存し、旧 `VIDEO#...` / `CHAT#AGGREGATE` は `get_chat_aggregate` fallback | 部分実装 | 既存データ backfill、heatmap / source uri required 化、payload schema 完全固定は未対応 |
 | `Artifact` | `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` | `put_artifact` が versioned key で保存し、`artifact_version` / `content_hash` / `generated_at` を付与。旧 `VIDEO#...` item は list/get fallback | 部分実装 | 既存データ backfill と artifact payload schema の完全固定は未対応 |
 | `NotificationPlan` | `VID#{video_id}` / `NOTIFY#{notification_type}` | `notification_plan` / `archive_finalize` が v0.4 key shape で保存 | 部分実装 | 外部通知 delivery と sent/skipped/failed 更新は未対応 |
@@ -35,11 +35,12 @@
 
 現 repository は次を現在の互換 contract として持つ。
 
-- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoTagLink`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
+- `ITEM_TYPES` は `AppConfig`、`Channel`、`ChannelRef`、`ChannelCursor`、`Video`、`VideoIndex`、`VideoTagIndex`、`VideoTagLink`、`VideoMonthIndex`、`TagSummary`、`ChatManifest`、`ChatPageManifest`、`ChatMessageChunkManifest`、`ChatAggregate`、`Artifact`、`NotificationPlan`、`StaticExport`、`Job`、`JobEvent`、`QuotaUsage`、`Lock`、`Idempotency`、`RandomBucket` を許可する。
 - 公開 `Video` は `gsi1pk=VIDEO#PUBLIC` を持ち、DynamoDB adapter は `by_public_date` を Query する。
 - tag index は `VideoTagIndex` として `gsi2pk=TAG#{tag}` を持つ。管理タグ補正では `Video.tags` を更新し、削除されたタグの stale `VideoTagIndex` は消す。
 - `VideoTagLink` は `VID#{video_id}` / `TAG#{tag_id}` に保存し、`tag_label`、`tag_type`、`source`、`published_at`、カード表示用の非正規化 field、`gsi2pk=TAG#{tag_id}` を持つ。tag 削除時は stale link も削除する。
 - `ChatManifest` は `VID#{video_id}` / `CHAT#MANIFEST` に保存し、`live_collection_state`、`replay_collection_state`、`normalization_state`、`normalized_s3_uri`、`message_count` を持つ。旧 `VIDEO#{video_id}` / `CHAT#MANIFEST` は読み取り fallback で扱う。
+- `ChatPageManifest` は `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` に保存し、`raw_s3_uri`、`item_count`、`checksum`、`job_id` を持つ。旧 `ChatMessageChunkManifest` / `VIDEO#{video_id}` / `CHAT#RAW#...` は読み取り fallback で扱う。
 - `ChatAggregate` は `VID#{video_id}` / `CHAT#AGG#v1` に保存し、`aggregate_version`、`message_count`、`computed_at` を持つ。旧 `VIDEO#{video_id}` / `CHAT#AGGREGATE` は読み取り fallback で扱う。
 - `Artifact` は `VID#{video_id}` / `ARTIFACT#{artifact_type}#{artifact_version}` に保存し、`artifact_version` と `content_hash` を必ず持つ。旧 `VIDEO#{video_id}` artifact は読み取り fallback で扱う。
 - `Job` は `JOB#{job_id}` / `META` に保存し、一覧は `gsi3pk=JOB#ALL` を `by_work_queue` で Query する。

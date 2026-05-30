@@ -381,21 +381,20 @@ def chat_collect(repo: Any, params: dict[str, Any]) -> dict[str, Any]:
     body = ("\n".join(json.dumps(message, ensure_ascii=False) for message in messages) + ("\n" if messages else "")).encode("utf-8")
     raw_uri = _write_blob(raw_key, body, "application/x-ndjson")
     offsets = [int(message.get("video_offset_time_msec") or 0) for message in messages]
-    repo.put_item(
+    repo.put_chat_page_manifest(
+        video_id,
         {
-            "item_type": "ChatMessageChunkManifest",
-            "pk": f"VIDEO#{video_id}",
-            "sk": f"CHAT#RAW#{source}#{now_iso()}",
-            "video_id": video_id,
             "source": source,
-            "s3_uri": raw_uri,
-            "message_count": len(messages),
-            "sha256": hashlib.sha256(body).hexdigest(),
+            "raw_s3_uri": raw_uri,
+            "item_count": len(messages),
+            "checksum": hashlib.sha256(body).hexdigest(),
             "first_offset_msec": min(offsets) if offsets else None,
             "last_offset_msec": max(offsets) if offsets else None,
             "next_poll": next_poll,
+            "job_id": params.get("job_id") or f"chat_collect#{video_id}",
+            "polling_interval_ms": int(next_poll["delay_seconds"] * 1000) if next_poll.get("delay_seconds") is not None else None,
             **({"parser_stats": parser_stats} if parser_stats else {}),
-        }
+        },
     )
     return {"video_id": video_id, "source": source, "message_count": len(messages), "next_poll": next_poll, **({"parser_stats": parser_stats} if parser_stats else {})}
 

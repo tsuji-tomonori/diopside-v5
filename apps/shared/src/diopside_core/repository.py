@@ -31,6 +31,7 @@ ITEM_TYPES = {
     "VideoMonthIndex",
     "TagSummary",
     "ChatManifest",
+    "ChatPageManifest",
     "ChatMessageChunkManifest",
     "ChatAggregate",
     "Artifact",
@@ -205,6 +206,37 @@ def chat_manifest_item(video_id: str, manifest: dict[str, Any]) -> dict[str, Any
         item["normalized_schema_version"] = "chat-message/v1"
     item.pop("normalized_uri", None)
     return item
+
+
+def chat_page_manifest_item(video_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+    source = str(manifest.get("source") or "replay")
+    seq = int(manifest.get("seq", 1))
+    raw_s3_uri = manifest.get("raw_s3_uri") or manifest.get("s3_uri")
+    item_count = int(manifest.get("item_count", manifest.get("message_count", 0)))
+    checksum = manifest.get("checksum") or manifest.get("sha256") or ""
+    item = {
+        **manifest,
+        "item_type": "ChatPageManifest",
+        "pk": f"VID#{video_id}",
+        "sk": f"CHAT#PAGE#{source}#{seq}",
+        "video_id": video_id,
+        "source": source,
+        "seq": seq,
+        "raw_s3_uri": raw_s3_uri,
+        "item_count": item_count,
+        "checksum": checksum,
+        "job_id": manifest.get("job_id") or f"chat_collect#{video_id}",
+        "updated_at": now_iso(),
+        "s3_uri": raw_s3_uri,
+        "message_count": item_count,
+        "sha256": checksum,
+    }
+    return item
+
+
+def _next_seq(items: list[dict[str, Any]]) -> int:
+    seqs = [int(item.get("seq", 0)) for item in items if str(item.get("seq", "")).isdigit()]
+    return (max(seqs) if seqs else len(items)) + 1
 
 
 def random_bucket_item(video: dict[str, Any]) -> dict[str, Any]:
@@ -522,6 +554,7 @@ class Repository(Protocol):
     def get_chat_aggregate(self, video_id: str) -> dict[str, Any] | None: ...
     def put_chat_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]: ...
     def get_chat_manifest(self, video_id: str) -> dict[str, Any] | None: ...
+    def put_chat_page_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]: ...
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]: ...
     def list_artifacts(self, video_id: str) -> list[dict[str, Any]]: ...
     def get_artifact_by_id(self, artifact_id: str) -> dict[str, Any] | None: ...
@@ -740,6 +773,13 @@ class MemoryRepository:
     def get_chat_manifest(self, video_id: str) -> dict[str, Any] | None:
         return self.get_item(f"VID#{video_id}", "CHAT#MANIFEST") or self.get_item(f"VIDEO#{video_id}", "CHAT#MANIFEST")
 
+    def put_chat_page_manifest(self, video_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
+        source = str(manifest.get("source") or "replay")
+        if manifest.get("seq") is None:
+            existing = [item for item in self.list_chat_chunks(video_id) if item.get("source") == source]
+            manifest = {**manifest, "seq": _next_seq(existing)}
+        return self.put_item(chat_page_manifest_item(video_id, manifest))
+
     def put_artifact(self, video_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
         return self.put_item(artifact_item(video_id, artifact))
 
@@ -853,8 +893,10 @@ class MemoryRepository:
         return True
 
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
-        chunks = [item for (pk, _), item in self.items.items() if pk == f"VIDEO#{video_id}" and item.get("item_type") == "ChatMessageChunkManifest"]
-        chunks.sort(key=lambda item: item.get("sk", ""))
+        chunks = [item for (pk, _), item in self.items.items() if pk == f"VID#{video_id}" and item.get("item_type") == "ChatPageManifest"]
+        if not chunks:
+            chunks = [item for (pk, _), item in self.items.items() if pk == f"VIDEO#{video_id}" and item.get("item_type") == "ChatMessageChunkManifest"]
+        chunks.sort(key=lambda item: (int(item.get("seq", 0)), item.get("sk", "")))
         return deepcopy(chunks)
 
     def list_channels(self) -> list[dict[str, Any]]:
@@ -1121,9 +1163,12 @@ class DynamoRepository(MemoryRepository):
     def list_chat_chunks(self, video_id: str) -> list[dict[str, Any]]:
         if Key is None:
             raise RuntimeError("boto3.dynamodb.conditions.Key is required")
-        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VIDEO#{video_id}"))
-        chunks = [item for item in response.get("Items", []) if item.get("item_type") == "ChatMessageChunkManifest"]
-        chunks.sort(key=lambda item: item.get("sk", ""))
+        response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VID#{video_id}"))
+        chunks = [item for item in response.get("Items", []) if item.get("item_type") == "ChatPageManifest"]
+        if not chunks:
+            response = self.table.query(KeyConditionExpression=Key("pk").eq(f"VIDEO#{video_id}"))
+            chunks = [item for item in response.get("Items", []) if item.get("item_type") == "ChatMessageChunkManifest"]
+        chunks.sort(key=lambda item: (int(item.get("seq", 0)), item.get("sk", "")))
         return deepcopy(chunks)
 
     def list_channels(self) -> list[dict[str, Any]]:

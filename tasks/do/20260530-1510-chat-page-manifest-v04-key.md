@@ -1,0 +1,75 @@
+# ChatPageManifest v0.4 key 対応
+
+## 背景
+
+`.workspace/plan-20260530.txt` の v0.4 設計準拠対応では、DDB item schema の差分解消が残っている。`docs/design/dynamodb-schema-audit.md` では raw chat page manifest が `ChatPageManifest`、`VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` として設計されている一方、現行 `chat_collect` は `ChatMessageChunkManifest`、`VIDEO#{video_id}` / `CHAT#RAW#...` へ直接 `put_item` している。
+
+## 目的
+
+raw chat page manifest の新規保存 key を v0.4 の `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` に寄せ、既存 `ChatMessageChunkManifest` / `CHAT#RAW#...` の読み取り互換を維持する。
+
+## タスク種別
+
+機能追加
+
+## スコープ
+
+- `apps/shared/src/diopside_core/repository.py` の `ChatPageManifest` writer/list。
+- `apps/workers/static-exporter/src/static_exporter/pipeline.py` の `chat_collect` raw page manifest 保存。
+- `tests/test_repository_schema_contract.py` と既存 chat collect / normalize tests。
+- `README.md` と `docs/design/dynamodb-schema-audit.md` の raw chat page manifest 記述。
+- 作業レポート、PR コメント、task done 更新。
+
+## スコープ外
+
+- 既存 DynamoDB data の backfill。
+- raw page TTL 運用。
+- live/replay collection state machine との完全接続。
+- 複数 replay continuation page の巡回取得実装。
+
+## 実施計画
+
+1. 現行 `chat_collect` の raw manifest 保存と `list_chat_chunks` 利用箇所を確認する。
+2. `chat_page_manifest_item` helper と `put_chat_page_manifest` / `list_chat_chunks` の v0.4 対応を repository に追加する。
+3. `chat_collect` が repository method 経由で `VID#{video_id}` / `CHAT#PAGE#{source}#{seq}` に保存するようにする。
+4. `list_chat_chunks` は新 `ChatPageManifest` を優先し、旧 `ChatMessageChunkManifest` / `VIDEO#...` も fallback する。
+5. schema contract test と audit / README を更新する。
+6. targeted test、docs consistency、diff check、全体 verify を実行する。
+
+## ドキュメントメンテナンス方針
+
+`README.md` の item schema 表と `docs/design/dynamodb-schema-audit.md` の `ChatPageManifest` 行を更新する。設計書本体は既に v0.4 形状を記載しているため、audit 側を実装済みに寄せる。
+
+## 受け入れ条件
+
+- [ ] `put_chat_page_manifest` が `pk=VID#{video_id}` / `sk=CHAT#PAGE#{source}#{seq}` の `ChatPageManifest` item を保存する。
+- [ ] `ChatPageManifest` item が `video_id`、`source`、`seq`、`raw_s3_uri`、`item_count`、`checksum`、`job_id` を持つ。
+- [ ] `list_chat_chunks` が新 `ChatPageManifest` を優先し、旧 `VIDEO#...` / `CHAT#RAW#...` も fallback で扱える。
+- [ ] `chat_collect` が v0.4 key の `ChatPageManifest` を保存し、既存 chat collect / normalize tests が通る。
+- [ ] `README.md` と `docs/design/dynamodb-schema-audit.md` が実装済み形状に同期している。
+- [ ] 選定した検証コマンドが pass し、未実施の検証がある場合は理由を記録する。
+- [ ] PR に受け入れ条件確認コメントとセルフレビューコメントを日本語で追加する。
+
+## 検証計画
+
+- `python3 -m py_compile apps/shared/src/diopside_core/repository.py apps/workers/static-exporter/src/static_exporter/pipeline.py`
+- `PYTHONPATH=apps/shared/src python3 -m pytest tests/test_repository_schema_contract.py`
+- `PYTHONPATH=apps/shared/src:apps/workers/static-exporter/src python3 -m pytest tests/test_core_pipeline.py tests/test_static_exporter.py`
+- `node tools/check-docs-consistency.mjs`
+- `git diff --check`
+- `npm run verify`
+
+## PR レビュー観点
+
+- v0.4 key へ新規保存しつつ、旧 raw chunk manifest の読み取り互換を壊していないこと。
+- chat 本文を DynamoDB に保存していないこと。
+- TTL 運用や replay continuation 巡回取得を実施済みと誤記していないこと。
+
+## リスク
+
+- 既存 DynamoDB data への backfill は未実施。
+- raw page TTL は field 追加余地のみで、DynamoDB TTL 設定や削除運用は後続。
+
+## 状態
+
+in_progress

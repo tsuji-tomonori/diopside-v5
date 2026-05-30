@@ -518,6 +518,13 @@ def test_public_replay_initial_data_keeps_unknown_renderer_and_continuation(tmp_
     assert collected["parser_stats"]["unknown_count"] == 1
     assert collected["next_poll"]["action"] == "continuation_available"
     assert collected["next_poll"]["continuation_count"] == 1
+    assert chunk["item_type"] == "ChatPageManifest"
+    assert chunk["pk"] == "VID#vid-replay"
+    assert chunk["sk"] == "CHAT#PAGE#replay#1"
+    assert chunk["raw_s3_uri"] == chunk["s3_uri"]
+    assert chunk["item_count"] == 2
+    assert chunk["checksum"] == chunk["sha256"]
+    assert chunk["job_id"] == "chat_collect#vid-replay"
     assert chunk["parser_stats"]["unknown_count"] == 1
     assert chunk["next_poll"]["continuations"][0]["token"] == "replay-token-1"
     assert rows[0]["message_text"] == "hello replay"
@@ -554,6 +561,12 @@ def test_live_chat_collect_requeues_with_clamped_delay(tmp_path, monkeypatch):
     assert enqueued[0]["delay_seconds"] == 900
     assert enqueued[0]["payload"]["input"]["page_token"] == "next-live-token"
     assert chunks[0]["next_poll"]["action"] == "requeue"
+    assert chunks[0]["item_type"] == "ChatPageManifest"
+    assert chunks[0]["pk"] == "VID#live001"
+    assert chunks[0]["sk"] == "CHAT#PAGE#live#1"
+    assert chunks[0]["raw_s3_uri"] == chunks[0]["s3_uri"]
+    assert chunks[0]["item_count"] == 1
+    assert chunks[0]["checksum"] == chunks[0]["sha256"]
     assert chunks[0]["message_count"] == 1
     assert chunks[0]["s3_uri"]
 

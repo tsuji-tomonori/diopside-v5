@@ -554,6 +554,52 @@ def test_repository_writes_chat_manifest_v04_key_and_reads_legacy_fallback():
     assert repo.get_chat_manifest("legacy") == legacy
 
 
+def test_repository_writes_chat_page_manifest_v04_key_and_reads_legacy_fallback():
+    repo = MemoryRepository()
+
+    page = repo.put_chat_page_manifest(
+        "vid001",
+        {
+            "source": "replay",
+            "raw_s3_uri": "s3://raw/youtube/chat/video_id=vid001/source=replay/1.jsonl",
+            "item_count": 2,
+            "checksum": "sha256:page",
+            "job_id": "job-chat",
+            "next_poll": {"action": "stop"},
+        },
+    )
+
+    assert page["item_type"] == "ChatPageManifest"
+    assert page["pk"] == "VID#vid001"
+    assert page["sk"] == "CHAT#PAGE#replay#1"
+    assert page["video_id"] == "vid001"
+    assert page["source"] == "replay"
+    assert page["seq"] == 1
+    assert page["raw_s3_uri"] == "s3://raw/youtube/chat/video_id=vid001/source=replay/1.jsonl"
+    assert page["item_count"] == 2
+    assert page["checksum"] == "sha256:page"
+    assert page["job_id"] == "job-chat"
+    assert page["s3_uri"] == page["raw_s3_uri"]
+    assert page["message_count"] == 2
+    assert page["sha256"] == "sha256:page"
+    assert repo.list_chat_chunks("vid001") == [page]
+
+    legacy = repo.put_item(
+        {
+            "item_type": "ChatMessageChunkManifest",
+            "pk": "VIDEO#legacy",
+            "sk": "CHAT#RAW#replay#fixture",
+            "video_id": "legacy",
+            "source": "replay",
+            "s3_uri": "s3://raw/legacy.jsonl",
+            "message_count": 1,
+            "sha256": "legacy",
+        }
+    )
+
+    assert repo.list_chat_chunks("legacy") == [legacy]
+
+
 def test_repository_writes_tag_summary_and_hides_stale_tags():
     repo = MemoryRepository()
     repo.put_video(
